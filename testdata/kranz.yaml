@@ -1,0 +1,67 @@
+# Test configuration for Kranz
+# Used while developing and testing Kranz itself
+
+project: "Kranz Test"
+version: "1.0"
+
+ui:
+  theme: dracula
+  accent: "#BD93F9"
+  background: terminal
+  color_mode: auto
+
+defaults:
+  dir: .
+  shell: /bin/bash
+
+services:
+  echo-server:
+    command: "echo 'Echo server started' && sleep 3600"
+    dir: .
+    ports:
+      - 9999
+    tags: [test, backend]
+    depends_on: []
+    env:
+      APP_MODE: test
+    healthcheck:
+      readiness:
+        type: command
+        command: "echo ready"
+        interval: 5s
+        timeout: 2s
+      liveness:
+        type: command
+        command: "echo alive"
+        interval: 10s
+        timeout: 2s
+
+  web-api:
+    command: "echo 'Web API started on port 8888' && sleep 3600"
+    dir: .
+    ports:
+      - 8888
+    tags: [test, backend, api]
+    depends_on: [echo-server]
+    env:
+      PORT: "8888"
+    healthcheck:
+      readiness:
+        type: tcp
+        port: 8888
+        interval: 3s
+        timeout: 1s
+      liveness:
+        type: tcp
+        port: 8888
+        interval: 10s
+        timeout: 1s
+
+  worker:
+    command: "echo 'Worker process started' && sleep 3600"
+    dir: .
+    ports: []
+    tags: [test, worker]
+    depends_on: [web-api]
+    env:
+      QUEUE: default
