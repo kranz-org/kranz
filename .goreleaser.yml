@@ -1,0 +1,61 @@
+version: 2
+
+project_name: kranz
+
+builds:
+  - id: kranz
+    main: ./cmd/kranz
+    binary: kranz
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .Commit }}
+      - -X main.buildTime={{ .CommitDate }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: release
+    ids:
+      - kranz
+    formats:
+      - tar.gz
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64{{ else }}{{ .Arch }}{{ end }}
+    files:
+      - LICENSE
+      - README.md
+      - CHANGELOG.md
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  use: git
+  sort: asc
+  filters:
+    exclude:
+      - "^docs(?:\\([^)]*\\))?:"
+      - "^test(?:\\([^)]*\\))?:"
+      - "^chore(?:\\([^)]*\\))?:"
+      - "^ci(?:\\([^)]*\\))?:"
+
+release:
+  prerelease: auto
+  make_latest: true
+  extra_files:
+    - glob: .release/kranz.rb

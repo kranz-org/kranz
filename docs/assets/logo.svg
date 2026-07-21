@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="102 102 1050 1050" width="1254" height="1254" role="img" aria-labelledby="title desc">
+  <title id="title">Kranz service network mark</title>
+  <desc id="desc">Vector reconstruction of the supplied Kranz mark using single-color dashed connections and the Kranz Cyan palette.</desc>
+  <defs>
+    <radialGradient id="canvas" cx="50%" cy="46%" r="72%">
+      <stop offset="0" stop-color="#151A21"/>
+      <stop offset="0.58" stop-color="#0B0F15"/>
+      <stop offset="1" stop-color="#03060A"/>
+    </radialGradient>
+    <linearGradient id="cyanNode" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#38BDF8"/>
+      <stop offset="1" stop-color="#38BDF8" stop-opacity="0.82"/>
+    </linearGradient>
+    <linearGradient id="textNode" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#F1F5F9"/>
+      <stop offset="1" stop-color="#D8E0EA"/>
+    </linearGradient>
+    <linearGradient id="greenNode" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#4ADE80"/>
+      <stop offset="1" stop-color="#4ADE80" stop-opacity="0.82"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1254" height="1254" fill="url(#canvas)"/>
+
+  <!-- Every connection is a single-color dashed path. -->
+  <g fill="none" stroke-width="11" stroke-linecap="round">
+    <!-- Outer ring. -->
+    <path d="M343 376 L547 256" stroke="#D8E0EA" stroke-dasharray="18 36.669"/>
+    <path d="M707 256 L906 374" stroke="#38BDF8" stroke-dasharray="18 35.339"/>
+    <path d="M981 501 V709" stroke="#8D99A8" stroke-dasharray="18 29.5"/>
+    <path d="M890 867 L709 975" stroke="#D8E0EA" stroke-dasharray="18 30.193"/>
+    <path d="M546 978 L350 861" stroke="#38BDF8" stroke-dasharray="18 34.566"/>
+    <path d="M273 501 V709" stroke="#4ADE80" stroke-dasharray="18 29.5"/>
+
+    <!-- Inner spokes. -->
+    <path d="M627 316 V434" stroke="#D8E0EA" stroke-dasharray="18 32"/>
+    <path d="M778 525 L884 464" stroke="#38BDF8" stroke-dasharray="18 34.149"/>
+    <path d="M778 696 L910 773" stroke="#8D99A8" stroke-dasharray="18 49.408"/>
+    <path d="M627 784 V902" stroke="#4ADE80" stroke-dasharray="18 32"/>
+    <path d="M476 696 L371 758" stroke="#D8E0EA" stroke-dasharray="18 33.969"/>
+    <path d="M476 525 L371 464" stroke="#38BDF8" stroke-dasharray="18 33.969"/>
+  </g>
+
+  <!-- Four outer services. -->
+  <g>
+    <circle cx="627" cy="229" r="61" fill="url(#cyanNode)"/>
+    <path d="M274 350 Q282 350 288 361 L339 451 Q344 460 338 467 Q334 472 325 472 H224 Q214 472 210 464 Q207 458 212 449 L263 360 Q267 350 274 350Z" fill="url(#textNode)"/>
+    <rect x="928" y="369" width="98" height="100" rx="12" fill="url(#greenNode)"/>
+    <rect x="224" y="748" width="105" height="106" rx="13" fill="url(#cyanNode)"/>
+    <path d="M981 737 Q989 737 994 747 L1043 834 Q1047 842 1042 849 Q1038 854 1029 854 H932 Q922 854 918 847 Q915 841 920 832 L969 747 Q974 737 981 737Z" fill="url(#textNode)"/>
+    <circle cx="627" cy="991" r="61" fill="url(#greenNode)"/>
+  </g>
+
+  <!-- Central Kranz hub and K. -->
+  <g>
+    <path d="M627 464 L755 538 L755 681 L627 756 L499 681 L499 538 Z" fill="url(#textNode)"/>
+    <path d="M582 554 V676 M582 616 H616 M616 616 L679 557 M616 616 L679 675" fill="none" stroke="#151A21" stroke-width="14" stroke-linecap="square" stroke-linejoin="miter"/>
+  </g>
+</svg>

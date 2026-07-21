@@ -1,0 +1,44 @@
+name: Bug report
+description: Report reproducible incorrect behavior.
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: Please remove secrets, tokens, and private repository URLs from all output.
+  - type: input
+    id: version
+    attributes:
+      label: Kranz version
+      description: Output of `kranz --version`.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, architecture, terminal, and shell.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. Start Kranz with...
+        2. Press...
+        3. Observe...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant configuration or logs
+      render: shell
