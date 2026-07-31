@@ -3,7 +3,6 @@ package ui
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -457,41 +456,6 @@ func (m *Model) expireToast() {
 		m.toastMessage = ""
 		m.notifMu.Unlock()
 	}
-}
-
-func (m *Model) themeProjectConfigPath() string {
-	if len(m.configPaths) == 0 {
-		return ""
-	}
-	return m.configPaths[len(m.configPaths)-1]
-}
-
-func isCustomAccent(accent, projectAccent string) bool {
-	accent = strings.TrimSpace(accent)
-	return accent != "" && accent != "auto" && accent != "theme" && !strings.EqualFold(accent, strings.TrimSpace(projectAccent))
-}
-
-func (m *Model) themePickerSummary() string {
-	theme := "Selected · " + ThemeNames()[m.themeCursor]
-	if m.themeUseProject {
-		theme = "Project · " + m.activeTheme.Name
-	}
-	accent := "Theme"
-	if m.themeProjectAccent {
-		accent = "Project"
-	}
-	background := "Terminal"
-	if m.themeBackground == backgroundTheme {
-		background = "Theme"
-	}
-	return theme + " / " + accent + " accent / " + background + " background / " + strings.ToUpper(m.themeColorMode)
-}
-
-func (m *Model) persistSettings() error {
-	if m.settingsPath == "" {
-		return nil
-	}
-	return usersettings.Save(m.settingsPath, m.userSettings)
 }
 
 const (
