@@ -53,7 +53,6 @@ cat >"$output" <<RUBY
 class Kranz < Formula
   desc "Keyboard-first local service orchestrator with a terminal UI"
   homepage "https://github.com/${repository}"
-  version "${version}"
   license "MIT"
 
   on_macos do

@@ -22,5 +22,6 @@ if git rev-parse --verify --quiet "refs/tags/${tag}" >/dev/null; then
 fi
 
 make verify
+make lint
 git tag -a "$tag" -m "Kranz ${tag}"
 echo "Created ${tag}. Review it, then publish with: git push origin ${tag}"

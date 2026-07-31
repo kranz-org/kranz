@@ -53,6 +53,7 @@ changelog:
       - "^test(?:\\([^)]*\\))?:"
       - "^chore(?:\\([^)]*\\))?:"
       - "^ci(?:\\([^)]*\\))?:"
+      - "^refactor(?:\\([^)]*\\))?:"
 
 release:
   prerelease: auto

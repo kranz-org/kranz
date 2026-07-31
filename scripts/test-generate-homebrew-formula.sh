@@ -18,7 +18,6 @@ CHECKSUMS
 
 "$generator" v1.2.3 example/kranz "$checksums" "$formula"
 
-grep -Fq 'version "1.2.3"' "$formula"
 grep -Fq 'kranz_1.2.3_Darwin_arm64.tar.gz' "$formula"
 grep -Fq 'kranz_1.2.3_Darwin_x86_64.tar.gz' "$formula"
 grep -Fq 'kranz_1.2.3_Linux_arm64.tar.gz' "$formula"
@@ -28,6 +27,11 @@ grep -Fq 'sha256 "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 grep -Fq 'sha256 "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"' "$formula"
 grep -Fq 'sha256 "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"' "$formula"
 grep -Fq 'bin.install "kranz"' "$formula"
+
+if grep -Eq '^[[:space:]]+version "' "$formula"; then
+  echo "generated formula must let Homebrew infer the version from its URL" >&2
+  exit 1
+fi
 
 if grep -Fq 'depends_on "go"' "$formula"; then
   echo "generated formula must not depend on Go" >&2
