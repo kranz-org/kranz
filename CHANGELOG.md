@@ -4,6 +4,8 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-01
+
 ### Added
 
 - Full line editing in the regex log search, with caret movement, `Home`/`End`, `Ctrl+W` word deletion, `Ctrl+U` erase to the caret, and `Ctrl+V` paste.
@@ -91,7 +93,8 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 - Explicit global-user and project-config save destinations in the live theme picker.
 - Native compatibility for common Process Compose configurations.
 
-[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/kranz-org/kranz/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/kranz-org/kranz/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/kranz-org/kranz/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/kranz-org/kranz/compare/v0.1.0...v0.1.1
