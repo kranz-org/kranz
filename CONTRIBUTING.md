@@ -10,8 +10,11 @@ Kranz requires the Go version declared in `go.mod`.
 git clone https://github.com/kranz-org/kranz.git
 cd kranz
 make verify
+make lint
 make build
 ```
+
+CI runs the same two gates. `make lint` downloads the golangci-lint version pinned in the `Makefile`, so no separate install is needed.
 
 For TUI changes, test both light and dark terminal profiles, narrow terminals down to 64×14, keyboard input, and clickable controls. Add regression tests for lifecycle, persistence, or rendering bugs.
 

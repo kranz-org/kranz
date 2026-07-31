@@ -485,7 +485,7 @@ Requirements: Go 1.24 or newer, macOS or Linux.
 make build    # Build for the current platform
 make test     # Run tests with the race detector and coverage
 make verify   # Format-check, vet, test, and build
-make lint     # Run golangci-lint
+make lint     # Run the pinned golangci-lint; no local install needed
 make run      # Build and run
 make install  # Install into GOBIN or GOPATH/bin
 make snapshot # Build local Darwin/Linux release archives

@@ -5,6 +5,8 @@ BIN_DIR := bin
 GO := go
 GORELEASER_VERSION ?= v2.17.0
 GORELEASER := $(GO) run github.com/goreleaser/goreleaser/v2@$(GORELEASER_VERSION)
+GOLANGCI_LINT_VERSION ?= v2.12.2
+GOLANGCI_LINT := $(GO) run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)
@@ -35,8 +37,7 @@ vet:
 verify: fmt-check vet test build homebrew-formula-check
 
 lint:
-	@command -v golangci-lint >/dev/null || (echo "golangci-lint is not installed" >&2; exit 1)
-	golangci-lint run ./...
+	$(GOLANGCI_LINT) run ./...
 
 release-check:
 	$(GORELEASER) check

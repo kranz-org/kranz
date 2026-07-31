@@ -1,0 +1,40 @@
+version: "2"
+
+# Kranz runs the default linter set. The pinned golangci-lint version lives in
+# the Makefile and CI so local and automated runs report the same findings.
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+
+  settings:
+    errcheck:
+      # Only cleanup calls on paths that already carry the meaningful error.
+      # Everything else, including errors in tests, must be handled explicitly
+      # or suppressed in place with a stated reason.
+      exclude-functions:
+        - (net.Conn).Close
+        - os.Remove
+
+  exclusions:
+    rules:
+      # Deferred teardown in tests. A shutdown failure is not actionable there
+      # and a real one surfaces through the test's own assertions. Scoped to
+      # this single call so unchecked setup errors in tests stay reported.
+      - path: _test\.go
+        linters:
+          - errcheck
+        text: 'Error return value of `\w+\.Shutdown` is not checked'
+
+formatters:
+  enable:
+    - gofmt
+
+issues:
+  # Report every occurrence. The defaults cap repeated findings at three, which
+  # hides the true scope when a pattern recurs across a package.
+  max-issues-per-linter: 0
+  max-same-issues: 0

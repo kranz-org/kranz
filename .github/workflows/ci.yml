@@ -15,6 +15,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lint:
+    name: Lint
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Runs the version pinned in the Makefile so local and CI runs agree.
+      - name: Lint
+        run: make lint
+
   test:
     name: Go ${{ matrix.os }}
     timeout-minutes: 20
@@ -45,7 +63,6 @@ jobs:
         run: go test ./...
 
       - name: Race test
-        if: runner.os == 'Linux'
         run: go test -race ./...
 
       - name: Build
