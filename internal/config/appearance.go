@@ -147,7 +147,7 @@ func replaceFileAtomically(path string, data []byte) error {
 	if err != nil {
 		return fmt.Errorf("open project configuration directory: %w", err)
 	}
-	defer directoryHandle.Close()
+	defer directoryHandle.Close() //nolint:errcheck // read-only handle; the Sync error below is the meaningful one.
 	if err := directoryHandle.Sync(); err != nil {
 		return fmt.Errorf("sync project configuration directory: %w", err)
 	}

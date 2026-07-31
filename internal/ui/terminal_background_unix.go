@@ -29,7 +29,7 @@ func readTerminalBackground(input *os.File, output io.Writer) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("enter raw mode for background probe: %w", err)
 	}
-	defer term.Restore(fd, state) //nolint:errcheck -- preserve the original probe error.
+	defer term.Restore(fd, state) //nolint:errcheck // preserve the original probe error.
 
 	if _, err := io.WriteString(output, terminalBackgroundQuery); err != nil {
 		return "", fmt.Errorf("query terminal background: %w", err)

@@ -431,7 +431,7 @@ func readDotEnv(path string) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer file.Close() //nolint:errcheck // read-only handle, so Close cannot report a lost write.
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())

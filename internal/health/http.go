@@ -48,7 +48,7 @@ func checkHTTP(url string, timeout time.Duration, headers map[string]string, exp
 	if err != nil {
 		return fmt.Errorf("HTTP GET %s: %w", url, err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // draining the probe response; the status check above decides the result.
 
 	if expectedStatus > 0 && resp.StatusCode != expectedStatus {
 		return fmt.Errorf("HTTP %s returned status %d, expected %d", url, resp.StatusCode, expectedStatus)

@@ -376,5 +376,5 @@ func appendUniquePort(ports []int, port int) []int {
 }
 
 func nodeConfigured(node yaml.Node) bool {
-	return node.Kind != 0 && !(node.Kind == yaml.ScalarNode && node.Value == "")
+	return node.Kind != 0 && (node.Kind != yaml.ScalarNode || node.Value != "")
 }

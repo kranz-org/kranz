@@ -253,7 +253,7 @@ func (m *Model) actionButtons() []actionButton {
 	}
 	if m.width < 100 {
 		compact := func(style lipgloss.Style, label string) string {
-			return style.Copy().Padding(0).Render(label)
+			return style.Padding(0).Render(label)
 		}
 		allLabel := "All: a"
 		if len(m.allServices) > 0 && len(m.selected) == len(m.allServices) {
@@ -758,12 +758,12 @@ func splitPanelHeights(height int) (topHeight, bottomHeight int) {
 
 func renderCollapsedPanel(title string, width int) string {
 	if width <= 1 {
-		return PanelTitleStyle.Copy().Foreground(ColorDim).Render(ansi.Truncate(title, max(1, width), "…"))
+		return PanelTitleStyle.Foreground(ColorDim).Render(ansi.Truncate(title, max(1, width), "…"))
 	}
 	contentWidth := width - 2
 	title = ansi.Truncate(title, contentWidth, "…")
 	title += strings.Repeat(" ", max(0, contentWidth-lipgloss.Width(title)))
-	return " " + PanelTitleStyle.Copy().Foreground(ColorDim).Render(title) + " "
+	return " " + PanelTitleStyle.Foreground(ColorDim).Render(title) + " "
 }
 
 func (m *Model) mouseInDetails(x, y int) bool {
@@ -1559,13 +1559,6 @@ func checkDescription(check *config.CheckConfig) string {
 	}
 }
 
-func joinOrDash(values []string) string {
-	if len(values) == 0 {
-		return "—"
-	}
-	return strings.Join(values, ", ")
-}
-
 func detailValue(value string) string {
 	if strings.TrimSpace(value) == "" {
 		return "—"
@@ -1688,10 +1681,7 @@ func (m *Model) renderLogPanelMode(svc *service.Service, width, height int, pinn
 	if maxStart > 0 {
 		title += ContextBarStyle.Render(fmt.Sprintf("  %d–%d/%d  ↑/↓", startIdx+1, endIdx, len(rows)))
 	}
-	renderedLines := []string{renderPanelTitle(title, contentWidth)}
-	for _, row := range rows[startIdx:endIdx] {
-		renderedLines = append(renderedLines, row)
-	}
+	renderedLines := append([]string{renderPanelTitle(title, contentWidth)}, rows[startIdx:endIdx]...)
 	return boundedPanel(panelStyle, contentWidth, contentHeight, renderedLines)
 }
 
