@@ -245,7 +245,7 @@ func (m *Model) actionButtons() []actionButton {
 	}
 	interruptibleStart := false
 	switch m.operationKind {
-	case operationStart, operationStartSet, operationStartAll:
+	case operationStart, operationStartSet:
 		interruptibleStart = m.operationCancel != nil && allActive
 	}
 	if len(targets) == 0 || (m.operation != "" && !interruptibleStart) {

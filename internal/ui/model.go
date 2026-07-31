@@ -71,7 +71,6 @@ type operationKind string
 
 const (
 	operationStart      operationKind = "start"
-	operationStartAll   operationKind = "start-all"
 	operationStartSet   operationKind = "start-selection"
 	operationForceStart operationKind = "force-start"
 	operationForceStop  operationKind = "force-stop"
@@ -1757,13 +1756,6 @@ func (m *Model) forceToggleSelectedServices() (tea.Model, tea.Cmd) {
 	})
 }
 
-func (m *Model) startAllServices() (tea.Model, tea.Cmd) {
-	ctx, cancel := context.WithCancel(context.Background())
-	return m.beginCancelableOperation(operationStartAll, "all services", "Starting all services", cancel, func() error {
-		return m.manager.StartAllContext(ctx)
-	})
-}
-
 func (m *Model) restartSelectedService() (tea.Model, tea.Cmd) {
 	svc := m.FocusedService()
 	if svc == nil {
@@ -1813,7 +1805,7 @@ func (m *Model) beginCancelableOperation(kind operationKind, target, label strin
 
 func (m *Model) cancelStartOperation() {
 	switch m.operationKind {
-	case operationStart, operationStartSet, operationStartAll:
+	case operationStart, operationStartSet:
 		if m.operationCancel != nil {
 			m.operationCancel()
 		}
@@ -1856,7 +1848,6 @@ func (m *Model) handleOperationResult(msg operationResultMsg) (tea.Model, tea.Cm
 
 	message := map[operationKind]string{
 		operationStart:      "Service started",
-		operationStartAll:   "All services have been started",
 		operationStartSet:   "Selection started (required dependencies included)",
 		operationForceStart: "Selected services started without dependencies",
 		operationForceStop:  "Selected services stopped without stopping dependents",
