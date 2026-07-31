@@ -27,6 +27,7 @@ var (
 	AppStyle              lipgloss.Style
 	PanelStyle            lipgloss.Style
 	FocusedPanelStyle     lipgloss.Style
+	NudgedPanelStyle      lipgloss.Style
 	ServiceRunningStyle   lipgloss.Style
 	ServiceStartingStyle  lipgloss.Style
 	ServiceUnhealthyStyle lipgloss.Style
@@ -95,7 +96,10 @@ func applyPalette(theme Theme) {
 		HeaderStyle = HeaderStyle.Background(ColorBackground)
 		PanelStyle = PanelStyle.Background(ColorDarkBg)
 	}
-	FocusedPanelStyle = PanelStyle.Copy().BorderForeground(ColorCyan)
+	FocusedPanelStyle = PanelStyle.BorderForeground(ColorCyan)
+	// Border colour only: a text attribute here would propagate to the whole
+	// panel body and make the logs jump on every blink phase.
+	NudgedPanelStyle = PanelStyle.BorderForeground(ColorYellow)
 	ServiceRunningStyle = lipgloss.NewStyle().Foreground(ColorGreen)
 	ServiceStartingStyle = lipgloss.NewStyle().Foreground(ColorYellow)
 	ServiceUnhealthyStyle = lipgloss.NewStyle().Foreground(ColorRed)

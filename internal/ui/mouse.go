@@ -241,12 +241,18 @@ func (m *Model) handleOverlayMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	case ModeThemes:
 		return m.handleThemeMouseClick(rendered, msg)
 	case ModeSearch:
-		return m.handleMouseKeyBindings(rendered, msg, []mouseKeyBinding{
+		model, command, handled := m.handleMouseKeyBindingsHandled(rendered, msg, []mouseKeyBinding{
 			{label: "[Tab]", key: "tab"},
 			{label: "[Enter] apply", key: "enter"},
 			{label: "[Esc] done", key: "esc"},
 			{label: "[Ctrl+U] erase", key: "ctrl+u"},
 		}, m.handleSearchKeys)
+		if !handled {
+			// Anywhere else is not a focus change while the editor is open, so
+			// point back at it rather than letting the click vanish.
+			return model, m.nudgeSearchFocus()
+		}
+		return model, command
 	case ModeHelp:
 		if model, command, handled := m.handleMouseKeyBindingsHandled(rendered, msg, []mouseKeyBinding{
 			{label: "[↑/k] Up", key: "up"},

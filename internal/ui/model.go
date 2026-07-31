@@ -510,6 +510,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.beginShutdown()
 		}
 		return m, tea.Batch(m.pollServices(), m.scanFocusedPorts(false), m.reloadConfig(false))
+	case searchNudgeMsg:
+		// Ignore a chain left over from an earlier click.
+		if !time.Time(msg).Equal(m.searchNudge) {
+			return m, nil
+		}
+		if time.Since(m.searchNudge) >= searchNudgeDuration {
+			m.searchNudge = time.Time{}
+			return m, nil
+		}
+		return m, m.scheduleSearchNudge(m.searchNudge)
 	case configReloadMsg:
 		return m.handleConfigReload(msg)
 	default:
@@ -1971,6 +1981,49 @@ func (m *Model) releaseExternalPort(portNumber, expectedPID int) tea.Cmd {
 			err:  port.TerminateExternalPID(expectedPID, 3*time.Second),
 		}
 	}
+}
+
+const (
+	// The filtered log panel blinks after a click the search editor could not
+	// act on. A short phase and several pulses read as "you are still in here",
+	// where a single long highlight would read as a state change.
+	searchNudgeBlink  = 90 * time.Millisecond
+	searchNudgePulses = 5
+	// Phases alternate lit and dark starting lit, so the window closes on the
+	// trailing edge of the last pulse.
+	searchNudgeDuration = time.Duration(searchNudgePulses*2-1) * searchNudgeBlink
+)
+
+// searchNudgeMsg drives one blink phase. It carries the click it belongs to so
+// a later click's chain supersedes an earlier one instead of stacking with it.
+type searchNudgeMsg time.Time
+
+// nudgeSearchFocus answers a click that landed outside the editor while the
+// search was open. The editor is modal because leaving it has to mean either
+// apply or discard, and a click says neither, so the panel blinks instead of
+// swallowing the click in silence.
+func (m *Model) nudgeSearchFocus() tea.Cmd {
+	m.searchNudge = time.Now()
+	return m.scheduleSearchNudge(m.searchNudge)
+}
+
+// scheduleSearchNudge repaints on the blink interval. The dashboard's own tick
+// is both too slow and unsynchronized with the click, so the blink needs its
+// own beat for its phases to be visible at all.
+func (m *Model) scheduleSearchNudge(start time.Time) tea.Cmd {
+	return tea.Tick(searchNudgeBlink, func(time.Time) tea.Msg { return searchNudgeMsg(start) })
+}
+
+// searchNudgeActive reports whether the border is lit in the current phase.
+func (m *Model) searchNudgeActive() bool {
+	if m.searchNudge.IsZero() {
+		return false
+	}
+	elapsed := time.Since(m.searchNudge)
+	if elapsed >= searchNudgeDuration {
+		return false
+	}
+	return (elapsed/searchNudgeBlink)%2 == 0
 }
 
 // applySearchQuery compiles the edited query and makes it the active pattern.

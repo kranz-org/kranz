@@ -2031,6 +2031,68 @@ func TestSearchKeepsCaretVisibleOnLongPattern(t *testing.T) {
 	}
 }
 
+func TestSearchClickOutsideEditorNudgesInsteadOfDoingNothing(t *testing.T) {
+	model := newTestModel()
+	defer model.Shutdown() //nolint:errcheck // test cleanup; a shutdown failure surfaces through the assertions themselves.
+	model.width, model.height, model.ready = 100, 24, true
+	pressKey(model, '/')
+	if model.searchNudgeActive() {
+		t.Fatal("opening the editor should not flash the panel")
+	}
+
+	press := tea.MouseMsg{X: 20, Y: 10, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft}
+	_, command := model.handleMouseMsg(press)
+	if model.mode != ModeSearch {
+		t.Fatalf("a click outside the editor left search mode: %v", model.mode)
+	}
+	if !model.searchNudgeActive() {
+		t.Fatal("a click the editor could not act on gave no feedback")
+	}
+	if command == nil {
+		t.Fatal("no repaint was scheduled, so the blink could never animate")
+	}
+
+	// It has to blink rather than simply light up, so count the rising edges
+	// across the window and hold them to the configured pulse count.
+	start := model.searchNudge
+	pulses, previous := 0, false
+	for offset := time.Duration(0); offset < searchNudgeDuration; offset += searchNudgeBlink / 3 {
+		model.searchNudge = start.Add(-offset)
+		lit := model.searchNudgeActive()
+		if lit && !previous {
+			pulses++
+		}
+		previous = lit
+	}
+	if pulses != searchNudgePulses {
+		t.Fatalf("border pulsed %d times, want %d", pulses, searchNudgePulses)
+	}
+
+	// The blink drives its own tick, so it must stop once the window closes.
+	model.searchNudge = start
+	expired := start.Add(-searchNudgeDuration - time.Millisecond)
+	model.searchNudge = expired
+	if model.searchNudgeActive() {
+		t.Fatal("the blink outlasted its duration")
+	}
+	if _, command := model.Update(searchNudgeMsg(expired)); command != nil {
+		t.Fatal("the blink kept rescheduling after it ended")
+	}
+	if !model.searchNudge.IsZero() {
+		t.Fatal("the finished blink was not cleared")
+	}
+
+	// Clicking a real control acts on it instead of flashing.
+	_, _ = model.handleMouseMsg(press)
+	_ = clickRenderedText(t, model, "[Esc] done")
+	if model.mode != ModeNormal {
+		t.Fatalf("clicking the exit control did not close the editor: %v", model.mode)
+	}
+	if model.searchNudgeActive() {
+		t.Fatal("leaving the editor left the flash behind")
+	}
+}
+
 func TestSearchInvalidQueryKeepsLastAppliedPattern(t *testing.T) {
 	model := newFilteredSearchModel(t)
 	defer model.Shutdown()

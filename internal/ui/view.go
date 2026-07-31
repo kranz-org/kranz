@@ -140,6 +140,11 @@ func (m *Model) logColumnLayout(height int) (pinnedHeight, currentHeight int) {
 }
 
 func (m *Model) panelStyle(focus panelFocus) lipgloss.Style {
+	// A rejected click while searching flashes the panel the filter applies to,
+	// which is the one holding the user's attention.
+	if m.panelFocus == focus && m.searchNudgeActive() {
+		return NudgedPanelStyle
+	}
 	if m.panelFocus == focus {
 		return FocusedPanelStyle
 	}
