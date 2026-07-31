@@ -4,6 +4,35 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### Added
+
+- Full line editing in the regex log search, with caret movement, `Home`/`End`, `Ctrl+W` word deletion, `Ctrl+U` erase to the caret, and `Ctrl+V` paste.
+- Horizontal scrolling in the search editor so a pattern wider than the bar stays visible under the caret.
+- `Esc` in the dashboard to clear an active log filter, separating leaving the search from resetting the filter.
+- A blink on the filtered log panel when a click lands outside the open search editor.
+- A pinned golangci-lint configuration and a CI lint job.
+
+### Changed
+
+- `Enter` in the regex log search now applies the query without closing the editor, so a pattern can be refined in place.
+- `Esc` in the regex log search now closes the editor and keeps the applied filter, discarding edits made since the last `Enter`.
+- `Tab` now jumps to the first match when switching to highlight mode over an applied pattern.
+- Opening the search now focuses the log panel being filtered, from both the keyboard and the footer control.
+- `make lint` now runs a pinned golangci-lint through `go run` and no longer requires a local install.
+- Race-detector tests now run on macOS as well as Linux in CI.
+
+### Removed
+
+- An unreachable start-all code path in the UI layer that was never bound to a key.
+
+### Fixed
+
+- Follow-up messages from the search editor are now forwarded to it, so clipboard paste and the caret blink work.
+- A `//nolint` directive in the terminal background probe that used an unsupported separator and therefore suppressed nothing.
+- Deprecated `lipgloss.Style.Copy` calls.
+- A configuration test that wrote into the tracked `testdata` directory and left process environment changes behind.
+- Log searcher tests that ignored the error from setting their pattern, so a broken pattern would have made them assert nothing.
+
 ## [0.3.0] - 2026-07-27
 
 ### Added
