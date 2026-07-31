@@ -8,7 +8,7 @@ workflow; no release commit or generated binary is checked into the repository.
 
 1. Confirm that the public `kranz-org/kranz` repository uses `main` as its
    default branch and contains only reviewed release-ready history.
-2. Make `main` the default branch. Require the `Go (ubuntu-latest)` and
+2. Make `main` the default branch. Require the `Lint`, `Go (ubuntu-latest)`, and
    `Go (macos-latest)` checks before merging, require pull requests, and prevent
    force pushes and branch deletion.
 3. Enable private vulnerability reporting, Dependabot security updates, secret
@@ -40,6 +40,7 @@ workflow; no release commit or generated binary is checked into the repository.
 
    ```bash
    make verify
+   make lint
    make release-check
    make snapshot
    ./dist/kranz_darwin_arm64_v8.0/kranz --version # choose the local platform build
