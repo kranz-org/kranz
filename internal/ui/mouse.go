@@ -70,7 +70,7 @@ func (m *Model) handleDashboardMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	if msg.Y == m.height-dashboardFooterRows {
 		if renderedTextHit(rendered, msg.X, msg.Y, "[/] regex") {
-			m.mode, m.searchQuery = ModeSearch, m.logSearcher.Pattern()
+			m.openSearchEditor()
 			return m, nil
 		}
 		return m.triggerAction(m.actionAt(msg.X))
@@ -244,7 +244,8 @@ func (m *Model) handleOverlayMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m.handleMouseKeyBindings(rendered, msg, []mouseKeyBinding{
 			{label: "[Tab]", key: "tab"},
 			{label: "[Enter] apply", key: "enter"},
-			{label: "[Esc] clear", key: "esc"},
+			{label: "[Esc] done", key: "esc"},
+			{label: "[Ctrl+U] erase", key: "ctrl+u"},
 		}, m.handleSearchKeys)
 	case ModeHelp:
 		if model, command, handled := m.handleMouseKeyBindingsHandled(rendered, msg, []mouseKeyBinding{
@@ -380,6 +381,8 @@ func keyMessage(name string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyEsc}
 	case "tab":
 		return tea.KeyMsg{Type: tea.KeyTab}
+	case "ctrl+u":
+		return tea.KeyMsg{Type: tea.KeyCtrlU}
 	default:
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(name)}
 	}

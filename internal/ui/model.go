@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/kranz-org/kranz/internal/config"
@@ -152,7 +153,8 @@ type Model struct {
 	portScanBusy  bool
 
 	logSearcher  *kranzlog.Searcher
-	searchQuery  string
+	searchInput  textinput.Model
+	searchNudge  time.Time
 	currentMatch int
 	searchMode   logSearchMode
 	pinnedLog    string
@@ -267,6 +269,7 @@ func NewModelWithOptions(cfg *config.Config, version string, options ModelOption
 		panelFocus:    panelServices,
 		listMode:      listServices,
 		logSearcher:   kranzlog.NewSearcher(),
+		searchInput:   newSearchInput(),
 		currentMatch:  -1,
 		searchMode:    searchFilter,
 		mode:          ModeNormal,
@@ -427,6 +430,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height, m.ready = msg.Width, msg.Height, true
+		m.syncSearchInputWidth()
 		return m, m.scanFocusedPorts(false)
 	case tea.FocusMsg:
 		// Some terminals (observed with Zed's integrated terminal) drop mouse
@@ -1350,7 +1354,15 @@ func (m *Model) toggleListMode() {
 func (m *Model) handleLogKey(msg tea.KeyMsg) bool {
 	switch {
 	case key.Matches(msg, m.keys.Search):
-		m.mode, m.searchQuery = ModeSearch, m.logSearcher.Pattern()
+		m.openSearchEditor()
+		return true
+	case key.Matches(msg, m.keys.ClearSearch):
+		// Esc is the second step out of search: the editor exit keeps the
+		// filter, and this drops it. Without a pattern the key stays inert.
+		if m.logSearcher == nil || !m.logSearcher.HasPattern() {
+			return false
+		}
+		m.clearSearch()
 		return true
 	case key.Matches(msg, m.keys.WrapLogs):
 		m.wrapLogs = !m.wrapLogs
@@ -1961,47 +1973,109 @@ func (m *Model) releaseExternalPort(portNumber, expectedPID int) tea.Cmd {
 	}
 }
 
+// applySearchQuery compiles the edited query and makes it the active pattern.
+// Enter is the only way to apply, and the editor stays open afterwards so a
+// pattern can be refined without reopening it. It reports whether the query
+// compiled.
+// newSearchInput builds the regex editor. Editing, cursor motion, and the
+// horizontal window that keeps the caret visible on a long pattern all come
+// from the component; Kranz only owns apply, cancel, and the mode toggle.
+func newSearchInput() textinput.Model {
+	input := textinput.New()
+	input.Prompt = ""
+	// A regex can legitimately be long, and the editor scrolls horizontally
+	// rather than truncating, so no character limit applies.
+	input.CharLimit = 0
+	return input
+}
+
+// syncSearchInputWidth refreshes the editor's visible window. The component
+// recomputes its horizontal scroll while handling a key, not while rendering,
+// so the width has to be current before input reaches it.
+func (m *Model) syncSearchInputWidth() {
+	_, _, editorWidth := m.searchBarLayout()
+	m.searchInput.Width = editorWidth
+}
+
+// openSearchEditor shows the editor seeded with the active pattern and focuses
+// the logs it filters, so match navigation works as soon as the editor closes.
+func (m *Model) openSearchEditor() {
+	m.mode = ModeSearch
+	m.searchNudge = time.Time{}
+	m.syncSearchInputWidth()
+	m.searchInput.SetValue(m.logSearcher.Pattern())
+	m.searchInput.CursorEnd()
+	m.searchInput.Focus()
+	if m.panelFocus != panelPinnedLogs {
+		m.panelFocus = panelLogs
+	}
+}
+
+func (m *Model) applySearchQuery() bool {
+	if err := m.logSearcher.SetPattern(m.searchInput.Value()); err != nil {
+		m.addNotification("search", err.Error(), config.LogError)
+		return false
+	}
+	m.currentMatch = -1
+	m.logOffset = 0
+	m.logAnchor = 0
+	m.followMode = true
+	m.logPaused = false
+	if m.searchMode == searchHighlight && m.logSearcher.HasPattern() {
+		if svc := m.FocusedService(); svc != nil {
+			m.currentMatch = m.logSearcher.FindNext(serviceLogLines(svc), -1)
+			m.focusLogMatch(m.currentMatch)
+		}
+	}
+	return true
+}
+
+// clearSearch drops the active pattern and restores unfiltered following.
+func (m *Model) clearSearch() {
+	m.currentMatch = -1
+	m.searchInput.SetValue("")
+	_ = m.logSearcher.SetPattern("")
+	m.followMode, m.logPaused, m.logOffset, m.logAnchor = true, false, 0, 0
+}
+
 func (m *Model) handleSearchKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// These three own the editor's lifecycle and must be claimed before the
+	// text input sees them; Tab in particular is a suggestion key upstream.
 	switch msg.String() {
 	case "esc":
-		m.mode, m.searchQuery, m.currentMatch = ModeNormal, "", -1
-		_ = m.logSearcher.SetPattern("")
-		m.followMode, m.logPaused, m.logOffset, m.logAnchor = true, false, 0, 0
+		// Esc cancels the edit rather than applying it, keeping Enter the only
+		// apply. Restoring the query to the active pattern means reopening the
+		// editor always shows the filter that is actually in effect.
+		m.searchInput.SetValue(m.logSearcher.Pattern())
+		m.searchInput.Blur()
+		m.searchNudge = time.Time{}
+		m.mode = ModeNormal
+		m.panelFocus = panelLogs
+		return m, nil
 	case "tab", "shift+tab":
 		if m.searchMode == searchFilter {
 			m.searchMode = searchHighlight
 		} else {
 			m.searchMode = searchFilter
 		}
-	case "enter":
-		if err := m.logSearcher.SetPattern(m.searchQuery); err != nil {
-			m.addNotification("search", err.Error(), config.LogError)
-			break
-		}
-		m.mode = ModeNormal
-		m.panelFocus = panelLogs
-		m.currentMatch = -1
-		m.logOffset = 0
-		m.logAnchor = 0
-		m.followMode = true
-		m.logPaused = false
+		m.syncSearchInputWidth()
+		// Switching to highlight over an already applied pattern should land on
+		// a match instead of waiting for the next apply.
 		if m.searchMode == searchHighlight && m.logSearcher.HasPattern() {
 			if svc := m.FocusedService(); svc != nil {
 				m.currentMatch = m.logSearcher.FindNext(serviceLogLines(svc), -1)
 				m.focusLogMatch(m.currentMatch)
 			}
 		}
-	case "backspace":
-		runes := []rune(m.searchQuery)
-		if len(runes) > 0 {
-			m.searchQuery = string(runes[:len(runes)-1])
-		}
-	default:
-		if len(msg.Runes) == 1 {
-			m.searchQuery += string(msg.Runes)
-		}
+		return m, nil
+	case "enter":
+		m.applySearchQuery()
+		return m, nil
 	}
-	return m, nil
+
+	var command tea.Cmd
+	m.searchInput, command = m.searchInput.Update(msg)
+	return m, command
 }
 
 // FocusedService returns the service selected by the list cursor.

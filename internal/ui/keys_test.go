@@ -38,9 +38,9 @@ func TestRussianLayoutWorksOutsideTextEntry(t *testing.T) {
 		t.Fatalf("Russian q did not close the overlay: mode %v", model.mode)
 	}
 
-	model.mode = ModeSearch
+	pressKey(model, '/')
 	pressKey(model, 'й')
-	if model.searchQuery != "й" {
-		t.Fatalf("search text was layout-normalized to %q", model.searchQuery)
+	if model.searchInput.Value() != "й" {
+		t.Fatalf("search text was layout-normalized to %q", model.searchInput.Value())
 	}
 }

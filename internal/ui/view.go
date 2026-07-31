@@ -336,13 +336,37 @@ func (m *Model) serviceCounts() (running, pending, stopped int) {
 	return
 }
 
-// renderSearchView keeps the dashboard visible while editing a log expression.
-func (m *Model) renderSearchView() string {
+// searchEditorMinWidth is the narrowest regex editor worth showing before the
+// hint text is sacrificed to make room for it.
+const searchEditorMinWidth = 24
+
+// searchBarLayout splits the search bar into its label, its hint text, and the
+// width left over for the editor. The editor takes priority: seeing what you
+// are typing matters more than the reminders, so the hints shrink and then
+// disappear before the input is squeezed below a usable width.
+func (m *Model) searchBarLayout() (label, hints string, editorWidth int) {
 	mode, alternate := "FILTER", "Highlight"
 	if m.searchMode == searchHighlight {
 		mode, alternate = "HIGHLIGHT", "Filter"
 	}
-	searchBar := SearchInputStyle.Render(fmt.Sprintf(" Regex %s /%s_  [Tab] %s  [Enter] apply  [Esc] clear", mode, m.searchQuery, alternate))
+	label = fmt.Sprintf(" Regex %s /", mode)
+	remaining := func(hints string) int {
+		return m.width - lipgloss.Width(label) - lipgloss.Width(hints) - 1
+	}
+	hints = fmt.Sprintf("  [Enter] apply  [Esc] done  [Tab] %s  [Ctrl+U] erase", alternate)
+	if remaining(hints) < searchEditorMinWidth {
+		hints = "  [Enter] apply  [Esc] done"
+	}
+	if remaining(hints) < searchEditorMinWidth {
+		hints = ""
+	}
+	return label, hints, max(1, remaining(hints))
+}
+
+// renderSearchView keeps the dashboard visible while editing a log expression.
+func (m *Model) renderSearchView() string {
+	label, hints, _ := m.searchBarLayout()
+	searchBar := SearchInputStyle.Render(label + m.searchInput.View() + hints)
 	searchBar = ansi.Truncate(searchBar, m.width, "…")
 	if lipgloss.Width(searchBar) < m.width {
 		searchBar += strings.Repeat(" ", m.width-lipgloss.Width(searchBar))
@@ -394,7 +418,11 @@ func helpEntries() []helpEntry {
 		{"T", "Clear selected tags"},
 		{"h", "Health check history"},
 		{"n", "Notification center"},
-		{"/", "Regex filter; Tab switches to highlight"},
+		{"/", "Open the regex log search; Tab switches filter/highlight"},
+		{"Enter in search", "Apply the query and keep editing it"},
+		{"Ctrl+U in search", "Erase the query being edited"},
+		{"Esc in search", "Close the editor, keeping the last applied filter"},
+		{"Esc", "Clear the active log filter"},
 		{"n/N", "Next/previous highlighted match"},
 		{"w", "Toggle log line wrapping"},
 		{"i", "Show/hide captured-at time in logs"},
