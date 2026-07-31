@@ -63,6 +63,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "${GITHUB_REF_NAME}" .release/kranz.rb
 
+      - name: Publish release notes from changelog
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ./scripts/extract-release-notes.sh "${GITHUB_REF_NAME#v}" CHANGELOG.md > .release/release-notes.md
+          gh release edit "${GITHUB_REF_NAME}" --notes-file .release/release-notes.md
+
   homebrew:
     name: Update optional Homebrew tap
     needs: release

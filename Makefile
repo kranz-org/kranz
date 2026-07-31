@@ -1,4 +1,4 @@
-.PHONY: all build run install fmt-check test vet verify lint clean snapshot release-check homebrew-formula-check tag
+.PHONY: all build run install fmt-check test vet verify lint clean snapshot release-check homebrew-formula-check release-notes-check tag
 
 APP_NAME := kranz
 BIN_DIR := bin
@@ -34,7 +34,7 @@ test:
 vet:
 	$(GO) vet ./...
 
-verify: fmt-check vet test build homebrew-formula-check
+verify: fmt-check vet test build homebrew-formula-check release-notes-check
 
 lint:
 	$(GOLANGCI_LINT) run ./...
@@ -44,6 +44,9 @@ release-check:
 
 homebrew-formula-check:
 	./scripts/test-generate-homebrew-formula.sh
+
+release-notes-check:
+	./scripts/test-extract-release-notes.sh
 
 snapshot:
 	$(GORELEASER) release --snapshot --clean

@@ -57,7 +57,9 @@ workflow; no release commit or generated binary is checked into the repository.
 ## Verify the published release
 
 The workflow must publish four Darwin/Linux archives, `checksums.txt`, and
-`kranz.rb`. Verify the release before announcing it:
+`kranz.rb`. It replaces generated commit notes with the matching version section
+from `CHANGELOG.md`, so squash merges cannot produce an empty release body.
+Verify the release before announcing it:
 
 ```bash
 gh release view v0.4.0
