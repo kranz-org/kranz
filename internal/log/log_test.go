@@ -119,7 +119,9 @@ func TestSearchSetPattern(t *testing.T) {
 
 func TestSearch(t *testing.T) {
 	s := NewSearcher()
-	s.SetPattern("(?i)error")
+	if err := s.SetPattern("(?i)error"); err != nil {
+		t.Fatalf("set pattern: %v", err)
+	}
 
 	lines := []string{
 		"INFO: Starting server",
@@ -139,7 +141,9 @@ func TestSearch(t *testing.T) {
 
 func TestSearchFindNext(t *testing.T) {
 	s := NewSearcher()
-	s.SetPattern("(?i)error")
+	if err := s.SetPattern("(?i)error"); err != nil {
+		t.Fatalf("set pattern: %v", err)
+	}
 
 	lines := []string{
 		"INFO: Starting server",     // 0
@@ -161,7 +165,9 @@ func TestSearchFindNext(t *testing.T) {
 
 func TestSearchFindPrev(t *testing.T) {
 	s := NewSearcher()
-	s.SetPattern("(?i)error")
+	if err := s.SetPattern("(?i)error"); err != nil {
+		t.Fatalf("set pattern: %v", err)
+	}
 
 	lines := []string{
 		"INFO: Starting server",     // 0

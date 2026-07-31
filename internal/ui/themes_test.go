@@ -10,8 +10,20 @@ import (
 	"github.com/muesli/termenv"
 )
 
+// restoreDefaultTheme reverts the package-level theme state once the test ends.
+// Applying a built-in theme cannot fail, so a failure means the theme registry
+// itself is broken and the test should say so rather than continue silently.
+func restoreDefaultTheme(t *testing.T) {
+	t.Helper()
+	t.Cleanup(func() {
+		if _, err := ApplyTheme(DefaultTheme, ""); err != nil {
+			t.Errorf("restore default theme: %v", err)
+		}
+	})
+}
+
 func TestEveryThemeCanBeApplied(t *testing.T) {
-	defer ApplyTheme(DefaultTheme, "")
+	restoreDefaultTheme(t)
 	if len(ThemeNames()) < 16 {
 		t.Fatalf("theme count = %d, want at least 16", len(ThemeNames()))
 	}
@@ -53,7 +65,7 @@ func TestEveryThemeCanBeApplied(t *testing.T) {
 }
 
 func TestHighContrastThemeUsesMaximumCanvasContrast(t *testing.T) {
-	defer ApplyTheme(DefaultTheme, "")
+	restoreDefaultTheme(t)
 	theme, err := ApplyTheme("high-contrast", "")
 	if err != nil {
 		t.Fatal(err)
@@ -82,7 +94,7 @@ func TestLightThemesProvideExplicitReadableSurfaces(t *testing.T) {
 }
 
 func TestThemeAdaptsToDetectedTerminalBackground(t *testing.T) {
-	defer ApplyTheme(DefaultTheme, "")
+	restoreDefaultTheme(t)
 	light, err := ApplyThemeForBackground("forest", "#2AB630", false)
 	if err != nil {
 		t.Fatal(err)
@@ -116,7 +128,7 @@ func TestThemeAdaptsToDetectedTerminalBackground(t *testing.T) {
 }
 
 func TestThemeVariantsCanPaintLightAndDarkCanvases(t *testing.T) {
-	defer ApplyTheme(DefaultTheme, "")
+	restoreDefaultTheme(t)
 	for _, name := range ThemeNames() {
 		dark, err := ApplyThemeVariant(name, "", true, false)
 		if err != nil {
@@ -178,7 +190,7 @@ func mustParseColor(t *testing.T, value string) [3]float64 {
 }
 
 func TestAccentOverridesThemeAccent(t *testing.T) {
-	defer ApplyTheme(DefaultTheme, "")
+	restoreDefaultTheme(t)
 	theme, err := ApplyTheme("nord", "#ff00aa")
 	if err != nil {
 		t.Fatal(err)
@@ -192,7 +204,7 @@ func TestAccentOverridesThemeAccent(t *testing.T) {
 }
 
 func TestThemeStylesPanelTitlesAsSurfaceLabels(t *testing.T) {
-	defer ApplyTheme(DefaultTheme, "")
+	restoreDefaultTheme(t)
 	theme, err := ApplyTheme("nord", "")
 	if err != nil {
 		t.Fatal(err)
@@ -218,7 +230,7 @@ func TestPanelTitlesFillWidthAndRestoreSurfaceAfterNestedStyles(t *testing.T) {
 	previousProfile := lipgloss.ColorProfile()
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	defer lipgloss.SetColorProfile(previousProfile)
-	defer ApplyTheme(DefaultTheme, "")
+	restoreDefaultTheme(t)
 	if _, err := ApplyTheme("nord", ""); err != nil {
 		t.Fatal(err)
 	}
@@ -248,7 +260,7 @@ func TestPanelTitlesFillWidthAndRestoreSurfaceAfterNestedStyles(t *testing.T) {
 }
 
 func TestThemeAppliesCanvasAndPanelBackgrounds(t *testing.T) {
-	defer ApplyTheme(DefaultTheme, "")
+	restoreDefaultTheme(t)
 	theme, err := ApplyTheme("github-light", "")
 	if err != nil {
 		t.Fatal(err)
@@ -274,7 +286,7 @@ func TestThemeAppliesCanvasAndPanelBackgrounds(t *testing.T) {
 }
 
 func TestStoppedServicesUseDedicatedGrey(t *testing.T) {
-	defer ApplyTheme(DefaultTheme, "")
+	restoreDefaultTheme(t)
 	if _, err := ApplyTheme("github-light", ""); err != nil {
 		t.Fatal(err)
 	}
@@ -293,7 +305,7 @@ func TestSelectedRowsRestoreTheirOwnBackgroundAfterNestedStyles(t *testing.T) {
 	previousProfile := lipgloss.ColorProfile()
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	defer lipgloss.SetColorProfile(previousProfile)
-	defer ApplyTheme(DefaultTheme, "")
+	restoreDefaultTheme(t)
 	if _, err := ApplyTheme("forest", "#2AB630"); err != nil {
 		t.Fatal(err)
 	}
@@ -322,7 +334,7 @@ func TestLogRenderingUsesSeparateTimestampAndSourceRoles(t *testing.T) {
 	previousProfile := lipgloss.ColorProfile()
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	defer lipgloss.SetColorProfile(previousProfile)
-	defer ApplyTheme(DefaultTheme, "")
+	restoreDefaultTheme(t)
 	theme, err := ApplyTheme("forest", "#2AB630")
 	if err != nil {
 		t.Fatal(err)

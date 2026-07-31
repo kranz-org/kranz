@@ -108,14 +108,13 @@ func TestLoadFilesMergesUIColorModeFromLastLayer(t *testing.T) {
 }
 
 func TestLoadEnvSubstitution(t *testing.T) {
-	os.Setenv("TEST_VAR", "test_value")
-	defer os.Unsetenv("TEST_VAR")
+	t.Setenv("TEST_VAR", "test_value")
 
-	// Create a temporary config.
-	tmpFile := "../../testdata/test_env.yaml"
+	tmpFile := filepath.Join(t.TempDir(), "kranz.yaml")
 	content := "project: Test\nversion: \"1.0\"\nservices:\n  test:\n    command: echo ${TEST_VAR}\n"
-	os.WriteFile(tmpFile, []byte(content), 0644)
-	defer os.Remove(tmpFile)
+	if err := os.WriteFile(tmpFile, []byte(content), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
 
 	cfg, err := Load(tmpFile)
 	if err != nil {

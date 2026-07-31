@@ -78,7 +78,7 @@ func TestKranzPortHelper(t *testing.T) {
 	if err != nil {
 		os.Exit(3)
 	}
-	defer listener.Close()
+	defer listener.Close() //nolint:errcheck // releasing a probe listener during cleanup.
 	for {
 		connection, acceptErr := listener.Accept()
 		if acceptErr != nil {
