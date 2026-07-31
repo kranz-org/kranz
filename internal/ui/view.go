@@ -426,6 +426,7 @@ func helpEntries() []helpEntry {
 		{"/", "Open the regex log search; Tab switches filter/highlight"},
 		{"Enter in search", "Apply the query and keep editing it"},
 		{"Ctrl+U in search", "Erase the query being edited"},
+		{"Ctrl+V in search", "Paste clipboard text at the caret"},
 		{"Esc in search", "Close the editor, keeping the last applied filter"},
 		{"Esc", "Clear the active log filter"},
 		{"n/N", "Next/previous highlighted match"},

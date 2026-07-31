@@ -387,6 +387,7 @@ content and modal lists. Keyboard shortcuts remain the fastest path.
 | `←` / `→`, `Home`, `End` in search | Move the caret inside the query |
 | `Ctrl+W` in search | Delete the word before the caret |
 | `Ctrl+U` in search | Erase the query up to the caret |
+| `Ctrl+V` in search | Paste clipboard text at the caret |
 | `Esc` in search | Close the editor, discarding unapplied edits |
 | `Esc` | Clear the active log filter |
 | `n` / `Shift+N` | Jump to the next/previous match, in highlight mode with logs focused |
@@ -494,9 +495,10 @@ following. `Ctrl+U` erases the query inside the editor without touching the
 active filter until the next `Enter`.
 
 The query is a full line editor: arrows, `Home`/`End`, and `Ctrl+W` move and
-delete by character or word, and pasted text is accepted, so an alternation such
-as `^(GET|PATCH)` can be anchored without retyping it. A pattern wider than the
-bar scrolls horizontally under the caret rather than being cut off.
+delete by character or word, and `Ctrl+V` pastes clipboard text at the caret, so
+an alternation such as `^(GET|PATCH)` can be anchored without retyping it. A
+pattern wider than the bar scrolls horizontally under the caret rather than
+being cut off.
 
 The editor is modal, because leaving it has to mean either apply or discard and
 a click says neither. Clicking outside it therefore does not move focus; the
