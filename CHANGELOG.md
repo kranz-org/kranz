@@ -2,8 +2,6 @@
 
 All notable changes to Kranz are documented here. The project follows [Semantic Versioning](https://semver.org/), and release notes are generated from conventional commit subjects.
 
-## [Unreleased]
-
 ## [0.4.0] - 2026-08-01
 
 ### Added
@@ -93,7 +91,6 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 - Explicit global-user and project-config save destinations in the live theme picker.
 - Native compatibility for common Process Compose configurations.
 
-[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.4.0...HEAD
 [0.4.0]: https://github.com/kranz-org/kranz/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/kranz-org/kranz/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/kranz-org/kranz/compare/v0.1.1...v0.2.0
