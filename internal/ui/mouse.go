@@ -70,8 +70,7 @@ func (m *Model) handleDashboardMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	if msg.Y == m.height-dashboardFooterRows {
 		if renderedTextHit(rendered, msg.X, msg.Y, "[/] regex") {
-			m.openSearchEditor()
-			return m, nil
+			return m, m.openSearchEditor()
 		}
 		return m.triggerAction(m.actionAt(msg.X))
 	}

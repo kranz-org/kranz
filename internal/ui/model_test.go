@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -1877,6 +1878,25 @@ func TestSearchEnterKeepsEditorOpenForRefinement(t *testing.T) {
 	}
 	if model.mode != ModeSearch {
 		t.Fatalf("mode after refinement = %v, want ModeSearch", model.mode)
+	}
+}
+
+func TestSearchForwardsTextInputCommandsAndMessages(t *testing.T) {
+	model := newTestModel()
+	defer model.Shutdown()
+	model.width, model.height, model.ready = 80, 24, true
+
+	_, focusCommand := model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	if focusCommand == nil {
+		t.Fatal("opening the search editor discarded the text input focus command")
+	}
+
+	// Clipboard paste results and cursor blink events are private textinput
+	// messages delivered through the same parent update path. The exported
+	// initial blink message verifies that path without touching the clipboard.
+	_, blinkCommand := model.Update(textinput.Blink())
+	if blinkCommand == nil {
+		t.Fatal("the parent update loop did not forward a text input message")
 	}
 }
 

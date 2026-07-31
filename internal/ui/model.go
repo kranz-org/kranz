@@ -437,7 +437,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// tracking mode when a tab loses and regains focus, since it is only
 		// ever enabled once at startup. Re-assert it defensively on every
 		// focus-in so clicks keep working after switching tabs and back.
-		return m, tea.Batch(tea.EnableMouseCellMotion, m.probeTerminalBackground(false))
+		var searchCommand tea.Cmd
+		if m.mode == ModeSearch {
+			m.searchInput, searchCommand = m.searchInput.Update(msg)
+		}
+		return m, tea.Batch(tea.EnableMouseCellMotion, m.probeTerminalBackground(false), searchCommand)
 	case tea.KeyMsg:
 		return m.handleKeyMsg(msg)
 	case tea.MouseMsg:
@@ -523,6 +527,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case configReloadMsg:
 		return m.handleConfigReload(msg)
 	default:
+		// textinput emits private follow-up messages for clipboard paste and
+		// cursor blinking. Feed them back to the component while the editor is
+		// open instead of dropping them at the application boundary.
+		if m.mode == ModeSearch {
+			var command tea.Cmd
+			m.searchInput, command = m.searchInput.Update(msg)
+			return m, command
+		}
 		return m, nil
 	}
 }
@@ -785,6 +797,9 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.handleViewKey(msg) {
 		return m, nil
+	}
+	if key.Matches(msg, m.keys.Search) {
+		return m, m.openSearchEditor()
 	}
 	if m.handleLogKey(msg) {
 		return m, nil
@@ -1363,9 +1378,6 @@ func (m *Model) toggleListMode() {
 
 func (m *Model) handleLogKey(msg tea.KeyMsg) bool {
 	switch {
-	case key.Matches(msg, m.keys.Search):
-		m.openSearchEditor()
-		return true
 	case key.Matches(msg, m.keys.ClearSearch):
 		// Esc is the second step out of search: the editor exit keeps the
 		// filter, and this drops it. Without a pattern the key stays inert.
@@ -2052,16 +2064,17 @@ func (m *Model) syncSearchInputWidth() {
 
 // openSearchEditor shows the editor seeded with the active pattern and focuses
 // the logs it filters, so match navigation works as soon as the editor closes.
-func (m *Model) openSearchEditor() {
+func (m *Model) openSearchEditor() tea.Cmd {
 	m.mode = ModeSearch
 	m.searchNudge = time.Time{}
 	m.syncSearchInputWidth()
 	m.searchInput.SetValue(m.logSearcher.Pattern())
 	m.searchInput.CursorEnd()
-	m.searchInput.Focus()
+	command := m.searchInput.Focus()
 	if m.panelFocus != panelPinnedLogs {
 		m.panelFocus = panelLogs
 	}
+	return command
 }
 
 func (m *Model) applySearchQuery() bool {
