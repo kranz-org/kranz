@@ -381,7 +381,14 @@ content and modal lists. Keyboard shortcuts remain the fastest path.
 
 | Key | Action |
 |---|---|
-| `/` | Regex-filter focused logs; press `Tab` in the editor for highlight mode |
+| `/` | Open the regex search over the focused logs |
+| `Enter` in search | Apply the query and keep the editor open to refine it |
+| `Tab` in search | Switch between filter and highlight mode |
+| `←` / `→`, `Home`, `End` in search | Move the caret inside the query |
+| `Ctrl+W` in search | Delete the word before the caret |
+| `Ctrl+U` in search | Erase the query up to the caret |
+| `Esc` in search | Close the editor, discarding unapplied edits |
+| `Esc` | Clear the active log filter |
 | `n` / `Shift+N` | Jump to the next/previous match, in highlight mode with logs focused |
 | `w` | Toggle wrapping for long log lines |
 | `i` | Show or hide the time each log line was captured |
@@ -473,6 +480,28 @@ Two modes are available:
   matching output.
 - **Highlight**, selected with `Tab` in the regex editor, keeps every row visible
   and supports `n` / `Shift+N` navigation.
+
+`/` opens the editor prefilled with the active pattern. `Enter` is the only way
+to apply a query, and it leaves the editor open, so a pattern can be narrowed in
+place instead of reopening the editor for each attempt. A query that does not
+compile is reported in the notification center and leaves the previous pattern
+untouched.
+
+`Esc` closes the editor and discards anything typed since the last `Enter`,
+rewinding the query to the pattern that is actually in effect. The filter itself
+keeps running. A second `Esc` in the dashboard drops it and resumes unfiltered
+following. `Ctrl+U` erases the query inside the editor without touching the
+active filter until the next `Enter`.
+
+The query is a full line editor: arrows, `Home`/`End`, and `Ctrl+W` move and
+delete by character or word, and pasted text is accepted, so an alternation such
+as `^(GET|PATCH)` can be anchored without retyping it. A pattern wider than the
+bar scrolls horizontally under the caret rather than being cut off.
+
+The editor is modal, because leaving it has to mean either apply or discard and
+a click says neither. Clicking outside it therefore does not move focus; the
+panel being filtered blinks instead, so the click is answered rather than
+ignored. The search bar controls stay clickable.
 
 Optional timestamps are capture metadata and never become part of the searchable
 text.
