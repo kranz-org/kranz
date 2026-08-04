@@ -1,0 +1,26 @@
+project: Runtime Port Discovery
+
+defaults:
+  shell: /bin/sh
+
+services:
+  detected-only:
+    description: No hint; Details learns 18301 from the running process.
+    command: python3 -u -m http.server 18301 --bind 127.0.0.1
+
+  declared-and-listening:
+    description: The configured hint and actual listener appear once.
+    command: python3 -u -m http.server 18302 --bind 127.0.0.1
+    ports: [18302]
+    detect_ports: true
+
+  different-runtime-port:
+    description: A stale hint remains distinct from the actual listener.
+    command: python3 -u -m http.server 18303 --bind 127.0.0.1
+    ports: [18399]
+    detect_ports: true
+
+  detection-disabled:
+    description: Explicit opt-out keeps runtime inspection disabled.
+    command: while true; do sleep 10; done
+    detect_ports: false

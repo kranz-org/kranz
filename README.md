@@ -60,37 +60,24 @@ go install github.com/kranz-org/kranz/cmd/kranz@latest
 Prebuilt archives and build-from-source instructions are under
 [Install](#install).
 
-Create `kranz.yaml`. The example below uses Python 3 as a stand-in web service:
+Create a `Procfile`. This example uses Python 3 as a stand-in web service and
+needs no Kranz-specific configuration:
 
-```yaml
-project: demo
-
-services:
-  web:
-    command: python3 -m http.server 8000
-    ports: [8000]
-    healthcheck:
-      readiness:
-        type: http
-        url: http://127.0.0.1:8000
-
-  worker:
-    command: sh -c 'while true; do date; sleep 2; done'
-    depends_on: [web]
-    dependency_conditions:
-      web:
-        condition: process_healthy
+```procfile
+web: python3 -u -m http.server 8000 --bind 127.0.0.1
+worker: while true; do date; sleep 2; done
 ```
 
-Run `kranz`, then press `a` followed by `s` to start both services. The worker
-will wait until the web service is ready.
+Run `kranz`, then press `a` followed by `s` to start both services. Open the
+`web` Details panel to see its actual listening port. Kranz discovers the port
+at runtime even though Procfile has no port syntax.
 
 Already using Process Compose? Run `kranz` in a directory containing a
 supported `process-compose.yaml`; no separate Kranz configuration is required.
 
-Already have a `Procfile` or `Procfile.dev`? Kranz loads each `<name>: <command>`
-entry as a service, runs it from the Procfile directory, and reads the adjacent
-`.env`; no generated `kranz.yaml` is needed.
+Use native `kranz.yaml` when you want dependencies, health checks, recovery,
+tags, or explicit lifecycle controls. Runnable Procfile, native YAML, Process
+Compose, and port-discovery projects live in [`examples/`](examples/).
 
 ## Features
 
@@ -364,8 +351,8 @@ a dark terminal. Canvas and panel surfaces always share one base instead of
 producing a gray-outside/white-inside split.
 
 Open the live theme picker with `Ctrl+T`. Arrow navigation previews a selected
-theme, and the summary always shows exactly what will be saved. Four independent
-toggles are available:
+theme, and the summary always shows exactly what will be applied or saved. Four
+independent toggles are available:
 
 | Key | Toggles |
 |---|---|
@@ -374,9 +361,12 @@ toggles are available:
 | `b` | Terminal / theme background ownership |
 | `m` | Auto / Dark / Light |
 
-The picker saves to one of two destinations, and shows both paths:
+The picker can apply the preview temporarily or save it to one of two
+destinations; both persistent paths are shown:
 
-- **`Enter` — personal user override.** Written atomically with user-only
+- **`Enter` — current session.** Applies the preview until Kranz exits without
+  writing a file.
+- **`g` — personal user override.** Written atomically with user-only
   permissions to the platform configuration directory:
   `~/Library/Application Support/kranz/settings.yaml` on macOS, typically
   `~/.config/kranz/settings.yaml` on Linux.
@@ -604,9 +594,10 @@ The Details panel below the compact service list reports:
 - Shutdown behavior, environment files, working directory, command, and PID
 
 Configured-port inspection includes protocol, bind address, and process owner
-when the operating system exposes them. Runtime listeners are labeled
-`detected`, independently of whether a port was declared. Focus panel `2` and
-use arrows to scroll when the content exceeds the available height.
+when the operating system exposes them. A runtime-only listener is labeled
+`detected`; a declared port confirmed at runtime appears once as
+`declared · listening`. Focus panel `2` and use arrows to scroll when the
+content exceeds the available height.
 
 ### Logs and search
 

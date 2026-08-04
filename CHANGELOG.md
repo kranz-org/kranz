@@ -2,6 +2,26 @@
 
 All notable changes to Kranz are documented here. The project follows [Semantic Versioning](https://semver.org/), and release notes are generated from conventional commit subjects.
 
+## [0.5.0] - 2026-08-04
+
+### Added
+
+- Native zero-configuration loading for `Procfile` and `Procfile.dev`, including strict parsing, adjacent `.env` loading, configuration watching, and commands that run from the Procfile directory.
+- Runtime discovery of TCP listeners opened by a service or its child processes on macOS and Linux, with distinct declared and detected port roles in Details.
+- Dynamic TCP and HTTP health targets that can follow a single detected listener or select one from a sorted multi-port service.
+- Runnable Procfile, native Kranz YAML, Process Compose, and runtime-port examples in the repository.
+
+### Changed
+
+- Configuration auto-discovery now falls back to `Procfile.dev` and then `Procfile` after native Kranz and Process Compose files.
+- Dashboard panel titles now sit within their borders, preserving more room for service details and logs while making focus clearer.
+- The theme picker now separates temporary apply, global save, and project save actions, with clearer shortcuts and layout.
+
+### Fixed
+
+- Linux listener smoke coverage now verifies that its real test socket is released after inspection.
+- Release automation now publishes the matching version section from this changelog as the GitHub Release body.
+
 ## [0.4.0] - 2026-08-01
 
 ### Added
@@ -91,6 +111,7 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 - Explicit global-user and project-config save destinations in the live theme picker.
 - Native compatibility for common Process Compose configurations.
 
+[0.5.0]: https://github.com/kranz-org/kranz/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/kranz-org/kranz/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/kranz-org/kranz/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/kranz-org/kranz/compare/v0.1.1...v0.2.0

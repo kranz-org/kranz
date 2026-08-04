@@ -1,0 +1,24 @@
+version: "0.5"
+name: Example Process Compose Stack
+
+processes:
+  api:
+    description: A Process Compose-compatible HTTP service.
+    command: python3 -u -m http.server 18211 --bind 127.0.0.1
+    namespace: backend
+    readiness_probe:
+      http_get:
+        host: 127.0.0.1
+        scheme: http
+        path: /
+        port: 18211
+      period_seconds: 1
+      timeout_seconds: 1
+
+  worker:
+    description: Starts after the imported readiness probe succeeds.
+    command: while true; do echo "processed compatible job"; sleep 3; done
+    namespace: worker
+    depends_on:
+      api:
+        condition: process_healthy

@@ -1,0 +1,3 @@
+clock: while true; do date; sleep 2; done
+environment: while true; do echo "MESSAGE=${MESSAGE:-hello from Procfile}"; sleep 5; done
+web: python3 -u -m http.server ${PORT:-8123} --bind 127.0.0.1

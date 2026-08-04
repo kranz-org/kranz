@@ -1,14 +1,136 @@
 package service
 
 import (
+	"context"
+	"fmt"
+	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/kranz-org/kranz/internal/config"
+	"github.com/kranz-org/kranz/internal/port"
 )
+
+type procfilePortScanner struct {
+	manager *Manager
+	ports   []int
+}
+
+func (s procfilePortScanner) Snapshot(context.Context) ([]port.Listener, error) {
+	web, ok := s.manager.GetService("web")
+	if !ok || web.PID() == 0 {
+		return nil, nil
+	}
+	listeners := make([]port.Listener, 0, len(s.ports))
+	for _, portNumber := range s.ports {
+		connection, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", portNumber), 20*time.Millisecond)
+		if err != nil {
+			continue
+		}
+		_ = connection.Close()
+		listeners = append(listeners, port.Listener{Protocol: "tcp", Port: portNumber, PID: web.PID()})
+	}
+	return listeners, nil
+}
+
+func TestProcfileReleaseScenario(t *testing.T) {
+	directory := t.TempDir()
+	procfilePath := filepath.Join(directory, "Procfile")
+	dotenvPath := filepath.Join(directory, ".env")
+	restartMarker := filepath.Join(directory, "restarted")
+	reloadMarker := filepath.Join(directory, "worker-reloaded")
+	firstPort := reservePort(t)
+	secondPort := reservePort(t)
+	for secondPort == firstPort {
+		secondPort = reservePort(t)
+	}
+
+	webCommand := fmt.Sprintf(
+		"if [ -f %s ]; then exec %s -test.run=^TestKranzPortHelper$ -- %d; else : > %s; exec %s -test.run=^TestKranzPortHelper$ -- %d; fi",
+		shellQuote(restartMarker), shellQuote(os.Args[0]), secondPort,
+		shellQuote(restartMarker), shellQuote(os.Args[0]), firstPort,
+	)
+	originalProcfile := []byte("web: " + webCommand + "\nworker: while true; do sleep 1; done\n")
+	originalDotenv := []byte("KRANZ_PORT_HELPER=1\n")
+	if err := os.WriteFile(procfilePath, originalProcfile, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dotenvPath, originalDotenv, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := config.Load(procfilePath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	manager := NewManager(cfg)
+	manager.SetListenerScanner(procfilePortScanner{manager: manager, ports: []int{firstPort, secondPort}})
+	manager.listenerScanInterval = 10 * time.Millisecond
+	t.Cleanup(func() { _ = manager.Shutdown() })
+
+	if err := manager.StartServices([]string{"web", "worker"}); err != nil {
+		t.Fatalf("StartServices() error = %v", err)
+	}
+	waitForPort(t, firstPort, true)
+	waitForCondition(t, func() bool {
+		web, _ := manager.GetService("web")
+		worker, _ := manager.GetService("worker")
+		return reflect.DeepEqual(web.DetectedPorts(), []int{firstPort}) && len(worker.DetectedPorts()) == 0
+	}, "Procfile web listener discovery without a worker false positive")
+	assertFileBytes(t, procfilePath, originalProcfile)
+	assertFileBytes(t, dotenvPath, originalDotenv)
+
+	if err := manager.RestartService("web"); err != nil {
+		t.Fatalf("RestartService() error = %v", err)
+	}
+	waitForPort(t, firstPort, false)
+	waitForPort(t, secondPort, true)
+	waitForCondition(t, func() bool {
+		web, _ := manager.GetService("web")
+		return reflect.DeepEqual(web.DetectedPorts(), []int{secondPort})
+	}, "restart to replace the stale detected port")
+	assertFileBytes(t, procfilePath, originalProcfile)
+	assertFileBytes(t, dotenvPath, originalDotenv)
+
+	updatedProcfile := []byte("web: " + webCommand + "\nworker: : > " + shellQuote(reloadMarker) + "; while true; do sleep 1; done\n")
+	if err := os.WriteFile(procfilePath, updatedProcfile, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	next, err := config.Load(procfilePath)
+	if err != nil {
+		t.Fatalf("Load(updated Procfile) error = %v", err)
+	}
+	result, err := manager.ApplyConfig(next)
+	if err != nil {
+		t.Fatalf("ApplyConfig() error = %v", err)
+	}
+	if !reflect.DeepEqual(result.Updated, []string{"worker"}) {
+		t.Fatalf("ApplyConfig() updated = %v, want [worker]", result.Updated)
+	}
+	_ = waitForTestFile(t, reloadMarker)
+	assertFileBytes(t, procfilePath, updatedProcfile)
+	assertFileBytes(t, dotenvPath, originalDotenv)
+
+	if err := manager.Shutdown(); err != nil {
+		t.Fatalf("Shutdown() error = %v", err)
+	}
+	waitForPort(t, secondPort, false)
+}
+
+func assertFileBytes(t *testing.T, path string, want []byte) {
+	t.Helper()
+	actual, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(actual, want) {
+		t.Fatalf("%s changed unexpectedly\ngot:  %q\nwant: %q", path, actual, want)
+	}
+}
 
 func TestProcfileCommandRunsInProcfileDirectory(t *testing.T) {
 	directory := t.TempDir()
