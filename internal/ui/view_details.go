@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -160,7 +161,8 @@ func (m *Model) serviceDetailLines(svc *service.Service, contentWidth int) []str
 		}
 		lines = append(lines, detailFieldLines("START", StartingBadgeStyle.Render(reason), contentWidth)...)
 	}
-	lines = append(lines, pidDirectoryDetailLines(svc.PID(), svc.Config.Dir, contentWidth)...)
+	directory := displayServiceDirectory(svc.Config.Dir, m.workingDirectory)
+	lines = append(lines, pidDirectoryDetailLines(svc.PID(), directory, contentWidth)...)
 	lines = append(lines, runtimeDetailLines(svc, contentWidth)...)
 	if svc.Config.Description != "" {
 		lines = append(lines, detailFieldLines("ABOUT", svc.Config.Description, contentWidth)...)
@@ -520,6 +522,19 @@ func pidDirectoryDetailLines(pid int, directory string, contentWidth int) []stri
 	pidValue := strconv.Itoa(pid)
 	lines := []string{DetailLabelStyle.Render("PID") + " " + detailValue(pidValue)}
 	return append(lines, wrappedLabeledDetailLines("DIR", directory, contentWidth)...)
+}
+
+// displayServiceDirectory keeps project-local paths readable while preserving
+// absolute paths for services configured outside the directory Kranz runs in.
+func displayServiceDirectory(directory, workingDirectory string) string {
+	if directory == "" || workingDirectory == "" || !filepath.IsAbs(directory) {
+		return directory
+	}
+	relative, err := filepath.Rel(workingDirectory, directory)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return directory
+	}
+	return relative
 }
 
 func wrappedLabeledDetailLines(label, value string, contentWidth int) []string {

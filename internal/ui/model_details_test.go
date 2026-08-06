@@ -260,6 +260,26 @@ func TestPIDAndDirectoryUseSeparateLinesAndDirectoryWraps(t *testing.T) {
 	}
 }
 
+func TestDisplayServiceDirectoryUsesProjectRelativePaths(t *testing.T) {
+	workingDirectory := "/projects/kranz"
+	for _, test := range []struct {
+		name      string
+		directory string
+		want      string
+	}{
+		{name: "current", directory: "/projects/kranz", want: "."},
+		{name: "child", directory: "/projects/kranz/apps/api", want: "apps/api"},
+		{name: "external", directory: "/projects/shared/api", want: "/projects/shared/api"},
+		{name: "configured relative", directory: "apps/api", want: "apps/api"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := displayServiceDirectory(test.directory, workingDirectory); got != test.want {
+				t.Fatalf("displayServiceDirectory(%q, %q) = %q, want %q", test.directory, workingDirectory, got, test.want)
+			}
+		})
+	}
+}
+
 func TestServiceDetailBlocksRespectAvailableWidth(t *testing.T) {
 	model := newTestModel()
 	defer model.Shutdown()

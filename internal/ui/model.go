@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -120,8 +121,9 @@ type portDetailsMsg struct {
 
 // Model owns Kranz's Bubble Tea state and runtime service integrations.
 type Model struct {
-	cfg     *config.Config
-	version string
+	cfg              *config.Config
+	version          string
+	workingDirectory string
 
 	manager      *service.Manager
 	services     []*service.Service
@@ -245,6 +247,7 @@ func NewModel(cfg *config.Config, version string) *Model {
 
 // NewModelWithOptions creates a model with resolved project/user appearance.
 func NewModelWithOptions(cfg *config.Config, version string, options ModelOptions) *Model {
+	workingDirectory, _ := os.Getwd()
 	terminalDark := true
 	if options.DarkBackground != nil {
 		terminalDark = *options.DarkBackground
@@ -263,31 +266,32 @@ func NewModelWithOptions(cfg *config.Config, version string, options ModelOption
 	services := manager.Services()
 
 	model := &Model{
-		cfg:             cfg,
-		version:         version,
-		manager:         manager,
-		services:        services,
-		allServices:     services,
-		healthChecker:   healthChecker,
-		portChecker:     portChecker,
-		portDetails:     make(map[int]*config.PortInfo),
-		selected:        make(map[string]bool),
-		expandedTags:    make(map[string]bool),
-		panelFocus:      panelServices,
-		listMode:        listServices,
-		logSearcher:     kranzlog.NewSearcher(),
-		searchInput:     newSearchInput(),
-		themeColorInput: newThemeColorInput(),
-		currentMatch:    -1,
-		searchMode:      searchFilter,
-		mode:            ModeNormal,
-		followMode:      true,
-		pinnedFollow:    true,
-		keys:            DefaultKeyMap(),
-		userSettings:    options.Settings,
-		settingsPath:    options.SettingsPath,
-		activeTheme:     activeTheme,
-		terminalDark:    terminalDark,
+		cfg:              cfg,
+		version:          version,
+		workingDirectory: workingDirectory,
+		manager:          manager,
+		services:         services,
+		allServices:      services,
+		healthChecker:    healthChecker,
+		portChecker:      portChecker,
+		portDetails:      make(map[int]*config.PortInfo),
+		selected:         make(map[string]bool),
+		expandedTags:     make(map[string]bool),
+		panelFocus:       panelServices,
+		listMode:         listServices,
+		logSearcher:      kranzlog.NewSearcher(),
+		searchInput:      newSearchInput(),
+		themeColorInput:  newThemeColorInput(),
+		currentMatch:     -1,
+		searchMode:       searchFilter,
+		mode:             ModeNormal,
+		followMode:       true,
+		pinnedFollow:     true,
+		keys:             DefaultKeyMap(),
+		userSettings:     options.Settings,
+		settingsPath:     options.SettingsPath,
+		activeTheme:      activeTheme,
+		terminalDark:     terminalDark,
 		// The executable already performed the initial detection. Suppress the
 		// focus event emitted immediately after focus reporting is enabled.
 		lastBackgroundProbe: time.Now(),

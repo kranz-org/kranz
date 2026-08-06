@@ -104,6 +104,8 @@ Compose, and port-discovery projects live in [`examples/`](examples/).
   `process-compose.yaml` projects
 - **Procfile compatibility** for conservative `name: command` files, preserving
   service order and command text
+- **Live appearance editing** for theme, accent, canvas, and color mode, with
+  temporary apply, personal/project saves, and reload of the saved appearance
 
 Interface details — 19 themes, full mouse support, `Ctrl+O` shell handoff, and
 in-app notifications — are described under [Controls](#controls).

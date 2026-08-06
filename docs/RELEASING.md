@@ -49,9 +49,9 @@ workflow; generated binaries are never checked into the repository.
 4. Create an annotated tag without pushing it automatically:
 
    ```bash
-   make tag RELEASE_VERSION=0.5.0
-   git show v0.5.0
-   git push origin v0.5.0
+   make tag RELEASE_VERSION=0.6.0
+   git show v0.6.0
+   git push origin v0.6.0
    ```
 
 ## Verify the published release
@@ -62,8 +62,8 @@ from `CHANGELOG.md`, so squash merges cannot produce an empty release body.
 Verify the release before announcing it:
 
 ```bash
-gh release view v0.5.0
-gh release download v0.5.0 --pattern 'checksums.txt' --pattern '*.tar.gz'
+gh release view v0.6.0
+gh release download v0.6.0 --pattern 'checksums.txt' --pattern '*.tar.gz'
 shasum -a 256 -c checksums.txt
 ```
 

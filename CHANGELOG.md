@@ -2,6 +2,26 @@
 
 All notable changes to Kranz are documented here. The project follows [Semantic Versioning](https://semver.org/), and release notes are generated from conventional commit subjects.
 
+## [0.6.0] - 2026-08-06
+
+### Added
+
+- Live six-digit hex editors for custom accent and canvas colors in the theme picker, including keyboard editing, paste, mouse focus, immediate swatches, and preview updates.
+- Custom `#RRGGBB` canvas values in `ui.background`; Kranz derives the remaining palette and readable text set from the selected canvas.
+- A theme-picker action to reload the saved project and personal appearance without restarting Kranz.
+
+### Changed
+
+- Accent and canvas controls now cycle among the sources that actually exist, preserving custom colors after another source is previewed.
+- Theme previews now resolve the complete candidate appearance, including project, theme, and custom color sources, and modal styling is consistent across confirmations and editors.
+- Service Details are organized more clearly, project-local working directories are shown relative to the directory Kranz runs in, and stopped services with a dynamic health target show `[PORT]` instead of suggesting that listener detection is still running.
+
+### Fixed
+
+- Theme-picker state and layout remain stable while sources are edited, applied, saved, or reloaded.
+- Modal borders are painted on the modal surface instead of inheriting the canvas behind them.
+- User-entered accent colors are rendered verbatim rather than being silently shifted to meet an automatic contrast floor.
+
 ## [0.5.0] - 2026-08-04
 
 ### Added
@@ -111,6 +131,8 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 - Explicit global-user and project-config save destinations in the live theme picker.
 - Native compatibility for common Process Compose configurations.
 
+[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/kranz-org/kranz/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/kranz-org/kranz/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/kranz-org/kranz/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/kranz-org/kranz/compare/v0.2.0...v0.3.0
