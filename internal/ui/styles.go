@@ -48,6 +48,7 @@ var (
 	SearchHighlightStyle  lipgloss.Style
 	SearchInputStyle      lipgloss.Style
 	PanelTitleStyle       lipgloss.Style
+	FocusedTitleStyle     lipgloss.Style
 	DetailLabelStyle      lipgloss.Style
 	SelectionStyle        lipgloss.Style
 	ContextBarStyle       lipgloss.Style
@@ -67,8 +68,10 @@ func applyPalette(theme Theme) {
 	ColorYellow = lipgloss.Color(theme.Yellow)
 	ColorRed = lipgloss.Color(theme.Red)
 	ColorGrey = lipgloss.Color(theme.Text)
-	// Keep the configured accent intact for persistence, but render its
-	// contrast-corrected variant on borders and other foreground-only roles.
+	// Keep the configured accent intact for persistence and use AccentText in
+	// foreground-only roles such as borders. normalizeTheme decides what that
+	// is: an entered accent verbatim, a theme's own accent with a contrast
+	// floor.
 	ColorCyan = lipgloss.Color(theme.AccentText)
 	ColorAccentText = lipgloss.Color(theme.AccentText)
 	ColorInfo = lipgloss.Color(theme.Info)
@@ -94,7 +97,12 @@ func applyPalette(theme Theme) {
 	if !TerminalCanvas {
 		AppStyle = AppStyle.Background(ColorBackground)
 		HeaderStyle = HeaderStyle.Background(ColorBackground)
-		PanelStyle = PanelStyle.Background(ColorDarkBg)
+		// Border cells are painted only by BorderBackground; Background alone
+		// leaves them transparent and the canvas shows through. For panels that
+		// is invisible today because normalizeTheme keeps Surface equal to
+		// Background, but stating it keeps the panel one solid card if those
+		// ever diverge.
+		PanelStyle = PanelStyle.Background(ColorDarkBg).BorderBackground(ColorDarkBg)
 	}
 	FocusedPanelStyle = PanelStyle.BorderForeground(ColorCyan)
 	// Border colour only: a text attribute here would propagate to the whole
@@ -104,7 +112,7 @@ func applyPalette(theme Theme) {
 	ServiceStartingStyle = lipgloss.NewStyle().Foreground(ColorYellow)
 	ServiceUnhealthyStyle = lipgloss.NewStyle().Foreground(ColorRed)
 	ServiceNameStyle = lipgloss.NewStyle().Foreground(ColorGrey).Bold(true)
-	PortStyle = lipgloss.NewStyle().Foreground(ColorData)
+	PortStyle = lipgloss.NewStyle().Foreground(ColorInfo)
 	TagStyle = lipgloss.NewStyle().Foreground(ColorDim)
 	PortWarningStyle = lipgloss.NewStyle().Foreground(ColorRed).Bold(true)
 	LogErrorStyle = lipgloss.NewStyle().Foreground(ColorRed)
@@ -120,6 +128,11 @@ func applyPalette(theme Theme) {
 	SearchHighlightStyle = lipgloss.NewStyle().Background(ColorInfo).Foreground(lipgloss.Color(ensureContrast(theme.Surface, theme.Info, 4.5))).Bold(true)
 	SearchInputStyle = lipgloss.NewStyle().Foreground(ColorInfo)
 	PanelTitleStyle = lipgloss.NewStyle().Foreground(ColorGrey).Background(ColorSurfaceAlt).Bold(true)
+	focusedTitleBackground := focusedPanelTitleBackground(theme)
+	FocusedTitleStyle = lipgloss.NewStyle().
+		Foreground(lipgloss.Color(ensureContrast(theme.Text, focusedTitleBackground, 4.5))).
+		Background(lipgloss.Color(focusedTitleBackground)).
+		Bold(true)
 	DetailLabelStyle = lipgloss.NewStyle().Foreground(ColorDim).Bold(true)
 	SelectionStyle = lipgloss.NewStyle().Foreground(ColorSelectText).Background(ColorSelection).Bold(true)
 	ContextBarStyle = lipgloss.NewStyle().Foreground(ColorDim)
@@ -133,7 +146,18 @@ func applyPalette(theme Theme) {
 	StoppedBadgeStyle = lipgloss.NewStyle().Foreground(ColorStopped)
 	FailedBadgeStyle = lipgloss.NewStyle().Foreground(ColorRed).Bold(true)
 	if !TerminalCanvas {
-		ModalStyle = ModalStyle.Background(ColorSurfaceAlt)
+		// Modals and confirmations sit on SurfaceAlt, a colour the canvas does
+		// not share, so an unpainted border leaves a one-cell seam of canvas
+		// around every dialog.
+		ModalStyle = ModalStyle.Background(ColorSurfaceAlt).BorderBackground(ColorSurfaceAlt)
 		ModalTitleStyle = ModalTitleStyle.Background(ColorSurfaceAlt)
 	}
+}
+
+func focusedPanelTitleBackground(theme Theme) string {
+	blend := 0.16
+	if background, ok := parseHex(theme.Background); ok && relativeLuminance(background) > 0.45 {
+		blend = 0.10
+	}
+	return mixHex(theme.SurfaceAlt, theme.Accent, blend)
 }

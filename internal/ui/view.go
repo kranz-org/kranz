@@ -116,6 +116,13 @@ func (m *Model) panelStyle(focus panelFocus) lipgloss.Style {
 	return PanelStyle
 }
 
+func (m *Model) panelTitleStyle(focus panelFocus) lipgloss.Style {
+	if m.panelFocus == focus {
+		return FocusedTitleStyle
+	}
+	return PanelTitleStyle
+}
+
 func (m *Model) dashboardLeftWidth() int {
 	leftWidth := m.width * 36 / 100
 	if leftWidth < 32 {
@@ -130,7 +137,7 @@ func (m *Model) dashboardLeftWidth() int {
 // renderHeader renders project identity, service counts, and the help control.
 func (m *Model) renderHeader() string {
 	running, pending, stopped := m.serviceCounts()
-	left := HeaderStyle.Render(fmt.Sprintf(" KRANZ  /  %s", m.cfg.Project))
+	left := HeaderStyle.Render(fmt.Sprintf("KRANZ  /  %s", m.cfg.Project))
 	summary := RunningBadgeStyle.Render(fmt.Sprintf("%d active", running)) + "  " +
 		StartingBadgeStyle.Render(fmt.Sprintf("%d pending", pending)) + "  " +
 		StoppedBadgeStyle.Render(fmt.Sprintf("%d stopped", stopped))
@@ -318,7 +325,8 @@ func (m *Model) searchBarLayout() (label, hints string, editorWidth int) {
 // renderSearchView keeps the dashboard visible while editing a log expression.
 func (m *Model) renderSearchView() string {
 	label, hints, _ := m.searchBarLayout()
-	searchBar := SearchInputStyle.Render(label + m.searchInput.View() + hints)
+	contents := label + m.searchInput.View() + hints
+	searchBar := SearchInputStyle.Render(preserveStyleAfterReset(contents, SearchInputStyle))
 	searchBar = ansi.Truncate(searchBar, m.width, "…")
 	if lipgloss.Width(searchBar) < m.width {
 		searchBar += strings.Repeat(" ", m.width-lipgloss.Width(searchBar))
@@ -367,23 +375,41 @@ func sortedStringSet(values map[string]bool) []string {
 	return items
 }
 
-func boundedPanel(style lipgloss.Style, width, height int, lines []string) string {
+func renderTitledPanel(style, titleStyle lipgloss.Style, width, height int, title string, lines []string) string {
 	if len(lines) > height {
 		lines = lines[:height]
 	}
 	for index := range lines {
 		lines[index] = ansi.Truncate(lines[index], width, "")
 	}
-	style = style.Width(width).Height(height).MaxWidth(width + 2).MaxHeight(height + 2)
-	return style.Render(strings.Join(lines, "\n"))
+	bodyStyle := style.BorderTop(false).Width(width).Height(height).MaxWidth(width + 2).MaxHeight(height + 1)
+	return renderPanelTop(style, titleStyle, title, width) + "\n" + bodyStyle.Render(strings.Join(lines, "\n"))
 }
 
-func renderPanelTitle(title string, width int) string {
-	title = ansi.Truncate(title, width, "…")
-	if titleWidth := lipgloss.Width(title); titleWidth < width {
-		title += strings.Repeat(" ", width-titleWidth)
+func renderPanelTitle(style lipgloss.Style, title string, width int) string {
+	if width <= 0 {
+		return ""
 	}
-	return PanelTitleStyle.Render(preserveStyleAfterReset(title, PanelTitleStyle))
+	if width == 1 {
+		title = ansi.Truncate(title, width, "")
+	} else {
+		title = " " + ansi.Truncate(title, max(1, width-2), "…") + " "
+	}
+	title = ansi.Truncate(title, width, "")
+	return style.Render(preserveStyleAfterReset(title, style))
+}
+
+func renderPanelTop(style, titleStyle lipgloss.Style, title string, width int) string {
+	border := style.GetBorderStyle()
+	borderStyle := lipgloss.NewStyle().Foreground(style.GetBorderTopForeground())
+	leading := ""
+	if width > 0 {
+		leading = border.Top
+	}
+	label := renderPanelTitle(titleStyle, title, max(0, width-lipgloss.Width(leading)))
+	trailingWidth := max(0, width-lipgloss.Width(leading)-lipgloss.Width(label))
+	top := border.TopLeft + leading + label + strings.Repeat(border.Top, trailingWidth) + border.TopRight
+	return borderStyle.Render(preserveStyleAfterReset(top, borderStyle))
 }
 
 // ---- Rendering helpers ---- //

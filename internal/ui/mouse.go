@@ -11,7 +11,7 @@ import (
 const (
 	dashboardHeaderRows = 1
 	dashboardFooterRows = 1
-	listFirstItemRow    = 3
+	listFirstItemRow    = 2
 	checkboxMinColumn   = 3
 	checkboxMaxColumn   = 5
 )
@@ -44,6 +44,23 @@ func renderedTextHit(rendered string, x, y int, label string) bool {
 		searchFrom = startByte + len(label)
 	}
 	return false
+}
+
+// renderedTextRegionHit expands a text control's hit target by terminal cells
+// while still keeping the clickable area scoped to that control's row.
+func renderedTextRegionHit(rendered string, x, y int, label string, leftCells, rightCells int) bool {
+	lines := strings.Split(ansi.Strip(rendered), "\n")
+	if y < 0 || y >= len(lines) || label == "" {
+		return false
+	}
+	line := lines[y]
+	startByte := strings.Index(line, label)
+	if startByte < 0 {
+		return false
+	}
+	left := lipgloss.Width(line[:startByte]) - leftCells
+	right := lipgloss.Width(line[:startByte+len(label)]) + rightCells
+	return x >= left && x < right
 }
 
 // handleMouseMsg routes mouse input through the same state transitions used by
@@ -320,24 +337,57 @@ func (m *Model) handleOverlayWheel(msg tea.MouseMsg) (tea.Model, tea.Cmd, bool) 
 }
 
 func (m *Model) handleThemeMouseClick(rendered string, msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if m.themeColorEditing {
+		return m, nil
+	}
+	// Clicking either colour row opens that row's editor, the same as its
+	// Shift-key shortcut.
+	for _, setting := range []struct {
+		row string
+		key string
+	}{
+		{ansi.Strip(m.renderThemePickerAccentSetting()), "A"},
+		{ansi.Strip(m.renderThemePickerBackgroundSetting()), "B"},
+	} {
+		if renderedTextRegionHit(rendered, msg.X, msg.Y, setting.row, 0, 0) {
+			return m.handleThemeKeys(keyMessage(setting.key))
+		}
+	}
 	for index, name := range ThemeNames() {
 		theme, _ := LookupTheme(name)
-		if renderedTextHit(rendered, msg.X, msg.Y, theme.DisplayName) {
+		// Extend the hit target across the whole row that renderThemeView draws:
+		// the marker on the left, then the padding and the palette on the right.
+		rightCells := themeRowNamePadding(theme) + lipgloss.Width(themePalettePreview(theme, m.activeTheme.SurfaceAlt))
+		if renderedTextRegionHit(rendered, msg.X, msg.Y, theme.DisplayName, themeRowMarkerWidth, rightCells) {
 			m.themeCursor = index
 			m.themeUseProject = false
 			m.previewThemePicker()
 			return m, nil
 		}
 	}
-	return m.handleMouseKeyBindings(rendered, msg, []mouseKeyBinding{
+	// The cycle labels grow a Custom position at runtime, so they are taken from
+	// the same helpers the footer renders rather than repeated as literals.
+	accentLabel := m.themeAccentControlLabel()
+	accentKey := "a"
+	if !strings.HasPrefix(accentLabel, "[a]") {
+		accentKey = "A"
+	}
+	bindings := []mouseKeyBinding{
 		{label: "[p] Theme: Project / Selected", key: "p"},
-		{label: "[a] Accent: Project / Theme default", key: "a"},
-		{label: "[b] Background: Terminal / Theme", key: "b"},
-		{label: "[m] Mode: Auto / Dark / Light", key: "m"},
-		{label: "[Enter] Save globally", key: "enter"},
-		{label: "[c] Save to project", key: "c"},
-		{label: "[Esc] Cancel", key: "esc"},
-	}, m.handleThemeKeys)
+		{label: accentLabel, key: accentKey},
+		{label: "[Shift+A] Edit color", key: "A"},
+		{label: m.themeBackgroundControlLabel(), key: "b"},
+		{label: "[Shift+B] Edit color", key: "B"},
+	}
+	bindings = append(bindings,
+		mouseKeyBinding{label: "[m] Mode: Auto / Dark / Light", key: "m"},
+		mouseKeyBinding{label: "[Enter] Apply", key: "enter"},
+		mouseKeyBinding{label: "[r] Reload saved", key: "r"},
+		mouseKeyBinding{label: "[g] Global", key: "g"},
+		mouseKeyBinding{label: "[c] Project", key: "c"},
+		mouseKeyBinding{label: "[Esc] Cancel", key: "esc"},
+	)
+	return m.handleMouseKeyBindings(rendered, msg, bindings, m.handleThemeKeys)
 }
 
 func (m *Model) closeOverlayOnClick(rendered string, msg tea.MouseMsg) (tea.Model, tea.Cmd) {

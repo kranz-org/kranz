@@ -12,9 +12,18 @@ import (
 
 // Checker owns the monitoring goroutines for all configured services.
 type Checker struct {
-	services map[string]*ServiceHealth
-	mu       sync.RWMutex
-	stopCh   map[string]chan struct{}
+	services              map[string]*ServiceHealth
+	mu                    sync.RWMutex
+	stopCh                map[string]chan struct{}
+	detectedPortsProvider func(string) []int
+}
+
+// SetDetectedPortsProvider supplies the latest runtime listener snapshot for a
+// service. Dynamic probes resolve it immediately before every attempt.
+func (hc *Checker) SetDetectedPortsProvider(provider func(string) []int) {
+	hc.mu.Lock()
+	defer hc.mu.Unlock()
+	hc.detectedPortsProvider = provider
 }
 
 // ServiceHealth stores the synchronized probe state for one service.
@@ -144,7 +153,7 @@ func (hc *Checker) runReadinessCheck(name string, cfg *config.CheckConfig, healt
 	defer ticker.Stop()
 
 	for {
-		err := executeCheck(name, cfg)
+		err := hc.executeCheck(name, cfg)
 		now := time.Now()
 		if err == nil {
 			health.mu.Lock()
@@ -176,7 +185,7 @@ func (hc *Checker) runLivenessCheck(name string, cfg *config.CheckConfig, health
 	failCount := 0
 
 	for {
-		err := executeCheck(name, cfg)
+		err := hc.executeCheck(name, cfg)
 		now := time.Now()
 		health.mu.Lock()
 		health.LastCheck = now

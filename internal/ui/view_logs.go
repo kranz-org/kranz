@@ -59,16 +59,17 @@ func (m *Model) renderLogPanelMode(svc *service.Service, width, height int, pinn
 	contentWidth := max(1, width-2)
 	contentHeight := max(1, height-2)
 	panelStyle := m.panelStyle(panelLogs)
+	titleStyle := m.panelTitleStyle(panelLogs)
 	titlePrefix := "[3] LOGS"
 	followMode, logOffset, logAnchor, logPaused := m.followMode, m.logOffset, m.logAnchor, m.logPaused
 	if pinned {
 		panelStyle = m.panelStyle(panelPinnedLogs)
+		titleStyle = m.panelTitleStyle(panelPinnedLogs)
 		titlePrefix = "[3] PINNED LOGS"
 		followMode, logOffset, logAnchor, logPaused = m.pinnedFollow, m.pinnedOffset, m.pinnedAnchor, false
 	}
 	if svc == nil {
-		title := renderPanelTitle(titlePrefix, contentWidth)
-		return boundedPanel(panelStyle, contentWidth, contentHeight, []string{title, "", "Select a service"})
+		return renderTitledPanel(panelStyle, titleStyle, contentWidth, contentHeight, titlePrefix, []string{"", "Select a service"})
 	}
 
 	visualState := m.serviceVisualState(svc)
@@ -114,15 +115,13 @@ func (m *Model) renderLogPanelMode(svc *service.Service, width, height int, pinn
 	}
 
 	if len(sourceLines) == 0 {
-		return boundedPanel(panelStyle, contentWidth, contentHeight, []string{
-			renderPanelTitle(title, contentWidth),
+		return renderTitledPanel(panelStyle, titleStyle, contentWidth, contentHeight, title, []string{
 			"",
 			ContextBarStyle.Render("Output will appear after the service starts"),
 		})
 	}
 	if hasPattern && m.searchMode == searchFilter && len(sourceIndices) == 0 {
-		return boundedPanel(panelStyle, contentWidth, contentHeight, []string{
-			renderPanelTitle(title, contentWidth),
+		return renderTitledPanel(panelStyle, titleStyle, contentWidth, contentHeight, title, []string{
 			"",
 			ContextBarStyle.Render("No log lines match this regex"),
 		})
@@ -147,7 +146,7 @@ func (m *Model) renderLogPanelMode(svc *service.Service, width, height int, pinn
 		}
 	}
 
-	maxLines := max(1, contentHeight-1)
+	maxLines := contentHeight
 	maxStart := max(0, len(rows)-maxLines)
 	startIdx := maxStart
 	visibleLimit := len(rows)
@@ -161,8 +160,7 @@ func (m *Model) renderLogPanelMode(svc *service.Service, width, height int, pinn
 	if maxStart > 0 {
 		title += ContextBarStyle.Render(fmt.Sprintf("  %d–%d/%d  ↑/↓", startIdx+1, endIdx, len(rows)))
 	}
-	renderedLines := append([]string{renderPanelTitle(title, contentWidth)}, rows[startIdx:endIdx]...)
-	return boundedPanel(panelStyle, contentWidth, contentHeight, renderedLines)
+	return renderTitledPanel(panelStyle, titleStyle, contentWidth, contentHeight, title, rows[startIdx:endIdx])
 }
 
 func (m *Model) scrollLogs(direction int) {
@@ -185,7 +183,7 @@ func (m *Model) scrollLogs(direction int) {
 		}
 		return
 	}
-	maxLines := max(1, panelHeight-3)
+	maxLines := max(1, panelHeight-2)
 	maxOffset := max(0, displayLineCount-maxLines)
 	if direction < 0 {
 		if follow {
@@ -280,7 +278,7 @@ func (m *Model) focusLogMatch(match int) {
 		return
 	}
 	entries := svc.LogEntries()
-	maxLines := max(1, m.currentLogPanelHeight()-3)
+	maxLines := max(1, m.currentLogPanelHeight()-2)
 	displayLines := make([]string, 0, min(match, len(entries)))
 	for _, entry := range entries[:min(match, len(entries))] {
 		displayLines = append(displayLines, m.displayLogEntry(entry))

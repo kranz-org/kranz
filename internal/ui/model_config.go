@@ -74,7 +74,15 @@ func (m *Model) handleConfigReload(msg configReloadMsg) (tea.Model, tea.Cmd) {
 	if m.PinnedService() == nil {
 		m.pinnedLog = ""
 	}
-	if err := m.applyEffectiveAppearance(); err != nil {
+	// The theme picker holds choices that are not in any file yet — a typed
+	// accent, a background owner, a colour mode. Re-previewing rebuilds them
+	// against the reloaded config; applyEffectiveAppearance would recompute from
+	// the config and the saved settings alone and silently drop the session's
+	// work while the panel still reported it. applyDetectedBackground draws the
+	// same distinction.
+	if m.mode == ModeThemes {
+		m.previewThemePicker()
+	} else if err := m.applyEffectiveAppearance(); err != nil {
 		m.addNotification("appearance", err.Error(), config.LogWarn)
 	}
 	message := fmt.Sprintf("Configuration reloaded: %d added, %d removed, %d updated, %d restarted",

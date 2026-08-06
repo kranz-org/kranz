@@ -384,9 +384,19 @@ func TestServiceColumnShowsUpToTwentyItems(t *testing.T) {
 	defer model.Shutdown()
 
 	listHeight, detailHeight := model.serviceColumnLayout(100)
-	if listHeight != 23 || detailHeight != 77 {
-		t.Fatalf("25-item, 100-row column split = %d/%d, want 23/77", listHeight, detailHeight)
+	if listHeight != 22 || detailHeight != 78 {
+		t.Fatalf("25-item, 100-row column split = %d/%d, want 22/78", listHeight, detailHeight)
 	}
+	model.services = model.allServices[:20]
+	if start, end := model.visibleServiceRange(22); start != 0 || end != 20 {
+		t.Fatalf("20 services unexpectedly scroll: visible range = %d:%d", start, end)
+	}
+	model.services = model.allServices[:21]
+	model.focused = 20
+	if start, end := model.visibleServiceRange(22); start != 1 || end != 21 {
+		t.Fatalf("21 services do not scroll to the focused row: visible range = %d:%d", start, end)
+	}
+	model.focused = 0
 	model.services = model.services[:2]
 	listHeight, detailHeight = model.serviceColumnLayout(100)
 	if listHeight != 6 || detailHeight != 94 {
@@ -492,6 +502,125 @@ func TestHelpOverlaysDimmedDashboard(t *testing.T) {
 	}
 }
 
+func TestHelpAndThemeModalsUseFlushContentAndSeparatedTitles(t *testing.T) {
+	plain := ansi.Strip(renderFlushModal("title\n\n  body\n\n[Esc] Close"))
+	for _, expected := range []string{"│title", "│  body", "│[Esc] Close"} {
+		if !strings.Contains(plain, "\n"+expected) {
+			t.Fatalf("flush modal does not align %q against the inner border:\n%s", expected, plain)
+		}
+	}
+
+	model := newTestModel()
+	defer model.Shutdown()
+	model.width, model.height, model.ready = 100, 28, true
+	model.openThemePicker()
+	theme := ansi.Strip(model.renderThemeView())
+	themeLines := strings.Split(theme, "\n")
+	titleRow, summaryRow, actionRow := -1, -1, -1
+	for index, line := range themeLines {
+		if strings.Contains(line, "Themes") {
+			titleRow = index
+		}
+		if summaryRow < 0 && strings.Contains(line, "Theme:") {
+			summaryRow = index
+		}
+		if strings.Contains(line, "[p] Theme:") {
+			actionRow = index
+		}
+	}
+	if titleRow < 0 || summaryRow != titleRow+2 {
+		t.Fatalf("theme title is not followed by a blank line (title %d, summary %d):\n%s", titleRow, summaryRow, theme)
+	}
+	summaryColumn, actionColumn := -1, -1
+	if summaryRow >= 0 {
+		summaryColumn = lipgloss.Width(themeLines[summaryRow][:strings.Index(themeLines[summaryRow], "Theme:")])
+	}
+	if actionRow >= 0 {
+		actionColumn = lipgloss.Width(themeLines[actionRow][:strings.Index(themeLines[actionRow], "[p]")])
+	}
+	if actionRow < 0 || actionColumn != summaryColumn {
+		t.Fatalf("theme actions do not share the content inset (summary %d, action %d):\n%s", summaryRow, actionRow, theme)
+	}
+}
+
+func TestModalShortcutHintsHighlightOnlyKeys(t *testing.T) {
+	line := renderModalShortcuts("[Enter] Apply   [g] Save globally", ContextBarStyle)
+	if ansi.Strip(line) != "[Enter] Apply   [g] Save globally" {
+		t.Fatalf("shortcut styling changed text: %q", ansi.Strip(line))
+	}
+	for _, shortcut := range []string{"[Enter]", "[g]"} {
+		if !strings.Contains(line, HelpKeyStyle.Render(shortcut)) {
+			t.Fatalf("shortcut %q is not highlighted in %q", shortcut, line)
+		}
+	}
+}
+
+func TestConfirmationModalAlignsTitleBodyAndActions(t *testing.T) {
+	modal := ansi.Strip(renderConfirmationModal(
+		"Confirm action",
+		[]string{"Confirmation details"},
+		"[Enter/y] Continue  [Esc/n] Cancel",
+	))
+	columns := make([]int, 0, 3)
+	for _, expected := range []string{"Confirm action", "Confirmation details", "[Enter/y] Continue"} {
+		column := -1
+		for _, line := range strings.Split(modal, "\n") {
+			if index := strings.Index(line, expected); index >= 0 {
+				column = lipgloss.Width(line[:index])
+				break
+			}
+		}
+		if column < 0 {
+			t.Fatalf("confirmation modal does not contain %q:\n%s", expected, modal)
+		}
+		columns = append(columns, column)
+	}
+	if columns[0] != columns[1] || columns[1] != columns[2] {
+		t.Fatalf("confirmation title, body, and actions use different left insets %v:\n%s", columns, modal)
+	}
+}
+
+func TestThemeSummaryHighlightsCurrentValues(t *testing.T) {
+	line := renderThemeSetting("Theme", "SELECTED · Nord")
+	if ansi.Strip(line) != "Theme: SELECTED · Nord" {
+		t.Fatalf("theme summary styling changed text: %q", ansi.Strip(line))
+	}
+	if !strings.Contains(line, HelpKeyStyle.Render("SELECTED · Nord")) {
+		t.Fatalf("theme summary value is not highlighted: %q", line)
+	}
+}
+
+func TestThemeSummaryUsesSelectedThemeAccentForItsName(t *testing.T) {
+	model := newTestModel()
+	defer model.Shutdown()
+	model.openThemePicker()
+	model.themeUseProject = false
+	model.previewThemePicker()
+
+	line := model.renderThemePickerThemeSetting(model.cfg.UI.Theme)
+	_, name, ok := strings.Cut(model.themePickerThemeLabel(model.cfg.UI.Theme), " · ")
+	if !ok {
+		t.Fatal("theme picker label does not contain a theme name")
+	}
+	want := lipgloss.NewStyle().
+		Foreground(lipgloss.Color(model.activeTheme.AccentText)).
+		Bold(true).
+		Render(name)
+	if !strings.Contains(line, want) {
+		t.Fatalf("selected theme name does not use its accent: %q", line)
+	}
+}
+
+func TestApplicationHeaderStartsOneCellFromTheEdge(t *testing.T) {
+	model := newTestModel()
+	defer model.Shutdown()
+	model.width = 100
+	header := ansi.Strip(model.renderHeader())
+	if !strings.HasPrefix(header, " KRANZ") || strings.HasPrefix(header, "  KRANZ") {
+		t.Fatalf("header starts at the wrong column: %q", header)
+	}
+}
+
 func TestHelpWrapsDescriptionsAndScrollsWithoutTruncatingThem(t *testing.T) {
 	model := newTestModel()
 	defer model.Shutdown()
@@ -501,7 +630,7 @@ func TestHelpWrapsDescriptionsAndScrollsWithoutTruncatingThem(t *testing.T) {
 		"Focus panels; 1 switches Services/Tags when the list is focused",
 		"Pin focused service logs above the active log panel",
 		"Regex filter; Tab switches to highlight",
-		"Choose and persist a theme",
+		"Choose and apply a theme",
 	} {
 		if rebuilt := strings.Join(wrapHelpText(description, 24), " "); rebuilt != description {
 			t.Errorf("wrapped help rebuilt %q as %q", description, rebuilt)
@@ -601,6 +730,70 @@ func TestManualConfigReloadReconcilesModel(t *testing.T) {
 	if model.reloadBusy {
 		t.Fatal("reload remained busy")
 	}
+}
+
+func TestProcfileAndDotenvReloadReconcileModel(t *testing.T) {
+	directory := t.TempDir()
+	procfilePath := filepath.Join(directory, "Procfile")
+	dotenvPath := filepath.Join(directory, ".env")
+	writeProcfile := func(command string) {
+		t.Helper()
+		if err := os.WriteFile(procfilePath, []byte("api: "+command+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeDotenv := func(value string) {
+		t.Helper()
+		if err := os.WriteFile(dotenvPath, []byte("RELOAD_VALUE="+value+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	writeProcfile("sleep 60")
+	writeDotenv("one")
+	cfg, err := config.Load(procfilePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	model := NewModelWithOptions(cfg, "test", ModelOptions{ConfigPaths: []string{procfilePath}})
+	defer model.Shutdown()
+	if !containsPath(model.configWatchPaths, procfilePath) || !containsPath(model.configWatchPaths, dotenvPath) {
+		t.Fatalf("watch paths = %v", model.configWatchPaths)
+	}
+
+	writeProcfile("sleep 61")
+	reloadModelForTest(t, model)
+	if got := model.FocusedService().Config.Command; got != "sleep 61" {
+		t.Fatalf("reloaded command = %q", got)
+	}
+
+	writeDotenv("two")
+	reloadModelForTest(t, model)
+	if got := model.FocusedService().Config.Env["RELOAD_VALUE"]; got != "two" {
+		t.Fatalf("reloaded dotenv value = %q", got)
+	}
+}
+
+func reloadModelForTest(t *testing.T, model *Model) {
+	t.Helper()
+	command := model.reloadConfig(true)
+	if command == nil {
+		t.Fatal("reload did not schedule a command")
+	}
+	message := command().(configReloadMsg)
+	_, _ = model.handleConfigReload(message)
+	if message.err != nil {
+		t.Fatalf("reload message error = %v", message.err)
+	}
+}
+
+func containsPath(paths []string, want string) bool {
+	for _, path := range paths {
+		if path == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestZshCommandShellBindsCtrlOAndPreservesEnvironment(t *testing.T) {

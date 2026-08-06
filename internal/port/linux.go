@@ -3,9 +3,11 @@
 package port
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -17,6 +19,21 @@ type LinuxChecker struct{}
 
 func newPlatformChecker() Checker {
 	return &LinuxChecker{}
+}
+
+func newPlatformListenerScanner() ListenerScanner {
+	return &LinuxChecker{}
+}
+
+var ssPIDPattern = regexp.MustCompile(`pid=([0-9]+)`)
+
+// Snapshot returns every attributable TCP listener visible to ss in one invocation.
+func (l *LinuxChecker) Snapshot(ctx context.Context) ([]Listener, error) {
+	output, err := exec.CommandContext(ctx, "ss", "-H", "-ltnp").Output()
+	if err != nil {
+		return nil, fmt.Errorf("snapshot TCP listeners with ss: %w", err)
+	}
+	return parseSSSnapshot(string(output)), nil
 }
 
 // CheckPort returns the process listening on a Linux port.
@@ -119,4 +136,31 @@ func extractProcessName(s string) string {
 		return s
 	}
 	return s[:end]
+}
+
+func parseSSSnapshot(output string) []Listener {
+	var listeners []Listener
+	for _, line := range strings.Split(output, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 5 || fields[0] != "LISTEN" {
+			continue
+		}
+		address, portNumber, ok := parseListenerEndpoint(fields[3])
+		if !ok {
+			continue
+		}
+		for _, match := range ssPIDPattern.FindAllStringSubmatch(line, -1) {
+			pid, err := strconv.Atoi(match[1])
+			if err != nil || pid < 1 {
+				continue
+			}
+			listeners = append(listeners, Listener{
+				Protocol: "tcp",
+				Address:  address,
+				Port:     portNumber,
+				PID:      pid,
+			})
+		}
+	}
+	return listeners
 }

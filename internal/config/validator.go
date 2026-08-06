@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 )
@@ -88,10 +89,10 @@ func Validate(cfg *Config) error {
 			if svc.HealthCheck.Readiness == nil && svc.HealthCheck.Liveness == nil {
 				return fmt.Errorf("service %q: 'healthcheck' must define 'readiness', 'liveness', or both", name)
 			}
-			if err := validateCheckConfig(name, "readiness", svc.HealthCheck.Readiness); err != nil {
+			if err := validateCheckConfig(name, "readiness", svc.HealthCheck.Readiness, svc.PortDiscoveryEnabled()); err != nil {
 				return err
 			}
-			if err := validateCheckConfig(name, "liveness", svc.HealthCheck.Liveness); err != nil {
+			if err := validateCheckConfig(name, "liveness", svc.HealthCheck.Liveness, svc.PortDiscoveryEnabled()); err != nil {
 				return err
 			}
 		}
@@ -106,9 +107,31 @@ func Validate(cfg *Config) error {
 }
 
 // validateCheckConfig validates one readiness or liveness probe.
-func validateCheckConfig(svcName, checkName string, c *CheckConfig) error {
+func validateCheckConfig(svcName, checkName string, c *CheckConfig, portDiscoveryEnabled bool) error {
 	if c == nil {
 		return nil
+	}
+	usesDetectedPort := c.UsesDetectedPort()
+	if c.PortFrom != "" && c.PortFrom != PortFromDetected {
+		return fmt.Errorf("service %q: %s check has unknown port_from %q (allowed: detected)", svcName, checkName, c.PortFrom)
+	}
+	if c.PortFrom != "" && c.Port != 0 {
+		return fmt.Errorf("service %q: %s check cannot use both 'port' and 'port_from'; remove one of them", svcName, checkName)
+	}
+	if c.DetectedPortIndex != nil && !usesDetectedPort {
+		return fmt.Errorf("service %q: %s check: detected_port_index requires a detected port; omit 'port' for a tcp check or set port_from: detected", svcName, checkName)
+	}
+	if c.DetectedPortIndex != nil && *c.DetectedPortIndex < 0 {
+		return fmt.Errorf("service %q: %s check: detected_port_index cannot be negative", svcName, checkName)
+	}
+	if usesDetectedPort && !portDiscoveryEnabled {
+		if c.PortFrom == "" && c.Type == CheckTCP {
+			return fmt.Errorf("service %q: %s tcp check omits 'port' and therefore uses runtime discovery, but port discovery is disabled; set detect_ports: true or configure a static port", svcName, checkName)
+		}
+		if c.PortFrom == "" && c.Type == CheckHTTP {
+			return fmt.Errorf("service %q: %s http check URL omits a port and therefore uses runtime discovery, but port discovery is disabled; set detect_ports: true or specify an explicit port in 'url'", svcName, checkName)
+		}
+		return fmt.Errorf("service %q: %s check uses port_from: detected, but port discovery is disabled; set detect_ports: true or use a static port", svcName, checkName)
 	}
 
 	switch c.Type {
@@ -116,11 +139,22 @@ func validateCheckConfig(svcName, checkName string, c *CheckConfig) error {
 		if c.URL == "" {
 			return fmt.Errorf("service %q: %s check of type 'http' requires field 'url'", svcName, checkName)
 		}
-	case CheckTCP:
-		if c.Port == 0 {
-			return fmt.Errorf("service %q: %s check of type 'tcp' requires field 'port'", svcName, checkName)
+		parsed, err := validateHTTPURL(svcName, checkName, c.URL)
+		if err != nil {
+			return err
 		}
+		if usesDetectedPort {
+			if parsed.Port() != "" {
+				return fmt.Errorf("service %q: %s dynamic http check must not specify a port in url; write %q instead of %q", svcName, checkName, urlWithoutPort(parsed), c.URL)
+			}
+		}
+	case CheckTCP:
+		// An omitted port means the sole detected runtime listener. Multiple
+		// listeners still require detected_port_index.
 	case CheckCommand:
+		if c.PortFrom != "" {
+			return fmt.Errorf("service %q: %s command check cannot use port_from", svcName, checkName)
+		}
 		if c.Command == "" {
 			return fmt.Errorf("service %q: %s check of type 'command' requires field 'command'", svcName, checkName)
 		}
@@ -131,6 +165,30 @@ func validateCheckConfig(svcName, checkName string, c *CheckConfig) error {
 	}
 
 	return nil
+}
+
+func validateHTTPURL(svcName, checkName, rawURL string) (*url.URL, error) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, fmt.Errorf("service %q: %s http check requires a valid absolute URL: %w", svcName, checkName, err)
+	}
+	if parsed.Scheme == "" || parsed.Host == "" || parsed.Hostname() == "" {
+		return nil, fmt.Errorf("service %q: %s http check requires an absolute URL with scheme and host, got %q", svcName, checkName, rawURL)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return nil, fmt.Errorf("service %q: %s http check URL scheme must be %q or %q, got %q", svcName, checkName, "http", "https", parsed.Scheme)
+	}
+	return parsed, nil
+}
+
+func urlWithoutPort(parsed *url.URL) string {
+	corrected := *parsed
+	host := parsed.Hostname()
+	if strings.Contains(host, ":") {
+		host = "[" + host + "]"
+	}
+	corrected.Host = host
+	return corrected.String()
 }
 
 // detectCycles finds dependency cycles with a three-color depth-first search.

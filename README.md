@@ -60,33 +60,24 @@ go install github.com/kranz-org/kranz/cmd/kranz@latest
 Prebuilt archives and build-from-source instructions are under
 [Install](#install).
 
-Create `kranz.yaml`. The example below uses Python 3 as a stand-in web service:
+Create a `Procfile`. This example uses Python 3 as a stand-in web service and
+needs no Kranz-specific configuration:
 
-```yaml
-project: demo
-
-services:
-  web:
-    command: python3 -m http.server 8000
-    ports: [8000]
-    healthcheck:
-      readiness:
-        type: http
-        url: http://127.0.0.1:8000
-
-  worker:
-    command: sh -c 'while true; do date; sleep 2; done'
-    depends_on: [web]
-    dependency_conditions:
-      web:
-        condition: process_healthy
+```procfile
+web: python3 -u -m http.server 8000 --bind 127.0.0.1
+worker: while true; do date; sleep 2; done
 ```
 
-Run `kranz`, then press `a` followed by `s` to start both services. The worker
-will wait until the web service is ready.
+Run `kranz`, then press `a` followed by `s` to start both services. Open the
+`web` Details panel to see its actual listening port. Kranz discovers the port
+at runtime even though Procfile has no port syntax.
 
 Already using Process Compose? Run `kranz` in a directory containing a
 supported `process-compose.yaml`; no separate Kranz configuration is required.
+
+Use native `kranz.yaml` when you want dependencies, health checks, recovery,
+tags, or explicit lifecycle controls. Runnable Procfile, native YAML, Process
+Compose, and port-discovery projects live in [`examples/`](examples/).
 
 ## Features
 
@@ -99,6 +90,8 @@ supported `process-compose.yaml`; no separate Kranz configuration is required.
   signals, and timeouts
 - **Port conflict detection** that distinguishes a Kranz-owned listener from an
   external process, with PID and process details
+- **Runtime port discovery** for TCP listeners opened by a service or any child
+  in its process group, even when no ports are configured
 - **Log inspection**: color-coded output, regex filter and highlight, wrapping,
   pause/follow, and unread counters
 - **Tag-based selection** for starting or stopping a group as one target
@@ -109,6 +102,8 @@ supported `process-compose.yaml`; no separate Kranz configuration is required.
   merged files, `.env`, and per-service `env_file`
 - **Process Compose compatibility** for a safe subset of existing
   `process-compose.yaml` projects
+- **Procfile compatibility** for conservative `name: command` files, preserving
+  service order and command text
 
 Interface details — 19 themes, full mouse support, `Ctrl+O` shell handoff, and
 in-app notifications — are described under [Controls](#controls).
@@ -181,6 +176,37 @@ kranz
 
 ## Configure
 
+### Procfile projects
+
+If your project already has a `Procfile` or `Procfile.dev`, run `kranz` from the
+same directory. Each non-comment line becomes a service in file order:
+
+```procfile
+web: go run ./cmd/web
+worker: bundle exec sidekiq
+```
+
+Kranz splits each entry at the first `:`, so colons inside the command are kept.
+Service names may contain letters, digits, `_`, and `-`. Blank lines and lines
+whose first non-space character is `#` are ignored. Invalid lines, empty
+commands, and duplicate names stop the whole load with the file path and line
+number; Kranz does not start a partial configuration.
+
+Commands run in the directory containing the Procfile. An adjacent `.env` is
+loaded automatically, while an existing host environment value wins over the
+same `.env` key. Both files are watched and valid edits hot-reload. Kranz never
+rewrites a Procfile, including when project appearance is saved. On stop, Kranz
+sends `SIGTERM` to the service process group, allows 30 seconds for graceful
+shutdown, and then uses `SIGKILL` if processes remain.
+
+Procfile services do not need a `ports` declaration. After a service starts,
+Kranz discovers TCP listeners opened by its command or child processes and
+shows them as detected ports in Details.
+
+Select services with `a`, start them with `s`, and quit with `q`.
+
+### Native Kranz YAML
+
 Create `kranz.yaml` in the project directory:
 
 ```yaml
@@ -239,11 +265,13 @@ kranz path/to/kranz.yaml
 kranz -f kranz.yaml -f kranz.local.yaml
 ```
 
-Without an explicit path, Kranz looks for `kranz.yaml`, `kranz.yml`,
-`process-compose.yaml`, and `process-compose.yml`, in that order.
+Without an explicit path, Kranz uses the first existing file in this order:
+`kranz.yaml`, `kranz.yml`, `process-compose.yaml`, `process-compose.yml`,
+`Procfile.dev`, then `Procfile`. Auto-discovery selects one primary file; in
+particular, it does not merge `Procfile.dev` with `Procfile`.
 For Process Compose projects, a matching `process-compose.override.yaml` or
 `process-compose.override.yml` is merged automatically when present. Explicit
-files are merged from left to right.
+files, including Procfile and native YAML layers, are merged from left to right.
 
 Configuration and environment files are watched. Valid edits are reconciled
 automatically, while invalid edits leave the last known good runtime untouched.
@@ -254,6 +282,9 @@ Press `Ctrl+L` to reload immediately.
 Kranz reads `.env` beside the first configuration file for variable expansion
 and process environment defaults. `defaults.env_files`, service `env_files`, and
 Process Compose `env_file`/`is_dotenv_disabled` entries are also supported.
+An existing host process-environment value takes precedence over the same key in
+the adjacent `.env`; explicit configuration environment values remain explicit
+overrides.
 
 Sources are merged per service, from lowest to highest precedence:
 
@@ -313,6 +344,9 @@ Background ownership is independent from color mode:
   terminal profile supplies its exact background.
 - `ui.background: theme` paints the selected theme's current light or dark
   surface.
+- `ui.background: "#RRGGBB"` paints a canvas of your own. The rest of the
+  palette is re-derived from it, and its lightness decides the readable text
+  set, so `color_mode` no longer selects the canvas.
 
 For example, `theme: cream` with `background: theme` and `color_mode: auto`
 paints warm cream in a light terminal and the theme's dark warm-brown variant in
@@ -320,19 +354,40 @@ a dark terminal. Canvas and panel surfaces always share one base instead of
 producing a gray-outside/white-inside split.
 
 Open the live theme picker with `Ctrl+T`. Arrow navigation previews a selected
-theme, and the summary always shows exactly what will be saved. Four independent
-toggles are available:
+theme, and the summary always shows exactly what will be applied or saved. The
+appearance controls are independent:
 
-| Key | Toggles |
+| Key | Action |
 |---|---|
 | `p` | Project theme / selected theme |
-| `a` | Project accent / theme-default accent |
-| `b` | Terminal / theme background ownership |
+| `a` | Cycle the accent sources that exist: project accent, theme default, and a custom color once one is set; opens the editor when there is nothing to cycle |
+| `Shift+A` | Edit the accent color |
+| `b` | Cycle the canvas: terminal, theme, and a custom color once one is set |
+| `Shift+B` | Edit the canvas color |
 | `m` | Auto / Dark / Light |
 
-The picker saves to one of two destinations, and shows both paths:
+Both color editors keep the leading `#` fixed and accept the six hexadecimal
+digits that follow it. A typed color becomes a source of its own and stays in
+the `a` or `b` cycle, so moving off it does not throw it away. A custom canvas
+color is painted by Kranz rather than inherited from the terminal, and the rest
+of the palette — elevated surfaces, status colors, and text contrast — is
+re-derived from it, so `ui.background` accepts `#RRGGBB` alongside `terminal`
+and `theme`. The first typed value or pasted `#RRGGBB` replaces the
+current value; cursor keys, Backspace, Delete, Home, and End allow precise
+edits. Once all six digits are valid, the field, swatch, and preview card show
+the candidate color immediately. `Enter` applies it and returns to the picker,
+while `Esc` discards the field edit without closing the picker. The field can
+also be focused with the mouse.
 
-- **`Enter` — personal user override.** Written atomically with user-only
+The picker groups temporary session actions separately from its two save
+destinations; both persistent paths are shown:
+
+- **`Enter` — current session.** Applies the preview until Kranz exits without
+  writing a file.
+- **`r` — reload saved appearance.** Re-reads the project configuration and
+  personal user override, resolves them with startup precedence, and applies
+  the result without restarting Kranz.
+- **`g` — personal user override.** Written atomically with user-only
   permissions to the platform configuration directory:
   `~/Library/Application Support/kranz/settings.yaml` on macOS, typically
   `~/.config/kranz/settings.yaml` on Linux.
@@ -341,10 +396,10 @@ The picker saves to one of two destinations, and shows both paths:
 
 `Esc` closes the picker without saving.
 
-With multiple `-f` layers, Kranz updates the last native configuration layer,
-because it has the highest precedence. Process Compose files are never
-rewritten, so project theme persistence requires a native Kranz configuration
-layer.
+With multiple `-f` layers, project theme persistence requires the last,
+highest-precedence path to be a native Kranz configuration. Process Compose and
+Procfile sources are never rewritten; use the personal override destination
+when either is the active project path.
 
 ## Controls
 
@@ -450,19 +505,122 @@ Before sending a signal, Kranz scans the port again and refuses the action if th
 PID changed or became Kranz-owned. It tries `SIGTERM` first and only escalates
 after a grace period.
 
+### Runtime port discovery
+
+Kranz can refresh the TCP listeners opened by each running service and its child
+processes. `detect_ports` is an optional service-level boolean. When omitted,
+discovery defaults on for a service without `ports` and defaults off when
+configured port hints are already present. The configured numbers are checked
+before start for conflicts regardless of discovery.
+
+- Without `ports`, Details automatically shows detected runtime listeners.
+- With `ports`, omit `detect_ports` to use configured/preflight information only.
+- Set `detect_ports: true` to show runtime listeners alongside configured hints;
+  a number present in both sets appears once as `declared · listening`, because
+  the listening state already confirms that Kranz detected it.
+- Set `detect_ports: false` to disable discovery explicitly; without configured
+  hints Details shows `PORTS detection off`.
+
+Details labels configured hints as `declared` and runtime-only listeners as
+`detected`. These equal-width roles and right-aligned port numbers keep a
+multi-port list visually aligned even when the numbers have different lengths.
+
+```yaml
+services:
+  web:
+    command: npm run dev
+    detect_ports: false
+```
+
+Discovery uses one `lsof -nP -iTCP -sTCP:LISTEN -Fpcn` snapshot on macOS and one
+`ss -H -ltnp` snapshot on Linux. The command must be installed and the current
+user must be allowed to see process ownership. Containers, hardened `/proc`
+mounts, and host permission policies can hide another process's PID. If the
+inspection command is missing or denied, service startup and lifecycle controls
+continue normally; configured ports remain available, while detected ports stay
+empty until a later snapshot succeeds. Discovery never writes ports back to a
+configuration file.
+
+Health checks can follow a port that is chosen only after process startup. Omit
+`port` from a TCP probe or omit the port from an HTTP URL; when service port
+discovery is enabled, either form selects a detected runtime listener:
+
+```yaml
+services:
+  frontend:
+    command: npm run dev
+    healthcheck:
+      readiness:
+        type: tcp
+
+  api:
+    command: ./api --port 0
+    healthcheck:
+      readiness:
+        type: http
+        url: http://127.0.0.1/ready
+```
+
+With exactly one detected listener, Kranz inserts that port before every probe.
+With no listener yet, the probe fails normally and retries at its configured
+interval. If the process opens multiple listeners, Kranz does not guess: select
+a zero-based position in the sorted detected-port list explicitly:
+
+```yaml
+healthcheck:
+  readiness:
+    type: tcp
+    detected_port_index: 0
+  liveness:
+    type: tcp
+    detected_port_index: 1
+```
+
+The longer `port_from: detected` form remains valid for TCP and HTTP
+compatibility, but is not required. `detected_port_index` alone is enough when
+a service opens multiple listeners.
+
+`port` and `port_from` cannot be combined. Dynamic ports require discovery to be
+enabled; a TCP probe without `port` and an HTTP URL without an explicit port are
+therefore invalid when `detect_ports: false`. To probe the conventional static
+HTTP/HTTPS port, write `:80` or `:443` explicitly in the URL. Every HTTP probe
+requires an absolute `http` or `https` URL with a host. Kranz changes only the
+URL port before each dynamic attempt and preserves its host, path, and query
+parameters.
+
+Before applying `detected_port_index`, Kranz sorts the detected ports, removes
+duplicates, and discards values outside 1–65535. The index is positional: if a
+service starts opening another lower-numbered listener, existing indexes can
+shift. Prefer omitting the index for a single-listener service; use a static
+port when the endpoint identity must remain stable independently of other
+listeners.
+
+Details and the health-history view show the resolved TCP or HTTP endpoint, not
+the selector syntax. Only a port inserted from runtime discovery is highlighted;
+a static port that was already part of the configured target remains ordinary
+text. Before the first listener is detected, Kranz keeps the target recognizable
+by rendering the unresolved slot in place. A running service that has not
+reported a listener yet shows `http://localhost:[DETECTING]/health` or
+`tcp://localhost:[DETECTING]`; a stopped service has nothing to detect and shows
+`[PORT]` instead, so a dynamic target is never mistaken for a stalled probe.
+Once a snapshot arrives, the marker is replaced by the highlighted number. An
+ambiguous detected set remains an explicit error instead of being guessed.
+
 ### Details panel
 
 The Details panel below the compact service list reports:
 
 - Readiness and liveness separately, with each check target on its own line
-- Ports, tags, and typed dependencies
+- Configured and detected runtime ports, tags, and typed dependencies
 - Recovery state, restart count and limit
 - Last start, uptime, and last exit
 - Shutdown behavior, environment files, working directory, command, and PID
 
-Active listeners include the detected protocol and bind address (for example,
-`tcp://127.0.0.1:3801`) when the operating system exposes them. Focus panel `2`
-and use arrows to scroll when the content exceeds the available height.
+Configured-port inspection includes protocol, bind address, and process owner
+when the operating system exposes them. A runtime-only listener is labeled
+`detected`; a declared port confirmed at runtime appears once as
+`declared · listening`. Focus panel `2` and use arrows to scroll when the
+content exceeds the available height.
 
 ### Logs and search
 

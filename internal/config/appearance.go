@@ -16,6 +16,9 @@ func SaveUIAppearance(path string, appearance UIConfig) error {
 	if path == "" {
 		return errors.New("project configuration path is empty")
 	}
+	if isProcfilePath(path) {
+		return errors.New("project appearance cannot be saved to a Procfile; use user settings or a native Kranz configuration")
+	}
 	resolvedPath, err := filepath.EvalSymlinks(path)
 	if err != nil {
 		return fmt.Errorf("resolve project configuration %s: %w", path, err)

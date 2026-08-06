@@ -227,6 +227,205 @@ func TestValidateRequiresExplicitReadinessAndLivenessTypes(t *testing.T) {
 	}
 }
 
+func TestValidateDetectedPortHealthChecks(t *testing.T) {
+	index := 1
+	negativeIndex := -1
+	disabled := false
+	tests := []struct {
+		name    string
+		service Service
+		wantErr string
+	}{
+		{
+			name: "tcp uses sole detected port",
+			service: Service{Command: "run", HealthCheck: &HealthCheckConfig{Readiness: &CheckConfig{
+				Type: CheckTCP, PortFrom: PortFromDetected,
+			}}},
+		},
+		{
+			name: "tcp omitted port uses sole detected port",
+			service: Service{Command: "run", HealthCheck: &HealthCheckConfig{Readiness: &CheckConfig{
+				Type: CheckTCP,
+			}}},
+		},
+		{
+			name: "tcp omitted port accepts selector",
+			service: Service{Command: "run", HealthCheck: &HealthCheckConfig{Readiness: &CheckConfig{
+				Type: CheckTCP, DetectedPortIndex: &index,
+			}}},
+		},
+		{
+			name: "http selects second detected port",
+			service: Service{Command: "run", HealthCheck: &HealthCheckConfig{Liveness: &CheckConfig{
+				Type: CheckHTTP, URL: "http://127.0.0.1/health", PortFrom: PortFromDetected, DetectedPortIndex: &index,
+			}}},
+		},
+		{
+			name: "http omitted url port uses sole detected port",
+			service: Service{Command: "run", HealthCheck: &HealthCheckConfig{Readiness: &CheckConfig{
+				Type: CheckHTTP, URL: "http://127.0.0.1/health",
+			}}},
+		},
+		{
+			name: "unknown dynamic source",
+			service: Service{Command: "run", HealthCheck: &HealthCheckConfig{Readiness: &CheckConfig{
+				Type: CheckTCP, PortFrom: "automatic",
+			}}},
+			wantErr: "unknown port_from",
+		},
+		{
+			name: "dynamic and static ports conflict",
+			service: Service{Command: "run", HealthCheck: &HealthCheckConfig{Readiness: &CheckConfig{
+				Type: CheckTCP, Port: 8080, PortFrom: PortFromDetected,
+			}}},
+			wantErr: "cannot use both 'port' and 'port_from'",
+		},
+		{
+			name: "selector requires dynamic source",
+			service: Service{Command: "run", HealthCheck: &HealthCheckConfig{Readiness: &CheckConfig{
+				Type: CheckTCP, Port: 8080, DetectedPortIndex: &index,
+			}}},
+			wantErr: "detected_port_index requires a detected port",
+		},
+		{
+			name: "selector cannot be negative",
+			service: Service{Command: "run", HealthCheck: &HealthCheckConfig{Readiness: &CheckConfig{
+				Type: CheckTCP, PortFrom: PortFromDetected, DetectedPortIndex: &negativeIndex,
+			}}},
+			wantErr: "detected_port_index cannot be negative",
+		},
+		{
+			name: "dynamic source rejects explicit http port",
+			service: Service{Command: "run", HealthCheck: &HealthCheckConfig{Readiness: &CheckConfig{
+				Type: CheckHTTP, URL: "http://127.0.0.1:8080/health", PortFrom: PortFromDetected,
+			}}},
+			wantErr: `write "http://127.0.0.1/health" instead`,
+		},
+		{
+			name: "dynamic source suggests corrected ipv6 http url",
+			service: Service{Command: "run", HealthCheck: &HealthCheckConfig{Readiness: &CheckConfig{
+				Type: CheckHTTP, URL: "https://[::1]:8443/health?deep=1", PortFrom: PortFromDetected,
+			}}},
+			wantErr: `write "https://[::1]/health?deep=1" instead`,
+		},
+		{
+			name: "command cannot use dynamic port",
+			service: Service{Command: "run", HealthCheck: &HealthCheckConfig{Readiness: &CheckConfig{
+				Type: CheckCommand, Command: "true", PortFrom: PortFromDetected,
+			}}},
+			wantErr: "command check cannot use port_from",
+		},
+		{
+			name: "dynamic source requires discovery",
+			service: Service{Command: "run", DetectPorts: &disabled, HealthCheck: &HealthCheckConfig{Readiness: &CheckConfig{
+				Type: CheckTCP, PortFrom: PortFromDetected,
+			}}},
+			wantErr: "set detect_ports: true or use a static port",
+		},
+		{
+			name: "omitted tcp port requires discovery",
+			service: Service{Command: "run", DetectPorts: &disabled, HealthCheck: &HealthCheckConfig{Readiness: &CheckConfig{
+				Type: CheckTCP,
+			}}},
+			wantErr: "set detect_ports: true or configure a static port",
+		},
+		{
+			name: "omitted http url port requires discovery",
+			service: Service{Command: "run", DetectPorts: &disabled, HealthCheck: &HealthCheckConfig{Readiness: &CheckConfig{
+				Type: CheckHTTP, URL: "http://127.0.0.1/health",
+			}}},
+			wantErr: "set detect_ports: true or specify an explicit port in 'url'",
+		},
+		{
+			name: "explicit static http port works without discovery",
+			service: Service{Command: "run", DetectPorts: &disabled, HealthCheck: &HealthCheckConfig{Readiness: &CheckConfig{
+				Type: CheckHTTP, URL: "http://127.0.0.1:80/health",
+			}}},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := &Config{Project: "Test", Services: map[string]Service{"api": test.service}}
+			err := Validate(cfg)
+			if test.wantErr == "" && err != nil {
+				t.Fatalf("valid dynamic probe rejected: %v", err)
+			}
+			if test.wantErr != "" && (err == nil || !strings.Contains(err.Error(), test.wantErr)) {
+				t.Fatalf("error = %v, want substring %q", err, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateHTTPCheckURLs(t *testing.T) {
+	tests := []struct {
+		name    string
+		url     string
+		wantErr string
+	}{
+		{name: "static http with explicit port", url: "http://127.0.0.1:8080/health"},
+		{name: "dynamic http omits url port", url: "http://api.local/health"},
+		{name: "https", url: "https://api.local/health?deep=1"},
+		{name: "relative path", url: "/health", wantErr: "absolute URL with scheme and host"},
+		{name: "missing scheme", url: "localhost:8080/health", wantErr: "absolute URL with scheme and host"},
+		{name: "missing host", url: "http:///health", wantErr: "absolute URL with scheme and host"},
+		{name: "unsupported scheme", url: "ftp://127.0.0.1/health", wantErr: `scheme must be "http" or "https"`},
+		{name: "malformed port", url: "http://127.0.0.1:not-a-port/health", wantErr: "valid absolute URL"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := &Config{Project: "Test", Services: map[string]Service{
+				"api": {Command: "run", HealthCheck: &HealthCheckConfig{Readiness: &CheckConfig{
+					Type: CheckHTTP, URL: test.url,
+				}}},
+			}}
+			err := Validate(cfg)
+			if test.wantErr == "" && err != nil {
+				t.Fatalf("valid HTTP URL rejected: %v", err)
+			}
+			if test.wantErr != "" && (err == nil || !strings.Contains(err.Error(), test.wantErr)) {
+				t.Fatalf("error = %v, want substring %q", err, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestLoadDetectedPortHealthCheckSelector(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "kranz.yaml")
+	data := "project: Dynamic probe\nservices:\n  api:\n    command: run\n    healthcheck:\n      readiness:\n        type: tcp\n        port_from: detected\n        detected_port_index: 0\n"
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := cfg.Services["api"].HealthCheck.Readiness
+	if check.PortFrom != PortFromDetected || check.DetectedPortIndex == nil || *check.DetectedPortIndex != 0 {
+		t.Fatalf("dynamic probe selector = %#v", check)
+	}
+}
+
+func TestLoadTCPHealthCheckWithoutPortUsesDiscovery(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "kranz.yaml")
+	data := "project: Implicit dynamic probe\nservices:\n  im-widgets:\n    command: npm run dev\n    healthcheck:\n      readiness:\n        type: tcp\n        interval: 3s\n      liveness:\n        type: tcp\n        detected_port_index: 0\n"
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	health := cfg.Services["im-widgets"].HealthCheck
+	if !health.Readiness.UsesDetectedPort() || !health.Liveness.UsesDetectedPort() {
+		t.Fatalf("tcp probes did not use discovery: %#v", health)
+	}
+}
+
 func TestGetAllTags(t *testing.T) {
 	cfg := &Config{
 		Project: "Test",
@@ -410,6 +609,52 @@ func TestNativeConfigRejectsUnknownFields(t *testing.T) {
 	}
 	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "field unknown") {
 		t.Fatalf("unknown-field error = %v", err)
+	}
+}
+
+func TestPortDiscoveryEffectiveDefaultMatrix(t *testing.T) {
+	enabled := true
+	disabled := false
+	tests := []struct {
+		name    string
+		service Service
+		want    bool
+	}{
+		{name: "no ports defaults on", service: Service{}, want: true},
+		{name: "configured ports default off", service: Service{Ports: []int{8080}}, want: false},
+		{name: "explicit opt in with configured ports", service: Service{Ports: []int{8080}, DetectPorts: &enabled}, want: true},
+		{name: "explicit opt out without ports", service: Service{DetectPorts: &disabled}, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.service.PortDiscoveryEnabled(); got != tt.want {
+				t.Fatalf("PortDiscoveryEnabled() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDetectPortsYAMLAndMergePreserveExplicitFalse(t *testing.T) {
+	directory := t.TempDir()
+	basePath := filepath.Join(directory, "base.yaml")
+	overridePath := filepath.Join(directory, "override.yaml")
+	base := "project: Test\nservices:\n  api:\n    command: run\n    ports: [8080]\n    detect_ports: true\n"
+	override := "services:\n  api:\n    detect_ports: false\n"
+	if err := os.WriteFile(basePath, []byte(base), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(overridePath, []byte(override), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadFiles([]string{basePath, overridePath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := cfg.Services["api"]
+	if service.DetectPorts == nil || *service.DetectPorts || service.PortDiscoveryEnabled() {
+		t.Fatalf("merged detect_ports = %v, effective=%v", service.DetectPorts, service.PortDiscoveryEnabled())
 	}
 }
 

@@ -1,21 +1,25 @@
 // Package config defines, loads, merges, and validates Kranz configurations.
 package config
 
-import "time"
+import (
+	"net/url"
+	"time"
+)
 
-// Config is the root structure of a native Kranz configuration.
+// Config is the normalized root structure for every supported source format.
 type Config struct {
-	Project     string             `yaml:"project"`
-	Version     string             `yaml:"version,omitempty"`
-	UI          UIConfig           `yaml:"ui,omitempty"`
-	Defaults    Defaults           `yaml:"defaults,omitempty"`
-	Services    map[string]Service `yaml:"services"`
-	Source      SourceFormat       `yaml:"-"`
-	Diagnostics []string           `yaml:"-"`
-	Paths       []string           `yaml:"-"`
-	WatchPaths  []string           `yaml:"-"`
-	dotenvEnv   map[string]string  `yaml:"-"`
-	explicitEnv map[string]string  `yaml:"-"`
+	Project      string             `yaml:"project"`
+	Version      string             `yaml:"version,omitempty"`
+	UI           UIConfig           `yaml:"ui,omitempty"`
+	Defaults     Defaults           `yaml:"defaults,omitempty"`
+	Services     map[string]Service `yaml:"services"`
+	ServiceOrder []string           `yaml:"-"`
+	Source       SourceFormat       `yaml:"-"`
+	Diagnostics  []string           `yaml:"-"`
+	Paths        []string           `yaml:"-"`
+	WatchPaths   []string           `yaml:"-"`
+	dotenvEnv    map[string]string  `yaml:"-"`
+	explicitEnv  map[string]string  `yaml:"-"`
 }
 
 // UIConfig defines project-specific presentation defaults.
@@ -41,6 +45,7 @@ type SourceFormat string
 const (
 	SourceKranz          SourceFormat = "kranz"
 	SourceProcessCompose SourceFormat = "process-compose"
+	SourceProcfile       SourceFormat = "procfile"
 )
 
 // Defaults contains values inherited by every service that omits them.
@@ -58,6 +63,7 @@ type Service struct {
 	Dir                  string                      `yaml:"dir,omitempty"`
 	Shell                string                      `yaml:"shell,omitempty"`
 	Ports                []int                       `yaml:"ports,omitempty"`
+	DetectPorts          *bool                       `yaml:"detect_ports,omitempty"`
 	Tags                 []string                    `yaml:"tags,omitempty"`
 	DependsOn            []string                    `yaml:"depends_on,omitempty"`
 	DependencyConditions map[string]DependencyConfig `yaml:"dependency_conditions,omitempty"`
@@ -71,6 +77,15 @@ type Service struct {
 	Disabled             bool                        `yaml:"disabled,omitempty"`
 	DisableDotenv        bool                        `yaml:"is_dotenv_disabled,omitempty"`
 	disabledSet          bool                        `yaml:"-"`
+}
+
+// PortDiscoveryEnabled resolves the service-level tri-state. Services without
+// configured port hints use runtime discovery by default.
+func (s Service) PortDiscoveryEnabled() bool {
+	if s.DetectPorts != nil {
+		return *s.DetectPorts
+	}
+	return len(s.Ports) == 0
 }
 
 // DependencyConfig defines the condition required from one dependency.
@@ -114,25 +129,52 @@ type HealthCheckConfig struct {
 
 // CheckConfig describes one HTTP, TCP, or command probe.
 type CheckConfig struct {
-	Type             CheckType         `yaml:"type"`
-	URL              string            `yaml:"url,omitempty"`
-	Port             int               `yaml:"port,omitempty"`
-	Command          string            `yaml:"command,omitempty"`
-	Headers          map[string]string `yaml:"headers,omitempty"`
-	StatusCode       int               `yaml:"status_code,omitempty"`
-	InitialDelay     time.Duration     `yaml:"initial_delay,omitempty"`
-	Interval         time.Duration     `yaml:"interval,omitempty"`
-	Timeout          time.Duration     `yaml:"timeout,omitempty"`
-	FailureThreshold int               `yaml:"failure_threshold,omitempty"`
+	Type              CheckType         `yaml:"type"`
+	URL               string            `yaml:"url,omitempty"`
+	Port              int               `yaml:"port,omitempty"`
+	PortFrom          string            `yaml:"port_from,omitempty"`
+	DetectedPortIndex *int              `yaml:"detected_port_index,omitempty"`
+	Command           string            `yaml:"command,omitempty"`
+	Headers           map[string]string `yaml:"headers,omitempty"`
+	StatusCode        int               `yaml:"status_code,omitempty"`
+	InitialDelay      time.Duration     `yaml:"initial_delay,omitempty"`
+	Interval          time.Duration     `yaml:"interval,omitempty"`
+	Timeout           time.Duration     `yaml:"timeout,omitempty"`
+	FailureThreshold  int               `yaml:"failure_threshold,omitempty"`
+}
+
+// UsesDetectedPort reports whether the probe resolves its port from the
+// service's runtime listeners. Omitting a TCP port or an HTTP URL port is the
+// concise form of port_from: detected; static HTTP defaults stay expressible as
+// explicit :80 or :443 URLs.
+func (c *CheckConfig) UsesDetectedPort() bool {
+	if c == nil {
+		return false
+	}
+	if c.PortFrom == PortFromDetected {
+		return true
+	}
+	if c.PortFrom != "" {
+		return false
+	}
+	if c.Type == CheckTCP {
+		return c.Port == 0
+	}
+	if c.Type != CheckHTTP || c.URL == "" {
+		return false
+	}
+	parsed, err := url.Parse(c.URL)
+	return err == nil && parsed.Hostname() != "" && parsed.Port() == ""
 }
 
 // CheckType identifies the transport used by a health probe.
 type CheckType string
 
 const (
-	CheckHTTP    CheckType = "http"
-	CheckTCP     CheckType = "tcp"
-	CheckCommand CheckType = "command"
+	CheckHTTP        CheckType = "http"
+	CheckTCP         CheckType = "tcp"
+	CheckCommand     CheckType = "command"
+	PortFromDetected           = "detected"
 )
 
 // ServiceStatus is the current lifecycle state of a managed service.

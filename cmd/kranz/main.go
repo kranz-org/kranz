@@ -55,7 +55,7 @@ func run() (runErr error) {
 		return err
 	}
 
-	// Resolve and load every native or Process Compose configuration layer.
+	// Resolve and load every native, Process Compose, or Procfile layer.
 	cfg, err := config.LoadFiles(cfgPaths)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
@@ -130,9 +130,13 @@ func commandInformation(args []string) (output string, handled bool, err error) 
 		return `Kranz — a local service orchestrator with a terminal UI.
 
 Usage:
-  kranz
+  kranz                     Auto-discover a project configuration
   kranz [CONFIG ...]
   kranz -f CONFIG [-f OVERRIDE ...]
+
+Auto-discovery priority:
+  kranz.yaml, kranz.yml, process-compose.yaml, process-compose.yml,
+  Procfile.dev, Procfile
 
 Options:
   -f, --config PATH  Load a configuration layer (repeatable)
