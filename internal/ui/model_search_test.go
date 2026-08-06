@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 )
 
 // Tests for the regex log search.
@@ -111,6 +112,45 @@ func TestSearchForwardsTextInputCommandsAndMessages(t *testing.T) {
 	if blinkCommand == nil {
 		t.Fatal("the parent update loop did not forward a text input message")
 	}
+}
+
+func TestSearchCursorBlinkKeepsHintsInSearchColor(t *testing.T) {
+	previousProfile := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(previousProfile)
+	restoreDefaultTheme(t)
+	if _, err := ApplyTheme("nord", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	model := newTestModel()
+	defer model.Shutdown()
+	model.width, model.height, model.ready = 120, 24, true
+	pressKey(model, '/')
+	pressKey(model, 'x')
+
+	assertHintStyle := func(phase string) {
+		t.Helper()
+		rows := strings.Split(model.renderSearchView(), "\n")
+		bar := rows[len(rows)-1]
+		hintAt := strings.Index(bar, "[Tab]")
+		if hintAt < 0 {
+			t.Fatalf("%s cursor phase has no search hints: %q", phase, ansi.Strip(bar))
+		}
+		const reset = "\x1b[0m"
+		resetAt := strings.LastIndex(bar[:hintAt], reset)
+		if resetAt < 0 {
+			t.Fatalf("%s cursor phase has no nested style reset", phase)
+		}
+		prefix := terminalStylePrefix(SearchInputStyle)
+		if !strings.HasPrefix(bar[resetAt+len(reset):], prefix) {
+			t.Fatalf("%s cursor phase does not restore the search color before hints", phase)
+		}
+	}
+
+	assertHintStyle("visible")
+	_, _ = model.Update(textinput.Blink())
+	assertHintStyle("hidden")
 }
 
 func TestSearchEscapeLeavesEditorKeepingActiveFilter(t *testing.T) {

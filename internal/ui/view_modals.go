@@ -20,6 +20,9 @@ func (m *Model) renderHelpView() string {
 	offset := min(maxOffset, max(0, m.helpOffset))
 	end := min(len(body), offset+visibleHeight)
 	visible := body[offset:end]
+	for index := range visible {
+		visible[index] = "  " + visible[index]
+	}
 
 	lines := []string{ModalTitleStyle.Render(" Kranz Help "), ""}
 	lines = append(lines, visible...)
@@ -28,9 +31,9 @@ func (m *Model) renderHelpView() string {
 	if maxOffset > 0 {
 		footer = fmt.Sprintf("  [↑/k] Up  [↓/j] Down  %d–%d/%d    [Esc] Close", offset+1, end, len(body))
 	}
-	lines = append(lines, lipgloss.NewStyle().Foreground(ColorDim).Render(footer))
+	lines = append(lines, renderModalShortcuts(footer, lipgloss.NewStyle().Foreground(ColorDim)))
 
-	content := renderModal(strings.Join(lines, "\n"))
+	content := renderFlushModal(strings.Join(lines, "\n"))
 	return m.placeOverlay(content)
 }
 
@@ -67,9 +70,12 @@ func helpEntries() []helpEntry {
 		{"c", "Clear focused or pinned service logs after confirmation"},
 		{"q", "Quit"},
 		{"?", "Show this help"},
-		{"Ctrl+T", "Choose and persist a theme"},
-		{"p / a / b / m", "In Themes: toggle theme, accent, background, or Auto/Dark/Light mode"},
-		{"Enter / c", "In Themes: save globally or save to the project config"},
+		{"Ctrl+T", "Choose and apply a theme"},
+		{"p / m", "In Themes: toggle theme or cycle Auto/Dark/Light mode"},
+		{"a / b", "In Themes: cycle the accent or canvas sources, including a custom color once one is set"},
+		{"Shift+A/B", "In Themes: edit the six hex digits of the accent or the canvas"},
+		{"Enter / r", "In Themes: apply for this session or reload saved appearance from configuration"},
+		{"g / c", "In Themes: save appearance globally or to the project config"},
 		{"Ctrl+L", "Reload configuration and detect terminal appearance"},
 		{"Ctrl+O", "Open command shell; Ctrl+O returns to Kranz"},
 	}
@@ -163,13 +169,15 @@ func (m *Model) renderHealthHistoryView() string {
 	lines = append(lines, "")
 
 	if svc.Config.HealthCheck != nil {
+		detectedPorts := svc.DetectedPorts()
+		serviceActive := svc.Status() != config.StatusStopped
 		lines = append(lines, "  Readiness: "+m.readinessSummary(svc))
 		if check := healthReadiness(svc); check != nil {
-			lines = append(lines, checkDescription(check))
+			lines = append(lines, checkDescription(check, detectedPorts, serviceActive))
 		}
 		lines = append(lines, "  Liveness:  "+m.livenessSummary(svc))
 		if check := healthLiveness(svc); check != nil {
-			lines = append(lines, checkDescription(check))
+			lines = append(lines, checkDescription(check, detectedPorts, serviceActive))
 		}
 		if healthData != nil {
 			lines = append(lines, "")
@@ -227,11 +235,11 @@ func (m *Model) renderNotificationsView() string {
 
 // renderConfirmQuitView explains the process cleanup performed on exit.
 func (m *Model) renderConfirmQuitView() string {
-	content := renderModal(
-		" Quit Kranz? \n\n" +
-			"All child processes will be stopped and\ntheir listening ports will be released.\n\n" +
-			" [Enter/y] Stop everything and quit\n" +
-			" [Esc/n]   Stay here",
+	content := renderConfirmationModal(
+		"Quit Kranz?",
+		[]string{"All child processes will be stopped and", "their listening ports will be released."},
+		"[Enter/y] Stop everything and quit",
+		"[Esc/n]   Stay here",
 	)
 	return m.placeOverlay(content)
 }
@@ -239,7 +247,7 @@ func (m *Model) renderConfirmQuitView() string {
 // renderPortConflictView renders verified ownership details for occupied ports.
 func (m *Model) renderPortConflictView() string {
 	var lines []string
-	lines = append(lines, "⚠ Port conflict: "+m.conflictService)
+	lines = append(lines, renderConfirmTitle("⚠ Port conflict: "+m.conflictService))
 	lines = append(lines, "")
 
 	for port, info := range m.conflictPorts {
@@ -258,11 +266,11 @@ func (m *Model) renderPortConflictView() string {
 
 	lines = append(lines, "")
 	if m.conflictExternal {
-		lines = append(lines, "[k] Stop this external process and retry")
+		lines = append(lines, renderModalShortcuts("[k] Stop this external process and retry", lipgloss.NewStyle()))
 	} else {
 		lines = append(lines, "Stop the owning Kranz service before retrying.")
 	}
-	lines = append(lines, "[r/Enter] Retry  [s/Esc] Close")
+	lines = append(lines, renderModalShortcuts("[r/Enter] Retry  [s/Esc] Close", lipgloss.NewStyle()))
 
 	content := renderModal(strings.Join(lines, "\n"))
 	return m.placeOverlay(content)
@@ -270,9 +278,10 @@ func (m *Model) renderPortConflictView() string {
 
 // renderConfirmRestartView lists dependent services affected by a restart.
 func (m *Model) renderConfirmRestartView() string {
-	content := renderModal(
-		fmt.Sprintf(" Restart %q \n\nAlso restarts: %s\n\n[Enter/y] Continue  [Esc/n] Cancel",
-			m.confirmTarget, m.confirmAction),
+	content := renderConfirmationModal(
+		fmt.Sprintf("Restart %q", m.confirmTarget),
+		[]string{fmt.Sprintf("Also restarts: %s", m.confirmAction)},
+		"[Enter/y] Continue  [Esc/n] Cancel",
 	)
 	return m.placeOverlay(content)
 }
@@ -282,92 +291,433 @@ func (m *Model) renderConfirmClearLogsView() string {
 	if m.clearPinned {
 		panel = "pinned logs"
 	}
-	content := renderModal(
-		fmt.Sprintf(" Clear %s for %q? \n\nThis cannot be undone.\n\n[Enter] Clear  [Esc] Cancel",
-			panel, m.clearTarget),
+	content := renderConfirmationModal(
+		fmt.Sprintf("Clear %s for %q?", panel, m.clearTarget),
+		[]string{"This cannot be undone."},
+		"[Enter] Clear  [Esc] Cancel",
 	)
 	return m.placeOverlay(content)
 }
 
 func (m *Model) renderThemeView() string {
 	names := ThemeNames()
-	// Keep the controls visible even in a 24-row terminal. The fixed rows are
-	// the summary, footer, modal border/padding, and optional settings path.
-	fixedRows := 6 + 7 + 4
+	pathWidth := max(20, m.width-12)
+	pathLines := make([]string, 0, 2)
 	if m.settingsPath != "" {
-		fixedRows++
+		pathLines = append(pathLines, renderThemePath("Global", m.settingsPath, pathWidth)...)
 	}
-	if m.themeProjectConfigPath() != "" {
-		fixedRows++
-	}
-	visibleRows := min(len(names), max(1, m.height-fixedRows))
-	if visibleRows < len(names) {
-		// The scroll position indicator consumes one additional row.
-		visibleRows = max(1, visibleRows-1)
-	}
-	start := max(0, m.themeCursor-visibleRows/2)
-	if start+visibleRows > len(names) {
-		start = max(0, len(names)-visibleRows)
+	if path := m.themeProjectConfigPath(); path != "" {
+		pathLines = append(pathLines, renderThemePath("Project", path, pathWidth)...)
 	}
 
 	projectTheme := m.cfg.UI.Theme
 	if projectTheme == "" {
 		projectTheme = DefaultTheme
 	}
+	previewThemeName := names[m.themeCursor]
+	if m.themeUseProject {
+		previewThemeName = projectTheme
+	}
+	// The card must show what Apply would produce, so it is built from the
+	// picker's own resolved accent and canvas rather than from the theme's
+	// defaults. A colour still being typed overrides only the channel its editor
+	// targets — otherwise a background in progress would repaint the accent.
+	previewAccent := m.themePickerAccent()
+	previewBackground, _ := customBackgroundColor(m.themePickerBackground())
+	if candidate, ok := m.themeColorCandidate(); ok {
+		if m.themeColorTarget == themeColorTargetBackground {
+			previewBackground = candidate
+		} else {
+			previewAccent = candidate
+		}
+	}
+	previewTheme, err := BuildTheme(previewThemeName, previewAccent, previewBackground,
+		colorModeIsDark(m.themeColorMode, m.terminalDark))
+	if err != nil {
+		previewTheme, _ = LookupTheme(previewThemeName)
+		previewTheme = adaptThemeBackground(previewTheme, colorModeIsDark(m.themeColorMode, m.terminalDark))
+	}
+	// Keep the controls visible even in a 24-row terminal. The fixed rows are
+	// the six-row settings summary, the five-row footer, the modal border and
+	// padding, the path separator, and the paths themselves. The remaining rows
+	// are shared by the theme table and its side preview.
+	pathSeparatorRows := 0
+	if len(pathLines) > 0 {
+		pathSeparatorRows = 1
+	}
+	fixedRows := 6 + 5 + 4 + pathSeparatorRows + len(pathLines)
+	sectionRows := max(2, m.height-fixedRows)
+	// The side preview is a fixed-height panel, and JoinHorizontal stretches the
+	// whole section to the taller side. Showing it in a section that cannot hold
+	// it would push the footer and the config paths off the bottom of the modal,
+	// so a short terminal keeps the theme table alone.
+	showPreview := m.width >= themePreviewMinWidth && sectionRows >= themePreviewCardRows
+	themeCapacity := max(1, sectionRows-1) // ATMB header
+	showPosition := len(names) > themeCapacity && sectionRows >= 3
+	visibleRows := min(len(names), themeCapacity)
+	if showPosition {
+		// The scroll position indicator consumes one additional row.
+		visibleRows--
+	}
+	start := max(0, m.themeCursor-visibleRows/2)
+	if start+visibleRows > len(names) {
+		start = max(0, len(names)-visibleRows)
+	}
+
 	lines := []string{
 		ModalTitleStyle.Render(" Themes "),
-		fmt.Sprintf("Theme: %s", m.themePickerThemeLabel(projectTheme)),
-		fmt.Sprintf("Accent: %s", m.themePickerAccentLabel()),
-		fmt.Sprintf("Background: %s", m.themePickerBackgroundLabel()),
-		fmt.Sprintf("Mode: %s", m.themePickerColorModeLabel()),
 		"",
+		"  " + m.renderThemePickerThemeSetting(projectTheme),
+		"  " + m.renderThemePickerAccentSetting(),
+		"  " + m.renderThemePickerBackgroundSetting(),
+		"  " + renderThemeSetting("Mode", m.themePickerColorModeLabel()),
 	}
+	// The header aligns with the palette column: the row indent plus the marker
+	// plus the padded name width.
+	themeLines := []string{"  " + strings.Repeat(" ", themeRowMarkerWidth+themeRowNameWidth) + ContextBarStyle.Render("A T M B")}
 	for index := start; index < start+visibleRows; index++ {
 		theme, _ := LookupTheme(names[index])
 		theme = adaptThemeBackground(theme, colorModeIsDark(m.themeColorMode, m.terminalDark))
-		swatchAccent := ensureContrast(theme.Accent, m.activeTheme.SurfaceAlt, 3.0)
 		marker := "  "
 		if index == m.themeCursor {
 			marker = "› "
 		}
-		swatches := lipgloss.NewStyle().Foreground(lipgloss.Color(swatchAccent)).Bold(true).Render("●") + " " +
-			lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Green)).Bold(true).Render("●") + " " +
-			lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Yellow)).Bold(true).Render("●") + " " +
-			lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Red)).Bold(true).Render("●")
-		line := fmt.Sprintf("%s%-20s %s", marker, theme.DisplayName, swatches)
+		name := themeNameStyle(theme).Render(theme.DisplayName)
+		line := marker + name + strings.Repeat(" ", themeRowNamePadding(theme)) + themePalettePreview(theme, m.activeTheme.SurfaceAlt)
 		if index == m.themeCursor {
 			line = renderSelectedLine(line)
 		}
-		lines = append(lines, line)
+		themeLines = append(themeLines, "  "+line)
 	}
-	if len(names) > visibleRows {
-		lines = append(lines, ContextBarStyle.Render(fmt.Sprintf("%d/%d", m.themeCursor+1, len(names))))
+	if showPosition {
+		themeLines = append(themeLines, "  "+ContextBarStyle.Render(fmt.Sprintf("%d/%d", m.themeCursor+1, len(names))))
 	}
+	themeSection := strings.Join(themeLines, "\n")
+	if showPreview {
+		themeSection = lipgloss.JoinHorizontal(lipgloss.Top, themeSection, "   ", renderThemePreviewCard(previewTheme))
+	}
+	lines = append(lines, themeSection, "")
+	lines = append(lines, renderThemeControlRows([][2]string{
+		{"[p] Theme: Project / Selected", "[m] Mode: Auto / Dark / Light"},
+		{m.themeAccentControlLabel(), "[Shift+A] Edit color"},
+		{m.themeBackgroundControlLabel(), "[Shift+B] Edit color"},
+	}, m.themeControlLabelReserve())...)
 	lines = append(lines,
-		"",
-		"[p] Theme: Project / Selected",
-		"[a] Accent: Project / Theme default",
-		"[b] Background: Terminal / Theme",
-		"[m] Mode: Auto / Dark / Light",
-		"[Enter] Save globally   [c] Save to project",
-		"[Esc] Cancel",
+		"  "+DetailLabelStyle.Render("SESSION")+"  "+renderModalShortcuts("[Enter] Apply  [r] Reload saved  [Esc] Cancel", lipgloss.NewStyle()),
+		"  "+DetailLabelStyle.Render("SAVE")+"     "+renderModalShortcuts("[g] Global  [c] Project", lipgloss.NewStyle()),
 	)
-	pathWidth := max(20, m.width-12)
-	if m.settingsPath != "" {
-		lines = append(lines, ContextBarStyle.Render(ansi.Truncate("Global: "+m.settingsPath, pathWidth, "…")))
+	if len(pathLines) > 0 {
+		lines = append(lines, "")
+		lines = append(lines, pathLines...)
 	}
-	if path := m.themeProjectConfigPath(); path != "" {
-		lines = append(lines, ContextBarStyle.Render(ansi.Truncate("Project: "+path, pathWidth, "…")))
+	return m.placeOverlay(renderFlushModal(strings.Join(lines, "\n")))
+}
+
+const (
+	// Layout of one theme row: "› " marker, the display name padded to a fixed
+	// column, then the A/T/M/B palette. renderThemeView draws it and
+	// handleThemeMouseClick sizes its hit target from the same numbers.
+	themeRowMarkerWidth = 2
+	themeRowNameWidth   = 20
+	// The side preview is renderTitledPanel(height: 4): a titled top border,
+	// four content rows, and a bottom border. Both dimensions gate it — the
+	// narrowest terminal that fits the table and the card side by side, and the
+	// shortest section that can hold the card without stealing rows from the
+	// footer below it.
+	themePreviewCardRows = 6
+	themePreviewMinWidth = 78
+	// Space between the two columns of key hints below the theme table.
+	themeControlColumnGap = 2
+	// Gutter a flush modal keeps on the right, matching the indent its content
+	// carries on the left.
+	modalSideMargin = 2
+)
+
+// renderThemeControlRows lays the picker's key hints out as two columns. The
+// left column's width is measured from its own longest entry, so the right
+// column stays aligned when a label grows a Custom position.
+func renderThemeControlRows(rows [][2]string, leftWidth int) []string {
+	for _, row := range rows {
+		leftWidth = max(leftWidth, lipgloss.Width(row[0]))
 	}
-	return m.placeOverlay(renderModal(strings.Join(lines, "\n")))
+	lines := make([]string, 0, len(rows))
+	for _, row := range rows {
+		left := renderModalShortcuts(row[0], lipgloss.NewStyle())
+		if row[1] == "" {
+			lines = append(lines, "  "+left)
+			continue
+		}
+		gap := strings.Repeat(" ", leftWidth-lipgloss.Width(row[0])+themeControlColumnGap)
+		lines = append(lines, "  "+left+gap+renderModalShortcuts(row[1], lipgloss.NewStyle()))
+	}
+	return lines
+}
+
+// themeRowNamePadding reports the spaces between a theme's display name and the
+// palette column, keeping at least one space when the name overflows.
+func themeRowNamePadding(theme Theme) int {
+	return max(1, themeRowNameWidth-lipgloss.Width(theme.DisplayName))
+}
+
+// themePalettePreview renders a theme's accent, text, muted, and background
+// colours as dots. They are drawn over the active theme's modal surface rather
+// than their own, so each dot needs a contrast floor of its own: without it a
+// dark theme's background dot is invisible on a dark modal.
+func themePalettePreview(theme Theme, surface string) string {
+	dot := func(color string) string {
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(ensureContrast(color, surface, 3.0))).Bold(true).Render("●")
+	}
+	return strings.Join([]string{
+		dot(theme.Accent),
+		dot(theme.Text),
+		dot(theme.Muted),
+		dot(theme.Background),
+	}, " ")
+}
+
+func renderThemePreviewCard(theme Theme) string {
+	const contentWidth = 22
+	text := lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Text)).Render(" Text")
+	muted := lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Muted)).Render(" Muted text")
+	accentText := ensureContrast(theme.Text, theme.Accent, 4.5)
+	accentBackground := lipgloss.NewStyle().
+		Width(contentWidth).
+		Foreground(lipgloss.Color(accentText)).
+		Background(lipgloss.Color(theme.Accent)).
+		Bold(true).
+		Render(" Accent background")
+	neutralText := ensureContrast(theme.Text, theme.SurfaceAlt, 4.5)
+	neutralBackground := lipgloss.NewStyle().
+		Width(contentWidth).
+		Foreground(lipgloss.Color(neutralText)).
+		Background(lipgloss.Color(theme.SurfaceAlt)).
+		Render(" Neutral background")
+	panelStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color(theme.Text)).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color(theme.Accent))
+	titleBackground := focusedPanelTitleBackground(theme)
+	titleText := ensureContrast(theme.Text, titleBackground, 4.5)
+	titleStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color(titleText)).
+		Background(lipgloss.Color(titleBackground)).
+		Bold(true)
+	return renderTitledPanel(panelStyle, titleStyle, contentWidth, 4, "Preview", []string{
+		text,
+		muted,
+		accentBackground,
+		neutralBackground,
+	})
+}
+
+func themeNameStyle(theme Theme) lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(theme.AccentText)).Bold(true)
+}
+
+func renderThemePath(label, path string, width int) []string {
+	prefix := label + ": "
+	prefixWidth := lipgloss.Width(prefix)
+	parts := wrapDetailValue(path, max(1, width-prefixWidth))
+	lines := make([]string, 0, len(parts))
+	for index, part := range parts {
+		linePrefix := strings.Repeat(" ", prefixWidth)
+		if index == 0 {
+			linePrefix = ContextBarStyle.Render(prefix)
+		}
+		lines = append(lines, "  "+linePrefix+ContextBarStyle.Bold(true).Render(part))
+	}
+	return lines
 }
 
 func renderModal(content string) string {
+	return renderModalWithStyle(content, ModalStyle)
+}
+
+func renderFlushModal(content string) string {
+	return renderModalWithStyle(padModalSideMargin(content), ModalStyle.PaddingLeft(0).PaddingRight(0))
+}
+
+// padModalSideMargin gives a flush modal the same gutter on the right that its
+// content already indents on the left. Flush modals drop the style's horizontal
+// padding so a full-width row can reach the border, and every line then carries
+// its own two-space indent — which left the right-hand column of the theme
+// picker pressed against the frame.
+func padModalSideMargin(content string) string {
+	lines := strings.Split(content, "\n")
+	widest := 0
+	for _, line := range lines {
+		widest = max(widest, lipgloss.Width(line))
+	}
+	for index, line := range lines {
+		lines[index] = line + strings.Repeat(" ", widest-lipgloss.Width(line)+modalSideMargin)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func renderModalWithStyle(content string, style lipgloss.Style) string {
 	modalContentStyle := lipgloss.NewStyle().Foreground(ColorGrey)
 	if !TerminalCanvas {
 		modalContentStyle = modalContentStyle.Background(ColorSurfaceAlt)
 	}
-	return ModalStyle.Render(preserveStyleAfterReset(content, modalContentStyle))
+	return style.Render(preserveStyleAfterReset(content, modalContentStyle))
+}
+
+func renderModalShortcuts(value string, textStyle lipgloss.Style) string {
+	var result strings.Builder
+	for len(value) > 0 {
+		start := strings.IndexByte(value, '[')
+		if start < 0 {
+			result.WriteString(textStyle.Render(value))
+			break
+		}
+		end := strings.IndexByte(value[start:], ']')
+		if end < 0 {
+			result.WriteString(textStyle.Render(value))
+			break
+		}
+		end += start
+		result.WriteString(textStyle.Render(value[:start]))
+		result.WriteString(HelpKeyStyle.Render(value[start : end+1]))
+		value = value[end+1:]
+	}
+	return result.String()
+}
+
+func renderConfirmationModal(title string, bodyLines []string, actionLines ...string) string {
+	lines := []string{renderConfirmTitle(title)}
+	if len(bodyLines) > 0 {
+		lines = append(lines, "")
+		lines = append(lines, bodyLines...)
+	}
+	if len(actionLines) > 0 {
+		lines = append(lines, "")
+		for _, action := range actionLines {
+			lines = append(lines, renderModalShortcuts(action, lipgloss.NewStyle()))
+		}
+	}
+	return renderModal(strings.Join(lines, "\n"))
+}
+
+func renderConfirmTitle(title string) string {
+	return ModalTitleStyle.Padding(0).Render(title)
+}
+
+func renderThemeSetting(label, value string) string {
+	return label + ": " + HelpKeyStyle.Render(value)
+}
+
+func (m *Model) renderThemePickerAccentSetting() string {
+	return m.renderThemePickerColorSetting(themeColorTargetAccent, "Accent", m.themePickerAccentLabel())
+}
+
+func (m *Model) renderThemePickerBackgroundSetting() string {
+	return m.renderThemePickerColorSetting(themeColorTargetBackground, "Background", m.themePickerBackgroundLabel())
+}
+
+// renderThemePickerColorSetting draws one settings row for a colour that can be
+// edited. While its editor is open the row becomes the input; otherwise it shows
+// the label, tinting a trailing #RRGGBB with the colour it names.
+func (m *Model) renderThemePickerColorSetting(target themeColorTarget, label, value string) string {
+	if m.themeColorEditing && m.themeColorTarget == target {
+		// The field itself becomes the colour: the value being typed is its
+		// background, so the colour shows as an area and stays visible whatever
+		// it is. Its foreground is lifted off that background, otherwise a pale
+		// canvas colour — the common case — would swallow its own digits.
+		inputStyle := HelpKeyStyle
+		swatch := ContextBarStyle.Render("○")
+		if candidate, ok := m.themeColorCandidate(); ok {
+			inputStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color(readableTextOn(candidate, m.activeTheme.Text))).
+				Background(lipgloss.Color(candidate)).
+				Bold(true)
+			swatch = lipgloss.NewStyle().Foreground(lipgloss.Color(candidate)).Bold(true).Render("●")
+		}
+		m.themeColorInput.TextStyle = inputStyle
+		m.themeColorInput.PlaceholderStyle = ContextBarStyle
+		m.themeColorInput.Cursor.Style = inputStyle.Reverse(true)
+		m.themeColorInput.Cursor.TextStyle = inputStyle
+		suffix := renderModalShortcuts("[Enter] Apply  [Esc] Cancel", ContextBarStyle)
+		if m.themeColorError != "" {
+			suffix = PortWarningStyle.Render(m.themeColorError)
+		}
+		input := lipgloss.NewStyle().Width(7).Render(m.themeColorInput.View())
+		return label + ": " + inputStyle.Render("#") + input + " " + swatch + "  " + suffix
+	}
+	source, color, ok := strings.Cut(value, " · ")
+	if !ok || !hexColorPattern.MatchString(color) {
+		return renderThemeSetting(label, value)
+	}
+	colorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Bold(true)
+	return label + ": " + HelpKeyStyle.Render(source+" · ") + colorStyle.Render(color)
+}
+
+// themeAccentControlLabel and themeBackgroundControlLabel name what their key
+// will cycle through. Custom appears only once a colour exists, so the label
+// never promises a position the cycle cannot reach.
+func (m *Model) themeAccentControlLabel() string {
+	return m.accentControlLabel(m.themeCustomAccent != "")
+}
+
+func (m *Model) accentControlLabel(withCustom bool) string {
+	names := make([]string, 0, 3)
+	if strings.TrimSpace(m.cfg.UI.Accent) != "" {
+		names = append(names, "Project")
+	}
+	names = append(names, "Theme")
+	if withCustom {
+		names = append(names, "Custom")
+	}
+	if len(names) == 1 {
+		return "[a/Shift+A] Accent: Edit color"
+	}
+	return "[a] Accent: " + strings.Join(names, " / ")
+}
+
+func (m *Model) themeBackgroundControlLabel() string {
+	return m.backgroundControlLabel(m.themeCustomBackground != "")
+}
+
+func (m *Model) backgroundControlLabel(withCustom bool) string {
+	names := []string{"Terminal", "Theme"}
+	if withCustom {
+		names = append(names, "Custom")
+	}
+	return "[b] Background: " + strings.Join(names, " / ")
+}
+
+// themeControlLabelReserve is the width the key-hint column holds open: the
+// widest label these controls can reach in this project. Measuring only the
+// current labels would let the modal grow sideways the moment a Custom position
+// appears, so the picker would change width while the user is typing in it.
+func (m *Model) themeControlLabelReserve() int {
+	reserve := 0
+	for _, label := range []string{
+		m.accentControlLabel(true),
+		m.backgroundControlLabel(true),
+	} {
+		reserve = max(reserve, lipgloss.Width(label))
+	}
+	return reserve
+}
+
+func (m *Model) themeColorCandidate() (string, bool) {
+	candidate := "#" + strings.ToUpper(m.themeColorInput.Value())
+	return candidate, m.themeColorEditing && hexColorPattern.MatchString(candidate)
+}
+
+func (m *Model) renderThemePickerThemeSetting(projectTheme string) string {
+	value := m.themePickerThemeLabel(projectTheme)
+	source, name, ok := strings.Cut(value, " · ")
+	if !ok {
+		return renderThemeSetting("Theme", value)
+	}
+	themeName := projectTheme
+	if !m.themeUseProject {
+		themeName = ThemeNames()[m.themeCursor]
+	}
+	theme, _ := LookupTheme(themeName)
+	theme = adaptThemeBackground(theme, colorModeIsDark(m.themeColorMode, m.terminalDark))
+	return "Theme: " + HelpKeyStyle.Render(source+" · ") + themeNameStyle(theme).Render(name)
 }
 
 func (m *Model) themePickerThemeLabel(projectTheme string) string {
@@ -379,20 +729,25 @@ func (m *Model) themePickerThemeLabel(projectTheme string) string {
 }
 
 func (m *Model) themePickerAccentLabel() string {
-	if !m.themeAccentChanged && isCustomAccent(m.themeOriginalAccent, m.cfg.UI.Accent) {
-		return "CUSTOM · " + m.themeOriginalAccent
+	switch m.themeAccentSource {
+	case themeAccentSourceCustom:
+		return "CUSTOM · " + m.themePickerAccent()
+	case themeAccentSourceProject:
+		return "PROJECT · " + m.themePickerAccent()
+	default:
+		return "THEME DEFAULT"
 	}
-	if m.themeProjectAccent {
-		return "PROJECT · " + strings.TrimSpace(m.cfg.UI.Accent)
-	}
-	return "THEME DEFAULT"
 }
 
 func (m *Model) themePickerBackgroundLabel() string {
-	if m.themeBackground == backgroundTheme {
+	switch m.themeBackgroundSource {
+	case themeBackgroundSourceCustom:
+		return "CUSTOM · " + m.themeCustomBackground
+	case themeBackgroundSourceTheme:
 		return "THEME · painted " + m.activeTheme.Background
+	default:
+		return "TERMINAL · inherited"
 	}
-	return "TERMINAL · inherited"
 }
 
 func (m *Model) themePickerColorModeLabel() string {

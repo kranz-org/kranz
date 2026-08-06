@@ -1,0 +1,44 @@
+project: Example Native Stack
+
+defaults:
+  shell: /bin/sh
+
+services:
+  migrate:
+    description: One-shot setup that must complete before the API starts.
+    command: echo "checking schema"; sleep 1; echo "schema is ready"
+    tags: [setup]
+
+  api:
+    description: Declared port with an HTTP readiness check.
+    command: python3 -u -m http.server 18201 --bind 127.0.0.1
+    ports: [18201]
+    tags: [backend]
+    depends_on: [migrate]
+    dependency_conditions:
+      migrate:
+        condition: process_completed_successfully
+    healthcheck:
+      readiness:
+        type: http
+        url: http://127.0.0.1:18201/
+        interval: 1s
+
+  worker:
+    description: Starts only after the API is healthy.
+    command: while true; do echo "processed job at $(date +%H:%M:%S)"; sleep 3; done
+    tags: [backend, worker]
+    depends_on: [api]
+    dependency_conditions:
+      api:
+        condition: process_healthy
+
+  preview:
+    description: No port hint; Details learns the actual listener at runtime.
+    command: python3 -u -m http.server 18202 --bind 127.0.0.1
+    tags: [frontend]
+    healthcheck:
+      readiness:
+        type: http
+        url: http://127.0.0.1/
+        interval: 1s

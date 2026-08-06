@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"regexp"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -19,15 +20,20 @@ import (
 
 // Manager coordinates service lifecycles, dependencies, health, and recovery.
 type Manager struct {
-	services      map[string]*Service
-	cfg           *config.Config
-	mu            sync.RWMutex
-	healthChecker *health.Checker
-	portChecker   port.Checker
-	shuttingDown  atomic.Bool
-	exitRequested atomic.Bool
-	exitCode      atomic.Int64
-	reloadMu      sync.Mutex
+	services             map[string]*Service
+	cfg                  *config.Config
+	mu                   sync.RWMutex
+	healthChecker        *health.Checker
+	portChecker          port.Checker
+	listenerScanner      port.ListenerScanner
+	listenerScanInterval time.Duration
+	discoveryMu          sync.Mutex
+	discoveryCancel      context.CancelFunc
+	discoveryDone        chan struct{}
+	shuttingDown         atomic.Bool
+	exitRequested        atomic.Bool
+	exitCode             atomic.Int64
+	reloadMu             sync.Mutex
 }
 
 // ReloadResult summarizes the services changed by a live configuration reload.
@@ -115,8 +121,9 @@ func (m *Manager) ApplyConfig(next *config.Config) (ReloadResult, error) {
 // NewManager creates stopped runtime services from configuration.
 func NewManager(cfg *config.Config) *Manager {
 	m := &Manager{
-		services: make(map[string]*Service),
-		cfg:      cfg,
+		services:             make(map[string]*Service),
+		cfg:                  cfg,
+		listenerScanInterval: 2 * time.Second,
 	}
 
 	for name, svcCfg := range cfg.Services {
@@ -129,8 +136,17 @@ func NewManager(cfg *config.Config) *Manager {
 // SetHealthChecker configures readiness and liveness monitoring.
 func (m *Manager) SetHealthChecker(hc *health.Checker) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.healthChecker = hc
+	m.mu.Unlock()
+	if hc != nil {
+		hc.SetDetectedPortsProvider(func(name string) []int {
+			svc, ok := m.GetService(name)
+			if !ok {
+				return nil
+			}
+			return svc.DetectedPorts()
+		})
+	}
 }
 
 // SetPortChecker configures pre-flight listener ownership checks.
@@ -140,13 +156,19 @@ func (m *Manager) SetPortChecker(pc port.Checker) {
 	m.portChecker = pc
 }
 
+// SetListenerScanner configures the runtime listener snapshot source.
+func (m *Manager) SetListenerScanner(scanner port.ListenerScanner) {
+	m.discoveryMu.Lock()
+	defer m.discoveryMu.Unlock()
+	m.listenerScanner = scanner
+}
+
 // Services returns runtime services in stable configuration order.
 func (m *Manager) Services() []*Service {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	names := m.cfg.ServiceNames()
-	sort.Strings(names)
 
 	result := make([]*Service, 0, len(names))
 	for _, name := range names {
@@ -245,6 +267,9 @@ func (m *Manager) startService(name string, recovery bool) error {
 
 	monitorStop := make(chan struct{})
 	svc.setRuntime(pm, monitorStop)
+	if svc.Config.PortDiscoveryEnabled() {
+		m.ensureListenerDiscovery()
+	}
 
 	m.mu.RLock()
 	hc := m.healthChecker
@@ -709,6 +734,7 @@ func (m *Manager) expandWithDependencies(names []string) (map[string]bool, error
 // Shutdown rejects new starts and stops every child process exactly once.
 func (m *Manager) Shutdown() error {
 	m.shuttingDown.Store(true)
+	m.stopListenerDiscovery()
 	return m.StopAll()
 }
 
@@ -918,6 +944,102 @@ func (m *Manager) monitorProcess(name string, svc *Service, pm *ProcessManager, 
 		case <-ticker.C:
 			m.drainProcessLogs(svc, pm)
 		}
+	}
+}
+
+type listenerDiscoveryTarget struct {
+	service    *Service
+	leaderPID  int
+	generation uint64
+}
+
+func (m *Manager) ensureListenerDiscovery() {
+	m.discoveryMu.Lock()
+	defer m.discoveryMu.Unlock()
+	if m.listenerScanner == nil || m.discoveryCancel != nil || m.shuttingDown.Load() {
+		return
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	m.discoveryCancel = cancel
+	m.discoveryDone = done
+	interval := m.listenerScanInterval
+	if interval <= 0 {
+		interval = 2 * time.Second
+	}
+	go func() {
+		defer close(done)
+		m.refreshDetectedPorts(ctx)
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				m.refreshDetectedPorts(ctx)
+			}
+		}
+	}()
+}
+
+func (m *Manager) stopListenerDiscovery() {
+	m.discoveryMu.Lock()
+	cancel := m.discoveryCancel
+	done := m.discoveryDone
+	m.discoveryCancel = nil
+	m.discoveryDone = nil
+	m.discoveryMu.Unlock()
+	if cancel == nil {
+		return
+	}
+	cancel()
+	<-done
+}
+
+func (m *Manager) refreshDetectedPorts(ctx context.Context) {
+	m.discoveryMu.Lock()
+	scanner := m.listenerScanner
+	m.discoveryMu.Unlock()
+	if scanner == nil {
+		return
+	}
+
+	targets := make(map[string]listenerDiscoveryTarget)
+	for _, svc := range m.Services() {
+		if !svc.Config.PortDiscoveryEnabled() {
+			continue
+		}
+		leaderPID, generation, running := svc.discoveryTarget()
+		if running {
+			targets[svc.Name] = listenerDiscoveryTarget{
+				service: svc, leaderPID: leaderPID, generation: generation,
+			}
+		}
+	}
+	if len(targets) == 0 {
+		return
+	}
+
+	listeners, err := scanner.Snapshot(ctx)
+	if err != nil {
+		return
+	}
+	portsByService := make(map[string][]int, len(targets))
+	for _, listener := range listeners {
+		if !strings.EqualFold(listener.Protocol, "tcp") || listener.PID < 1 {
+			continue
+		}
+		for name, target := range targets {
+			if sameProcessGroup(target.leaderPID, listener.PID) {
+				portsByService[name] = append(portsByService[name], listener.Port)
+				break
+			}
+		}
+	}
+	for name, target := range targets {
+		target.service.updateDetectedPorts(target.generation, portsByService[name])
 	}
 }
 

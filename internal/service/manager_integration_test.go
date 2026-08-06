@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"os"
@@ -9,7 +10,19 @@ import (
 	"time"
 
 	"github.com/kranz-org/kranz/internal/config"
+	"github.com/kranz-org/kranz/internal/health"
+	"github.com/kranz-org/kranz/internal/port"
 )
+
+type managedPortScanner struct {
+	manager *Manager
+	port    int
+}
+
+func (s managedPortScanner) Snapshot(context.Context) ([]port.Listener, error) {
+	serviceInstance, _ := s.manager.GetService("api")
+	return []port.Listener{{Protocol: "tcp", Port: s.port, PID: serviceInstance.PID()}}, nil
+}
 
 func TestManagerRestartAndShutdownReleasePort(t *testing.T) {
 	portNumber := reservePort(t)
@@ -54,6 +67,38 @@ func TestManagerRestartAndShutdownReleasePort(t *testing.T) {
 	if err := manager.StartService("api"); err == nil {
 		t.Fatal("StartService() succeeded after shutdown began")
 	}
+}
+
+func TestManagerWiresDetectedPortsIntoDynamicReadiness(t *testing.T) {
+	portNumber := reservePort(t)
+	command := fmt.Sprintf("%s -test.run=^TestKranzPortHelper$ -- %d", strconv.Quote(os.Args[0]), portNumber)
+	cfg := &config.Config{Project: "dynamic-health-test", Services: map[string]config.Service{
+		"api": {
+			Command: command, Dir: ".", Shell: "sh", Env: map[string]string{"KRANZ_PORT_HELPER": "1"},
+			HealthCheck: &config.HealthCheckConfig{Readiness: &config.CheckConfig{
+				Type: config.CheckTCP, PortFrom: config.PortFromDetected, Interval: 10 * time.Millisecond, Timeout: 50 * time.Millisecond,
+			}},
+		},
+	}}
+
+	manager := NewManager(cfg)
+	checker := health.NewChecker()
+	manager.SetHealthChecker(checker)
+	manager.SetListenerScanner(managedPortScanner{manager: manager, port: portNumber})
+	manager.listenerScanInterval = 10 * time.Millisecond
+	t.Cleanup(func() {
+		if err := manager.Shutdown(); err != nil {
+			t.Errorf("shutdown: %v", err)
+		}
+	})
+
+	if err := manager.StartService("api"); err != nil {
+		t.Fatal(err)
+	}
+	waitForCondition(t, func() bool {
+		state := checker.GetHealth("api")
+		return state != nil && state.IsReady()
+	}, "dynamic readiness to use the manager listener snapshot")
 }
 
 func TestKranzPortHelper(t *testing.T) {

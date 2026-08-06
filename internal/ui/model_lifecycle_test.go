@@ -339,6 +339,9 @@ func TestDetailsShowLifecycleConfiguration(t *testing.T) {
 			t.Errorf("details do not contain %q:\n%s", expected, plain)
 		}
 	}
+	if disabled, pid := strings.Index(plain, "DISABLED manual start only"), strings.Index(plain, "PID "); disabled < 0 || pid < 0 || disabled > pid {
+		t.Errorf("DISABLED state is not shown before process details:\n%s", plain)
+	}
 }
 
 func waitForServiceStatus(t *testing.T, svc interface{ Status() config.ServiceStatus }, expected config.ServiceStatus) {

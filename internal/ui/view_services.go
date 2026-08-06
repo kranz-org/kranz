@@ -68,11 +68,11 @@ func (m *Model) serviceColumnLayout(height int) (listHeight, detailHeight int) {
 		itemCount = len(m.tagRows())
 	}
 
-	// A panel needs one title row and two border rows in addition to its items.
+	// The title sits in the top border, so only the two border rows are chrome.
 	// Keep the list compact for small projects and cap it at 20 visible items.
 	const (
 		maxVisibleItems = 20
-		panelChromeRows = 3
+		panelChromeRows = 2
 		minPanelHeight  = 6
 	)
 	desiredHeight := min(itemCount, maxVisibleItems) + panelChromeRows
@@ -91,8 +91,7 @@ func (m *Model) renderServicePanel(width, height int) string {
 	contentWidth := max(1, width-2)
 	contentHeight := max(1, height-2)
 	if len(m.services) == 0 {
-		title := renderPanelTitle("[1] SERVICES", contentWidth)
-		return m.panelStyle(panelServices).Width(contentWidth).Height(contentHeight).Render(title + "\n\nNo services")
+		return renderTitledPanel(m.panelStyle(panelServices), m.panelTitleStyle(panelServices), contentWidth, contentHeight, "[1] SERVICES", []string{"", "No services"})
 	}
 
 	meta := fmt.Sprintf("%d · 1 → Tags", len(m.services))
@@ -102,7 +101,7 @@ func (m *Model) renderServicePanel(width, height int) string {
 		meta += fmt.Sprintf(" · TAGS %d", len(m.selectedTags))
 	}
 	title := "[1] SERVICES" + ContextBarStyle.Render(" │ "+meta)
-	lines := []string{renderPanelTitle(title, contentWidth)}
+	lines := make([]string, 0, contentHeight)
 	start, end := m.visibleServiceRange(height)
 	for i := start; i < end; i++ {
 		svc := m.services[i]
@@ -113,12 +112,11 @@ func (m *Model) renderServicePanel(width, height int) string {
 		lines[index] = ansi.Truncate(lines[index], contentWidth, "…")
 	}
 
-	content := strings.Join(lines, "\n")
-	return m.panelStyle(panelServices).Width(contentWidth).Height(contentHeight).Render(content)
+	return renderTitledPanel(m.panelStyle(panelServices), m.panelTitleStyle(panelServices), contentWidth, contentHeight, title, lines)
 }
 
 func (m *Model) visibleServiceRange(height int) (start, end int) {
-	available := max(1, height-3) // border rows plus the title row
+	available := max(1, height-2) // the title shares the top border row
 	if len(m.services) <= available {
 		return 0, len(m.services)
 	}
@@ -141,7 +139,7 @@ func (m *Model) renderTagPanel(width, height int) string {
 		meta += fmt.Sprintf(" · SERVICES %d", len(m.selected))
 	}
 	title := "[1] TAGS" + ContextBarStyle.Render(" │ "+meta)
-	lines := []string{renderPanelTitle(title, contentWidth)}
+	lines := make([]string, 0, contentHeight)
 	if len(rows) == 0 {
 		lines = append(lines, "", "No tags")
 	} else {
@@ -184,12 +182,12 @@ func (m *Model) renderTagPanel(width, height int) string {
 	for index := range lines {
 		lines[index] = ansi.Truncate(lines[index], contentWidth, "…")
 	}
-	return m.panelStyle(panelServices).Width(contentWidth).Height(contentHeight).Render(strings.Join(lines, "\n"))
+	return renderTitledPanel(m.panelStyle(panelServices), m.panelTitleStyle(panelServices), contentWidth, contentHeight, title, lines)
 }
 
 func (m *Model) visibleTagRange(height int) (start, end int) {
 	rows := m.tagRows()
-	available := max(1, height-3) // border rows plus the title row
+	available := max(1, height-2) // the title shares the top border row
 	if len(rows) <= available {
 		return 0, len(rows)
 	}

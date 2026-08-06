@@ -1,6 +1,7 @@
 package service
 
 import (
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -27,18 +28,23 @@ type Service struct {
 	HealthHistory *ringbuffer.RingBuffer
 
 	// lifecycleMu serializes start, stop, and restart for this service.
-	lifecycleMu    sync.Mutex
-	runtimeMu      sync.RWMutex
-	process        *ProcessManager
-	monitorStop    chan struct{}
-	desiredRunning atomic.Bool
+	lifecycleMu       sync.Mutex
+	runtimeMu         sync.RWMutex
+	process           *ProcessManager
+	monitorStop       chan struct{}
+	runtimeGeneration uint64
+	detectedPorts     []int
+	desiredRunning    atomic.Bool
 }
 
-func (s *Service) setRuntime(process *ProcessManager, monitorStop chan struct{}) {
+func (s *Service) setRuntime(process *ProcessManager, monitorStop chan struct{}) uint64 {
 	s.runtimeMu.Lock()
 	defer s.runtimeMu.Unlock()
+	s.runtimeGeneration++
 	s.process = process
 	s.monitorStop = monitorStop
+	s.detectedPorts = nil
+	return s.runtimeGeneration
 }
 
 func (s *Service) runtime() (*ProcessManager, chan struct{}) {
@@ -47,13 +53,56 @@ func (s *Service) runtime() (*ProcessManager, chan struct{}) {
 	return s.process, s.monitorStop
 }
 
+func (s *Service) discoveryTarget() (int, uint64, bool) {
+	s.runtimeMu.RLock()
+	defer s.runtimeMu.RUnlock()
+	if s.process == nil {
+		return 0, s.runtimeGeneration, false
+	}
+	pid := s.process.PID()
+	return pid, s.runtimeGeneration, pid > 0
+}
+
 func (s *Service) clearRuntime(process *ProcessManager) {
 	s.runtimeMu.Lock()
 	defer s.runtimeMu.Unlock()
 	if s.process == process {
 		s.process = nil
 		s.monitorStop = nil
+		s.runtimeGeneration++
+		s.detectedPorts = nil
 	}
+}
+
+// DetectedPorts returns a copy of the current runtime listener ports.
+func (s *Service) DetectedPorts() []int {
+	s.runtimeMu.RLock()
+	defer s.runtimeMu.RUnlock()
+	return append([]int(nil), s.detectedPorts...)
+}
+
+func (s *Service) updateDetectedPorts(generation uint64, ports []int) bool {
+	s.runtimeMu.Lock()
+	defer s.runtimeMu.Unlock()
+	if s.process == nil || s.runtimeGeneration != generation {
+		return false
+	}
+
+	ordered := make([]int, 0, len(ports))
+	for _, portNumber := range ports {
+		if portNumber >= 1 && portNumber <= 65535 {
+			ordered = append(ordered, portNumber)
+		}
+	}
+	sort.Ints(ordered)
+	unique := ordered[:0]
+	for _, portNumber := range ordered {
+		if len(unique) == 0 || unique[len(unique)-1] != portNumber {
+			unique = append(unique, portNumber)
+		}
+	}
+	s.detectedPorts = unique
+	return true
 }
 
 // NewService creates a stopped runtime service from configuration.

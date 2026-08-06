@@ -199,17 +199,30 @@ type Model struct {
 	settingsBefore      usersettings.Settings
 	themeCursor         int
 	themeUseProject     bool
-	themeProjectAccent  bool
-	themeBackground     string
 	themeColorMode      string
-	themeAccentChanged  bool
-	themeOriginalAccent string
-	configPaths         []string
-	configWatchPaths    []string
-	configStamps        map[string]configStamp
-	lastConfigScan      time.Time
-	reloadBusy          bool
-	projectExitHandled  bool
+	// Accent and background are the same shape: one source field answering where
+	// the colour comes from, plus a custom value that survives while another
+	// source is active so Custom stays available as a position in the a/b cycle.
+	// themeAccentChanged is a separate axis — whether the user touched the accent
+	// this session — and decides whether to write the user settings.
+	themeAccentSource     themeAccentSource
+	themeCustomAccent     string
+	themeAccentChanged    bool
+	themeBackgroundSource themeBackgroundSource
+	themeCustomBackground string
+	// One hex editor serves both colours; themeColorTarget says which one is
+	// being edited.
+	themeColorTarget   themeColorTarget
+	themeColorInput    textinput.Model
+	themeColorEditing  bool
+	themeColorReplace  bool
+	themeColorError    string
+	configPaths        []string
+	configWatchPaths   []string
+	configStamps       map[string]configStamp
+	lastConfigScan     time.Time
+	reloadBusy         bool
+	projectExitHandled bool
 
 	shutdownOnce sync.Once
 	shutdownErr  error
@@ -246,33 +259,35 @@ func NewModelWithOptions(cfg *config.Config, version string, options ModelOption
 	portChecker := port.NewChecker()
 	manager.SetHealthChecker(healthChecker)
 	manager.SetPortChecker(portChecker)
+	manager.SetListenerScanner(port.NewListenerScanner())
 	services := manager.Services()
 
 	model := &Model{
-		cfg:           cfg,
-		version:       version,
-		manager:       manager,
-		services:      services,
-		allServices:   services,
-		healthChecker: healthChecker,
-		portChecker:   portChecker,
-		portDetails:   make(map[int]*config.PortInfo),
-		selected:      make(map[string]bool),
-		expandedTags:  make(map[string]bool),
-		panelFocus:    panelServices,
-		listMode:      listServices,
-		logSearcher:   kranzlog.NewSearcher(),
-		searchInput:   newSearchInput(),
-		currentMatch:  -1,
-		searchMode:    searchFilter,
-		mode:          ModeNormal,
-		followMode:    true,
-		pinnedFollow:  true,
-		keys:          DefaultKeyMap(),
-		userSettings:  options.Settings,
-		settingsPath:  options.SettingsPath,
-		activeTheme:   activeTheme,
-		terminalDark:  terminalDark,
+		cfg:             cfg,
+		version:         version,
+		manager:         manager,
+		services:        services,
+		allServices:     services,
+		healthChecker:   healthChecker,
+		portChecker:     portChecker,
+		portDetails:     make(map[int]*config.PortInfo),
+		selected:        make(map[string]bool),
+		expandedTags:    make(map[string]bool),
+		panelFocus:      panelServices,
+		listMode:        listServices,
+		logSearcher:     kranzlog.NewSearcher(),
+		searchInput:     newSearchInput(),
+		themeColorInput: newThemeColorInput(),
+		currentMatch:    -1,
+		searchMode:      searchFilter,
+		mode:            ModeNormal,
+		followMode:      true,
+		pinnedFollow:    true,
+		keys:            DefaultKeyMap(),
+		userSettings:    options.Settings,
+		settingsPath:    options.SettingsPath,
+		activeTheme:     activeTheme,
+		terminalDark:    terminalDark,
 		// The executable already performed the initial detection. Suppress the
 		// focus event emitted immediately after focus reporting is enabled.
 		lastBackgroundProbe: time.Now(),
@@ -335,6 +350,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var searchCommand tea.Cmd
 		if m.mode == ModeSearch {
 			m.searchInput, searchCommand = m.searchInput.Update(msg)
+		} else if m.mode == ModeThemes && m.themeColorEditing {
+			m.themeColorInput, searchCommand = m.themeColorInput.Update(msg)
 		}
 		return m, tea.Batch(tea.EnableMouseCellMotion, m.probeTerminalBackground(false), searchCommand)
 	case tea.KeyMsg:
@@ -428,6 +445,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.mode == ModeSearch {
 			var command tea.Cmd
 			m.searchInput, command = m.searchInput.Update(msg)
+			return m, command
+		}
+		if m.mode == ModeThemes && m.themeColorEditing {
+			var command tea.Cmd
+			m.themeColorInput, command = m.themeColorInput.Update(msg)
+			m.sanitizeThemeColorInput()
 			return m, command
 		}
 		return m, nil

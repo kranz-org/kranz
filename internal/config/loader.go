@@ -56,45 +56,68 @@ func loadFile(path, basePath string) (*Config, error) {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
 
-	format, err := detectFormat(data)
-	if err != nil {
-		return nil, err
-	}
 	dotenvPath := filepath.Join(filepath.Dir(basePath), ".env")
 	dotenv, err := readDotEnv(dotenvPath)
 	if err != nil {
 		return nil, fmt.Errorf("read .env for %s: %w", path, err)
 	}
-	expanded := []byte(os.Expand(string(data), func(name string) string {
-		if value, ok := os.LookupEnv(name); ok {
-			return value
-		}
-		return dotenv[name]
-	}))
 	var cfg *Config
-	switch format {
-	case SourceProcessCompose:
-		// Process Compose resolves paths in every override relative to the
-		// first file in the merge set.
-		cfg, err = loadProcessCompose(expanded, basePath)
-	default:
-		cfg, err = loadNative(expanded)
+	if isProcfilePath(path) {
+		cfg, err = parseProcfile(path, data)
+	} else {
+		format, detectErr := detectFormat(data)
+		if detectErr != nil {
+			return nil, detectErr
+		}
+		expanded := []byte(os.Expand(string(data), func(name string) string {
+			if value, ok := os.LookupEnv(name); ok {
+				return value
+			}
+			return dotenv[name]
+		}))
+		switch format {
+		case SourceProcessCompose:
+			// Process Compose resolves paths in every override relative to the
+			// first file in the merge set.
+			cfg, err = loadProcessCompose(expanded, basePath)
+		default:
+			cfg, err = loadNative(expanded)
+		}
 	}
 	if err != nil {
 		return nil, err
 	}
 
+	dotenv = dotenvWithoutHostOverrides(dotenv)
 	cfg.explicitEnv = mergeStringMap(nil, cfg.Defaults.Env)
 	cfg.dotenvEnv = mergeStringMap(nil, dotenv)
 	cfg.WatchPaths = appendUniqueString(cfg.WatchPaths, dotenvPath)
 	return cfg, nil
 }
 
+func dotenvWithoutHostOverrides(dotenv map[string]string) map[string]string {
+	result := make(map[string]string, len(dotenv))
+	for name, value := range dotenv {
+		if _, exists := os.LookupEnv(name); !exists {
+			result[name] = value
+		}
+	}
+	return result
+}
+
+func isProcfilePath(path string) bool {
+	base := filepath.Base(path)
+	return base == "Procfile" || base == "Procfile.dev"
+}
+
 func mergeConfig(base, override *Config) error {
-	if base.Source != override.Source {
+	baseSource := base.Source
+	overrideSource := override.Source
+	if baseSource != overrideSource &&
+		(baseSource == SourceProcessCompose || overrideSource == SourceProcessCompose) {
 		return fmt.Errorf("cannot mix %s and %s formats", base.Source, override.Source)
 	}
-	if override.Project != "" {
+	if override.Project != "" && (overrideSource != SourceProcfile || base.Project == "") {
 		base.Project = override.Project
 	}
 	if override.Version != "" {
@@ -116,12 +139,17 @@ func mergeConfig(base, override *Config) error {
 	if base.Services == nil {
 		base.Services = make(map[string]Service)
 	}
-	for name, incoming := range override.Services {
+	for _, name := range override.ServiceNames() {
+		incoming := override.Services[name]
 		if current, exists := base.Services[name]; exists {
 			base.Services[name] = mergeService(current, incoming, base.Source == SourceProcessCompose)
 		} else {
 			base.Services[name] = incoming
+			base.ServiceOrder = append(base.ServiceOrder, name)
 		}
+	}
+	if baseSource == SourceKranz || overrideSource == SourceKranz {
+		base.Source = SourceKranz
 	}
 	base.Diagnostics = append(base.Diagnostics, override.Diagnostics...)
 	base.dotenvEnv = mergeStringMap(base.dotenvEnv, override.dotenvEnv)
@@ -160,6 +188,10 @@ func mergeService(base, override Service, mergeDependencies bool) Service {
 	}
 	if len(override.Ports) > 0 {
 		base.Ports = append([]int(nil), override.Ports...)
+	}
+	if override.DetectPorts != nil {
+		value := *override.DetectPorts
+		base.DetectPorts = &value
 	}
 	if len(override.Tags) > 0 {
 		base.Tags = append([]string(nil), override.Tags...)
@@ -292,13 +324,20 @@ func Discover(directory string) (string, error) {
 	if directory == "" {
 		directory = "."
 	}
-	for _, name := range []string{"kranz.yaml", "kranz.yml", "process-compose.yaml", "process-compose.yml"} {
+	for _, name := range []string{
+		"kranz.yaml",
+		"kranz.yml",
+		"process-compose.yaml",
+		"process-compose.yml",
+		"Procfile.dev",
+		"Procfile",
+	} {
 		path := filepath.Join(directory, name)
 		if info, err := os.Stat(path); err == nil && !info.IsDir() {
 			return path, nil
 		}
 	}
-	return "", fmt.Errorf("no kranz.yaml or process-compose.yaml found in %s", directory)
+	return "", fmt.Errorf("no supported configuration found in %s (looked for kranz.yaml, kranz.yml, process-compose.yaml, process-compose.yml, Procfile.dev, Procfile)", directory)
 }
 
 // DiscoverFiles returns the primary project configuration and the conventional
@@ -486,6 +525,9 @@ func applyCheckDefaults(c *CheckConfig) {
 
 // ServiceNames returns service names in stable configuration order.
 func (cfg *Config) ServiceNames() []string {
+	if len(cfg.ServiceOrder) == len(cfg.Services) {
+		return append([]string(nil), cfg.ServiceOrder...)
+	}
 	names := make([]string, 0, len(cfg.Services))
 	for name := range cfg.Services {
 		names = append(names, name)

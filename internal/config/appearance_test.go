@@ -65,6 +65,26 @@ func TestSaveUIAppearanceRejectsProcessCompose(t *testing.T) {
 	}
 }
 
+func TestSaveUIAppearanceRejectsProcfileWithoutChangingBytes(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "Procfile")
+	original := []byte("web: go run ./cmd/web\n")
+	if err := os.WriteFile(path, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err := SaveUIAppearance(path, UIConfig{Theme: "nord", Background: "terminal"})
+	if err == nil || !strings.Contains(err.Error(), "cannot be saved to a Procfile") {
+		t.Fatalf("Procfile save error = %v", err)
+	}
+	written, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(written) != string(original) {
+		t.Fatalf("Procfile bytes changed: %q", written)
+	}
+}
+
 func TestSaveUIAppearancePreservesConfigurationSymlink(t *testing.T) {
 	directory := t.TempDir()
 	target := filepath.Join(directory, "shared.yaml")
