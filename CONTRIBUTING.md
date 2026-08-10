@@ -20,10 +20,20 @@ For TUI changes, test both light and dark terminal profiles, narrow terminals do
 
 ## Pull requests
 
+- Create a dedicated branch for every change, including small fixes and
+  documentation. Do not commit or push task work directly to `main`.
+- Open a pull request, wait for required CI, and merge through GitHub. Prefer
+  squash merge unless the individual commits are intentionally meaningful.
 - Use a short conventional commit subject such as `feat:`, `fix:`, `docs:`, or `refactor:`.
 - Explain the outcome, compatibility impact, and validation performed.
 - Update `README.md` and `CHANGELOG.md` for user-visible behavior.
 - Never include credentials, private repository URLs, or captured application data.
+
+Minor versions are developed as a sequence of task-sized branches merged into
+`main`; do not keep a long-lived version branch as a second integration branch.
+Create `release/vX.Y.Z` only when the completed scope is ready for final release
+preparation and stabilization. Published history is not rewritten for cosmetic
+cleanup.
 
 ## Releases
 
