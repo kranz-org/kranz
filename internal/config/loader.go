@@ -148,6 +148,16 @@ func mergeConfig(base, override *Config) error {
 			base.ServiceOrder = append(base.ServiceOrder, name)
 		}
 	}
+	if base.ActionGroups == nil {
+		base.ActionGroups = make(map[string]ActionGroup)
+	}
+	for name, incoming := range override.ActionGroups {
+		if current, exists := base.ActionGroups[name]; exists {
+			base.ActionGroups[name] = mergeActionGroup(current, incoming)
+		} else {
+			base.ActionGroups[name] = incoming
+		}
+	}
 	if baseSource == SourceKranz || overrideSource == SourceKranz {
 		base.Source = SourceKranz
 	}
@@ -263,6 +273,70 @@ func mergeService(base, override Service, mergeDependencies bool) Service {
 	}
 	if override.DisableDotenv {
 		base.DisableDotenv = true
+	}
+	base.Actions = mergeActions(base.Actions, override.Actions)
+	return base
+}
+
+func mergeActionGroup(base, override ActionGroup) ActionGroup {
+	if override.Description != "" {
+		base.Description = override.Description
+	}
+	if override.Dir != "" {
+		base.Dir = override.Dir
+	}
+	if override.Shell != "" {
+		base.Shell = override.Shell
+	}
+	base.Env = mergeStringMap(base.Env, override.Env)
+	if len(override.EnvFiles) > 0 {
+		base.EnvFiles = append([]string(nil), override.EnvFiles...)
+	}
+	base.Actions = mergeActions(base.Actions, override.Actions)
+	return base
+}
+
+func mergeActions(base, override map[string]Action) map[string]Action {
+	if base == nil && len(override) > 0 {
+		base = make(map[string]Action, len(override))
+	}
+	for name, incoming := range override {
+		if current, exists := base[name]; exists {
+			base[name] = mergeAction(current, incoming)
+		} else {
+			base[name] = incoming
+		}
+	}
+	return base
+}
+
+func mergeAction(base, override Action) Action {
+	if override.Command != "" {
+		base.Command = override.Command
+	}
+	if override.Description != "" {
+		base.Description = override.Description
+	}
+	if override.Dir != "" {
+		base.Dir = override.Dir
+	}
+	if override.Shell != "" {
+		base.Shell = override.Shell
+	}
+	base.Env = mergeStringMap(base.Env, override.Env)
+	if len(override.EnvFiles) > 0 {
+		base.EnvFiles = append([]string(nil), override.EnvFiles...)
+	}
+	if override.Timeout != 0 {
+		base.Timeout = override.Timeout
+	}
+	if override.Confirm != nil {
+		value := *override.Confirm
+		base.Confirm = &value
+	}
+	if override.Interactive != nil {
+		value := *override.Interactive
+		base.Interactive = &value
 	}
 	return base
 }
@@ -426,11 +500,89 @@ func applyDefaults(cfg *Config) error {
 			applyCheckDefaults(svc.HealthCheck.Readiness)
 			applyCheckDefaults(svc.HealthCheck.Liveness)
 		}
+		for actionName, action := range svc.Actions {
+			normalized, err := normalizeAction(cfg, svc.Dir, svc.Shell, svc.Env, action)
+			if err != nil {
+				return fmt.Errorf("service %q action %q env files: %w", name, actionName, err)
+			}
+			svc.Actions[actionName] = normalized
+		}
 
 		// Map iteration returns a copy, so store the normalized service explicitly.
 		cfg.Services[name] = svc
 	}
+	for groupName, group := range cfg.ActionGroups {
+		if group.Dir == "" {
+			group.Dir = defDir
+		}
+		if group.Shell == "" {
+			group.Shell = defShell
+		}
+		groupFiles := append(append([]string(nil), cfg.Defaults.EnvFiles...), group.EnvFiles...)
+		fileEnv, err := loadEnvFiles(group.Dir, groupFiles)
+		if err != nil {
+			return fmt.Errorf("action group %q env files: %w", groupName, err)
+		}
+		group.Env = mergeStringMap(mergeStringMap(cfg.Defaults.Env, fileEnv), group.Env)
+		for _, path := range resolvedEnvFiles(group.Dir, groupFiles) {
+			cfg.WatchPaths = appendUniqueString(cfg.WatchPaths, path)
+		}
+		for key, value := range group.Env {
+			group.Env[key] = os.ExpandEnv(value)
+		}
+		for actionName, action := range group.Actions {
+			normalized, err := normalizeAction(cfg, group.Dir, group.Shell, group.Env, action)
+			if err != nil {
+				return fmt.Errorf("action group %q action %q env files: %w", groupName, actionName, err)
+			}
+			group.Actions[actionName] = normalized
+		}
+		cfg.ActionGroups[groupName] = group
+	}
 	return nil
+}
+
+func normalizeAction(cfg *Config, ownerDir, ownerShell string, ownerEnv map[string]string, action Action) (Action, error) {
+	if action.Dir == "" {
+		action.Dir = ownerDir
+	}
+	if action.Shell == "" {
+		action.Shell = ownerShell
+	}
+	fileEnv, err := loadEnvFiles(action.Dir, action.EnvFiles)
+	if err != nil {
+		return Action{}, err
+	}
+	action.Env = mergeStringMap(mergeStringMap(ownerEnv, fileEnv), action.Env)
+	for _, path := range resolvedEnvFiles(action.Dir, action.EnvFiles) {
+		cfg.WatchPaths = appendUniqueString(cfg.WatchPaths, path)
+	}
+	for key, value := range action.Env {
+		action.Env[key] = os.ExpandEnv(value)
+	}
+	return action, nil
+}
+
+func loadEnvFiles(baseDir string, files []string) (map[string]string, error) {
+	result := make(map[string]string)
+	for _, path := range resolvedEnvFiles(baseDir, files) {
+		values, err := readDotEnv(path)
+		if err != nil {
+			return nil, err
+		}
+		result = mergeStringMap(result, values)
+	}
+	return result, nil
+}
+
+func resolvedEnvFiles(baseDir string, files []string) []string {
+	resolved := append([]string(nil), files...)
+	for index, path := range resolved {
+		if !filepath.IsAbs(path) {
+			resolved[index] = filepath.Clean(filepath.Join(baseDir, path))
+		}
+	}
+	return resolved
 }
 
 func loadServiceEnvFiles(cfg *Config, svc Service) (map[string]string, error) {

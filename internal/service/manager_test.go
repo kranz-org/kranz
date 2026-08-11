@@ -315,6 +315,39 @@ func TestApplyConfigPreservesUnchangedProcessesAndReconcilesChanges(t *testing.T
 	}
 }
 
+func TestApplyConfigDoesNotRestartServiceForActionOnlyChanges(t *testing.T) {
+	manager := NewManager(&config.Config{Project: "Test", Services: map[string]config.Service{
+		"api": {Command: "sleep 60", Actions: map[string]config.Action{
+			"migrate": {Command: "migrate-v1"},
+		}},
+	}})
+	defer manager.Shutdown()
+	if err := manager.StartService("api"); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := manager.GetService("api")
+	pid := before.PID()
+
+	result, err := manager.ApplyConfig(&config.Config{Project: "Test", Services: map[string]config.Service{
+		"api": {Command: "sleep 60", Actions: map[string]config.Action{
+			"migrate": {Command: "migrate-v2"},
+		}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, _ := manager.GetService("api")
+	if after != before || after.PID() != pid {
+		t.Fatalf("action-only reload restarted service: before PID %d after PID %d", pid, after.PID())
+	}
+	if len(result.Updated) != 0 || len(result.Restarted) != 0 {
+		t.Fatalf("action-only reload result = %#v", result)
+	}
+	if got := manager.cfg.Services["api"].Actions["migrate"].Command; got != "migrate-v2" {
+		t.Fatalf("manager action config = %q", got)
+	}
+}
+
 func TestExitOnEndRequestsProjectTerminationAndStopsPeers(t *testing.T) {
 	manager := NewManager(&config.Config{Project: "Test", Services: map[string]config.Service{
 		"peer": {Command: "sleep 60"},

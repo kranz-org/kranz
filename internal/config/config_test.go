@@ -868,3 +868,275 @@ func TestValidateRejectsIncompatibleOrInvalidReadyLog(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadNormalizesServiceActionsAndActionGroups(t *testing.T) {
+	directory := t.TempDir()
+	serviceDir := filepath.Join(directory, "service")
+	actionDir := filepath.Join(directory, "action")
+	groupDir := filepath.Join(directory, "infra")
+	for _, path := range []string{serviceDir, actionDir, groupDir} {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files := map[string]string{
+		filepath.Join(serviceDir, "service.env"): "SERVICE_FILE=yes\nSHARED=service-file\n",
+		filepath.Join(actionDir, "action.env"):   "ACTION_FILE=yes\nSHARED=action-file\n",
+		filepath.Join(groupDir, "group.env"):     "GROUP_FILE=yes\nSHARED=group-file\n",
+	}
+	for path, content := range files {
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	configPath := filepath.Join(directory, "kranz.yaml")
+	data := `
+project: Actions
+defaults:
+  shell: /bin/zsh
+  env:
+    GLOBAL: inherited
+services:
+  app:
+    command: run-app
+    dir: ` + serviceDir + `
+    env_files: [service.env]
+    env:
+      SERVICE_ONLY: yes
+    actions:
+      build-launcher:
+        command: npm run build:launcher
+        description: Build launcher
+        timeout: 45s
+        confirm: true
+      migrate:
+        command: npm run migrate
+        dir: ` + actionDir + `
+        env_files: [action.env]
+        env:
+          SHARED: action-explicit
+action_groups:
+  remote-infra:
+    description: Remote stack
+    dir: ` + groupDir + `
+    env_files: [group.env]
+    actions:
+      up:
+        command: ssh host docker-compose up -d
+      console:
+        command: ssh -t host shell
+        interactive: true
+`
+	if err := os.WriteFile(configPath, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	build := cfg.Services["app"].Actions["build-launcher"]
+	if build.Dir != serviceDir || build.Shell != "/bin/zsh" || build.Timeout != 45*time.Second || !build.ConfirmationRequired() {
+		t.Fatalf("normalized service action = %#v", build)
+	}
+	if build.Env["GLOBAL"] != "inherited" || build.Env["SERVICE_FILE"] != "yes" || build.Env["SERVICE_ONLY"] != "yes" {
+		t.Fatalf("inherited service action env = %v", build.Env)
+	}
+	migrate := cfg.Services["app"].Actions["migrate"]
+	if migrate.Env["ACTION_FILE"] != "yes" || migrate.Env["SHARED"] != "action-explicit" {
+		t.Fatalf("action env precedence = %v", migrate.Env)
+	}
+	group := cfg.ActionGroups["remote-infra"]
+	up := group.Actions["up"]
+	if group.Dir != groupDir || up.Dir != groupDir || up.Shell != "/bin/zsh" {
+		t.Fatalf("normalized action group = group %#v action %#v", group, up)
+	}
+	if up.Env["GLOBAL"] != "inherited" || up.Env["GROUP_FILE"] != "yes" || up.Env["SHARED"] != "group-file" {
+		t.Fatalf("inherited action group env = %v", up.Env)
+	}
+	if !group.Actions["console"].InteractiveEnabled() {
+		t.Fatal("interactive flag was not preserved")
+	}
+	for path := range files {
+		if !containsString(cfg.WatchPaths, path) {
+			t.Fatalf("action env file %s missing from watch paths %v", path, cfg.WatchPaths)
+		}
+	}
+}
+
+func TestLoadFilesMergesActionsByOwnerAndName(t *testing.T) {
+	directory := t.TempDir()
+	basePath := filepath.Join(directory, "kranz.yaml")
+	overridePath := filepath.Join(directory, "kranz.local.yaml")
+	base := `
+project: Layered Actions
+services:
+  app:
+    command: run
+    actions:
+      migrate:
+        command: migrate
+        description: Base description
+        timeout: 10s
+        confirm: true
+action_groups:
+  infra:
+    dir: ./infra
+    actions:
+      up:
+        command: up
+`
+	override := `
+project: Layered Actions
+services:
+  app:
+    actions:
+      migrate:
+        description: Local description
+        confirm: false
+      seed:
+        command: seed
+action_groups:
+  infra:
+    shell: /bin/zsh
+    actions:
+      up:
+        timeout: 30s
+      down:
+        command: down
+`
+	for path, content := range map[string]string{basePath: base, overridePath: override} {
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cfg, err := LoadFiles([]string{basePath, overridePath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	migrate := cfg.Services["app"].Actions["migrate"]
+	if migrate.Command != "migrate" || migrate.Description != "Local description" || migrate.Timeout != 10*time.Second || migrate.ConfirmationRequired() || migrate.Confirm == nil {
+		t.Fatalf("merged service action = %#v", migrate)
+	}
+	if cfg.Services["app"].Actions["seed"].Command != "seed" {
+		t.Fatalf("new service action missing: %#v", cfg.Services["app"].Actions)
+	}
+	group := cfg.ActionGroups["infra"]
+	if group.Dir != "./infra" || group.Shell != "/bin/zsh" || group.Actions["up"].Timeout != 30*time.Second || group.Actions["down"].Command != "down" {
+		t.Fatalf("merged action group = %#v", group)
+	}
+}
+
+func TestValidateActionsAndActionOnlyProjects(t *testing.T) {
+	valid := &Config{
+		Project: "Operations",
+		ActionGroups: map[string]ActionGroup{
+			"database": {Actions: map[string]Action{"migrate": {Command: "migrate"}}},
+		},
+	}
+	if err := Validate(valid); err != nil {
+		t.Fatalf("action-only project was rejected: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		config  *Config
+		wantErr string
+	}{
+		{
+			name:    "empty project",
+			config:  &Config{Project: "Empty"},
+			wantErr: "service or action group",
+		},
+		{
+			name:    "empty group",
+			config:  &Config{Project: "Empty group", ActionGroups: map[string]ActionGroup{"infra": {}}},
+			wantErr: "must contain at least one action",
+		},
+		{
+			name: "missing command",
+			config: &Config{Project: "Missing", Services: map[string]Service{"app": {
+				Command: "run", Actions: map[string]Action{"broken": {}},
+			}}},
+			wantErr: "field 'command' is required",
+		},
+		{
+			name: "negative timeout",
+			config: &Config{Project: "Timeout", ActionGroups: map[string]ActionGroup{"ops": {
+				Actions: map[string]Action{"broken": {Command: "run", Timeout: -time.Second}},
+			}}},
+			wantErr: "timeout cannot be negative",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := Validate(test.config)
+			if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("validation error = %v, want substring %q", err, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestNativeConfigRejectsUnknownActionFields(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "kranz.yaml")
+	data := `
+project: Unknown Action Field
+action_groups:
+  ops:
+    actions:
+      deploy:
+        command: deploy
+        title: Deploy
+`
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "field title not found") {
+		t.Fatalf("unknown action field error = %v", err)
+	}
+}
+
+func TestActionIDsAndResolutionAreDeterministicAndUnambiguous(t *testing.T) {
+	cfg := &Config{
+		Project: "Action IDs",
+		Services: map[string]Service{
+			"web": {Command: "run", Actions: map[string]Action{
+				"test":           {Command: "web-test"},
+				"build:launcher": {Command: "build"},
+			}},
+		},
+		ActionGroups: map[string]ActionGroup{
+			"ops": {Actions: map[string]Action{
+				"test": {Command: "ops-test"},
+			}},
+		},
+	}
+	want := []ActionID{
+		{OwnerKind: ActionOwnerService, Owner: "web", Name: "build:launcher"},
+		{OwnerKind: ActionOwnerService, Owner: "web", Name: "test"},
+		{OwnerKind: ActionOwnerGroup, Owner: "ops", Name: "test"},
+	}
+	got := cfg.ActionIDs()
+	if len(got) != len(want) {
+		t.Fatalf("action ids = %#v", got)
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("action id %d = %#v, want %#v", index, got[index], want[index])
+		}
+		action, exists := cfg.ResolveAction(got[index])
+		if !exists || action.Command == "" {
+			t.Fatalf("resolve %#v = %#v, %v", got[index], action, exists)
+		}
+	}
+	serviceTest, _ := cfg.ResolveAction(want[1])
+	groupTest, _ := cfg.ResolveAction(want[2])
+	if serviceTest.Command != "web-test" || groupTest.Command != "ops-test" {
+		t.Fatalf("same-name actions collided: service %#v group %#v", serviceTest, groupTest)
+	}
+	if _, exists := cfg.ResolveAction(ActionID{OwnerKind: "unknown", Owner: "ops", Name: "test"}); exists {
+		t.Fatal("unknown owner kind resolved")
+	}
+}

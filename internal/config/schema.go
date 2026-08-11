@@ -3,23 +3,25 @@ package config
 
 import (
 	"net/url"
+	"sort"
 	"time"
 )
 
 // Config is the normalized root structure for every supported source format.
 type Config struct {
-	Project      string             `yaml:"project"`
-	Version      string             `yaml:"version,omitempty"`
-	UI           UIConfig           `yaml:"ui,omitempty"`
-	Defaults     Defaults           `yaml:"defaults,omitempty"`
-	Services     map[string]Service `yaml:"services"`
-	ServiceOrder []string           `yaml:"-"`
-	Source       SourceFormat       `yaml:"-"`
-	Diagnostics  []string           `yaml:"-"`
-	Paths        []string           `yaml:"-"`
-	WatchPaths   []string           `yaml:"-"`
-	dotenvEnv    map[string]string  `yaml:"-"`
-	explicitEnv  map[string]string  `yaml:"-"`
+	Project      string                 `yaml:"project"`
+	Version      string                 `yaml:"version,omitempty"`
+	UI           UIConfig               `yaml:"ui,omitempty"`
+	Defaults     Defaults               `yaml:"defaults,omitempty"`
+	Services     map[string]Service     `yaml:"services,omitempty"`
+	ActionGroups map[string]ActionGroup `yaml:"action_groups,omitempty"`
+	ServiceOrder []string               `yaml:"-"`
+	Source       SourceFormat           `yaml:"-"`
+	Diagnostics  []string               `yaml:"-"`
+	Paths        []string               `yaml:"-"`
+	WatchPaths   []string               `yaml:"-"`
+	dotenvEnv    map[string]string      `yaml:"-"`
+	explicitEnv  map[string]string      `yaml:"-"`
 }
 
 // UIConfig defines project-specific presentation defaults.
@@ -76,7 +78,117 @@ type Service struct {
 	SuccessExitCodes     []int                       `yaml:"success_exit_codes,omitempty"`
 	Disabled             bool                        `yaml:"disabled,omitempty"`
 	DisableDotenv        bool                        `yaml:"is_dotenv_disabled,omitempty"`
+	Actions              map[string]Action           `yaml:"actions,omitempty"`
 	disabledSet          bool                        `yaml:"-"`
+}
+
+// Action describes one explicitly configured command that runs to completion.
+// Its owner supplies any omitted execution context.
+type Action struct {
+	Command     string            `yaml:"command"`
+	Description string            `yaml:"description,omitempty"`
+	Dir         string            `yaml:"dir,omitempty"`
+	Shell       string            `yaml:"shell,omitempty"`
+	Env         map[string]string `yaml:"env,omitempty"`
+	EnvFiles    []string          `yaml:"env_files,omitempty"`
+	Timeout     time.Duration     `yaml:"timeout,omitempty"`
+	Confirm     *bool             `yaml:"confirm,omitempty"`
+	Interactive *bool             `yaml:"interactive,omitempty"`
+}
+
+// ConfirmationRequired resolves the optional confirmation flag.
+func (a Action) ConfirmationRequired() bool {
+	return a.Confirm != nil && *a.Confirm
+}
+
+// InteractiveEnabled resolves the optional terminal handoff flag.
+func (a Action) InteractiveEnabled() bool {
+	return a.Interactive != nil && *a.Interactive
+}
+
+// ActionGroup owns project-level actions that do not belong to a managed
+// service, while providing shared execution context for those actions.
+type ActionGroup struct {
+	Description string            `yaml:"description,omitempty"`
+	Dir         string            `yaml:"dir,omitempty"`
+	Shell       string            `yaml:"shell,omitempty"`
+	Env         map[string]string `yaml:"env,omitempty"`
+	EnvFiles    []string          `yaml:"env_files,omitempty"`
+	Actions     map[string]Action `yaml:"actions"`
+}
+
+// ActionOwnerKind distinguishes service-scoped and project-level actions.
+type ActionOwnerKind string
+
+const (
+	ActionOwnerService ActionOwnerKind = "service"
+	ActionOwnerGroup   ActionOwnerKind = "group"
+)
+
+// ActionID is a comparable, unambiguous runtime identity. Names remain opaque,
+// so natural keys such as build:launcher do not require delimiter parsing.
+type ActionID struct {
+	OwnerKind ActionOwnerKind
+	Owner     string
+	Name      string
+}
+
+// ResolveAction returns the normalized action identified by id.
+func (c *Config) ResolveAction(id ActionID) (Action, bool) {
+	if c == nil {
+		return Action{}, false
+	}
+	switch id.OwnerKind {
+	case ActionOwnerService:
+		service, exists := c.Services[id.Owner]
+		if !exists {
+			return Action{}, false
+		}
+		action, exists := service.Actions[id.Name]
+		return action, exists
+	case ActionOwnerGroup:
+		group, exists := c.ActionGroups[id.Owner]
+		if !exists {
+			return Action{}, false
+		}
+		action, exists := group.Actions[id.Name]
+		return action, exists
+	default:
+		return Action{}, false
+	}
+}
+
+// ActionIDs returns every configured action in deterministic owner/name order.
+func (c *Config) ActionIDs() []ActionID {
+	if c == nil {
+		return nil
+	}
+	ids := make([]ActionID, 0)
+	for _, owner := range c.ServiceNames() {
+		for _, name := range sortedActionNames(c.Services[owner].Actions) {
+			ids = append(ids, ActionID{OwnerKind: ActionOwnerService, Owner: owner, Name: name})
+		}
+	}
+	groups := make([]string, 0, len(c.ActionGroups))
+	for owner := range c.ActionGroups {
+		groups = append(groups, owner)
+	}
+	sort.Strings(groups)
+	for _, owner := range groups {
+		for _, name := range sortedActionNames(c.ActionGroups[owner].Actions) {
+			ids = append(ids, ActionID{OwnerKind: ActionOwnerGroup, Owner: owner, Name: name})
+		}
+	}
+	return ids
+}
+
+func sortedActionNames(actions map[string]Action) []string {
+	names := make([]string, 0, len(actions))
+	for name := range actions {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // PortDiscoveryEnabled resolves the service-level tri-state. Services without

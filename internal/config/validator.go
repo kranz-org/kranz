@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// Validate checks project metadata, commands, dependencies, ports, and probes.
+// Validate checks project metadata, commands, actions, dependencies, ports, and probes.
 func Validate(cfg *Config) error {
 	if cfg.Project == "" {
 		return fmt.Errorf("field 'project' is required")
@@ -23,8 +23,8 @@ func Validate(cfg *Config) error {
 		return fmt.Errorf("ui.color_mode must be auto, dark, or light, got %q", cfg.UI.ColorMode)
 	}
 
-	if len(cfg.Services) == 0 {
-		return fmt.Errorf("section 'services' must contain at least one service")
+	if len(cfg.Services) == 0 && len(cfg.ActionGroups) == 0 {
+		return fmt.Errorf("configuration must contain at least one service or action group")
 	}
 
 	svcNames := make(map[string]bool)
@@ -35,6 +35,9 @@ func Validate(cfg *Config) error {
 	for name, svc := range cfg.Services {
 		if svc.Command == "" {
 			return fmt.Errorf("service %q: field 'command' is required", name)
+		}
+		if err := validateActions(fmt.Sprintf("service %q", name), svc.Actions); err != nil {
+			return err
 		}
 
 		// Validate references before cycle detection to produce actionable errors.
@@ -97,12 +100,38 @@ func Validate(cfg *Config) error {
 			}
 		}
 	}
+	for name, group := range cfg.ActionGroups {
+		if strings.TrimSpace(name) == "" {
+			return fmt.Errorf("action group name cannot be empty")
+		}
+		if len(group.Actions) == 0 {
+			return fmt.Errorf("action group %q must contain at least one action", name)
+		}
+		if err := validateActions(fmt.Sprintf("action group %q", name), group.Actions); err != nil {
+			return err
+		}
+	}
 
 	// Cycles would make lifecycle ordering impossible.
 	if err := detectCycles(cfg); err != nil {
 		return err
 	}
 
+	return nil
+}
+
+func validateActions(owner string, actions map[string]Action) error {
+	for name, action := range actions {
+		if strings.TrimSpace(name) == "" {
+			return fmt.Errorf("%s: action name cannot be empty", owner)
+		}
+		if strings.TrimSpace(action.Command) == "" {
+			return fmt.Errorf("%s action %q: field 'command' is required", owner, name)
+		}
+		if action.Timeout < 0 {
+			return fmt.Errorf("%s action %q: timeout cannot be negative", owner, name)
+		}
+	}
 	return nil
 }
 

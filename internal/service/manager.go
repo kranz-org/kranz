@@ -74,7 +74,7 @@ func (m *Manager) ApplyConfig(next *config.Config) (ReloadResult, error) {
 			result.Removed = append(result.Removed, name)
 			continue
 		}
-		if reflect.DeepEqual(svc.Config, incoming) {
+		if sameManagedServiceConfig(svc.Config, incoming) {
 			continue
 		}
 		wasRunning := svc.Status() != config.StatusStopped || svc.DesiredRunning()
@@ -116,6 +116,15 @@ func (m *Manager) ApplyConfig(next *config.Config) (ReloadResult, error) {
 		result.Restarted = append(result.Restarted, runningChanged...)
 	}
 	return result, nil
+}
+
+// sameManagedServiceConfig excludes actions because changing a one-shot command
+// must not restart its long-running owner. The manager-level config is replaced
+// after reconciliation and remains the source of truth for actions.
+func sameManagedServiceConfig(current, incoming config.Service) bool {
+	current.Actions = nil
+	incoming.Actions = nil
+	return reflect.DeepEqual(current, incoming)
 }
 
 // NewManager creates stopped runtime services from configuration.
