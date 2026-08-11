@@ -99,7 +99,7 @@ func (m *Model) renderActionGroupDetails(group string, width, height int) string
 	if !exists {
 		return renderTitledPanel(m.panelStyle(panelDetails), m.panelTitleStyle(panelDetails), contentWidth, contentHeight, "[2] ACTION GROUP", []string{"", "No action group selected"})
 	}
-	lines := []string{ServiceNameStyle.Render("◇ " + group)}
+	lines := []string{ServiceNameStyle.Render("⚡ " + group)}
 	if configured.Description != "" {
 		lines = append(lines, detailFieldLines("ABOUT", configured.Description, contentWidth)...)
 	}

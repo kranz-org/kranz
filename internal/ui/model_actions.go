@@ -158,8 +158,15 @@ func (m *Model) openFocusedListItem() (tea.Cmd, bool) {
 	if m.listMode != listServices {
 		return nil, false
 	}
-	if m.focusedAction == nil {
-		return nil, m.toggleFocusedActionOwner()
+	if m.focusedAction != nil {
+		return nil, true
+	}
+	return nil, m.toggleFocusedActionOwner()
+}
+
+func (m *Model) runFocusedAction() (tea.Cmd, bool) {
+	if m.listMode != listServices || m.focusedAction == nil {
+		return nil, false
 	}
 	id := *m.focusedAction
 	action, exists := m.cfg.ResolveAction(id)

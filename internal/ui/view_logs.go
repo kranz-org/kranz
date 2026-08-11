@@ -67,7 +67,7 @@ func (m *Model) renderActionLogPanel(width, height int) string {
 	}
 	lines := actionOutputLines(state)
 	if len(lines) == 0 {
-		message := "Press Enter to run this action"
+		message := "Press s to run this action"
 		if state.Status == service.ActionRunning {
 			message = "Waiting for captured output"
 		}

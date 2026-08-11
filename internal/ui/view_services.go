@@ -36,7 +36,7 @@ func (m *Model) renderServiceColumn(width, height int) string {
 	listHeight, detailHeight := m.serviceColumnLayout(height)
 	serviceList := m.renderServicePanel(width, listHeight)
 	if listHeight == collapsedPanelHeight {
-		title := "[1] SERVICES"
+		title := "[1] SERVICES/ACTIONS"
 		if m.listMode == listTags {
 			title = "[1] TAGS"
 		}
@@ -97,16 +97,16 @@ func (m *Model) renderServicePanel(width, height int) string {
 	contentHeight := max(1, height-2)
 	rows := m.serviceListRows()
 	if len(rows) == 0 {
-		return renderTitledPanel(m.panelStyle(panelServices), m.panelTitleStyle(panelServices), contentWidth, contentHeight, "[1] SERVICES", []string{"", "No services or actions"})
+		return renderTitledPanel(m.panelStyle(panelServices), m.panelTitleStyle(panelServices), contentWidth, contentHeight, "[1] SERVICES/ACTIONS", []string{"", "No services or actions"})
 	}
 
-	meta := fmt.Sprintf("%d · 1 → Tags · %d actions · Enter open/run", len(m.services), len(m.cfg.ActionIDs()))
+	meta := fmt.Sprintf("%d · 1→Tags · %d actions · Enter open · s run", len(m.services), len(m.cfg.ActionIDs()))
 	if len(m.selected) > 0 {
 		meta += fmt.Sprintf(" · SELECTED %d", len(m.selected))
 	} else if len(m.selectedTags) > 0 {
 		meta += fmt.Sprintf(" · TAGS %d", len(m.selectedTags))
 	}
-	title := "[1] SERVICES" + ContextBarStyle.Render(" │ "+meta)
+	title := "[1] SERVICES/ACTIONS" + ContextBarStyle.Render(" │ "+meta)
 	lines := make([]string, 0, contentHeight)
 	start, end := m.visibleServiceRange(height)
 	for index := start; index < end; index++ {
@@ -144,7 +144,7 @@ func (m *Model) renderServiceListRow(index int, row actionListRow, width int) st
 		if m.expandedActionOwner[actionOwnerKey(config.ActionOwnerGroup, row.Group)] {
 			disclosure = "▾"
 		}
-		line := fmt.Sprintf("  %s ◇ %s", disclosure, ServiceNameStyle.Render(row.Group))
+		line := "  ⚡ " + ServiceNameStyle.Render(row.Group) + ContextBarStyle.Render(" "+disclosure)
 		return renderListLine(line, width, focused)
 	case actionRowAction:
 		state, _ := m.manager.ActionState(row.Action)
@@ -155,7 +155,7 @@ func (m *Model) renderServiceListRow(index int, row actionListRow, width int) st
 		if state.Duration > 0 && state.Status != service.ActionRunning {
 			status += ContextBarStyle.Render(" · " + state.Duration.Round(time.Millisecond).String())
 		}
-		return renderListLine("      ⚡ "+status, width, focused)
+		return renderListLine("      "+status, width, focused)
 	default:
 		return ""
 	}
@@ -174,12 +174,15 @@ func (m *Model) renderServiceOwnerLine(svc *service.Service, width int, focused 
 	if m.selected[svc.Name] {
 		selection = RunningBadgeStyle.Render("[✓]")
 	}
-	line := "  " + selection + " " + disclosure + " " + serviceStatusIndicator(visualState) + " " + ServiceNameStyle.Render(svc.Name)
+	line := "  " + selection + " " + serviceStatusIndicator(visualState) + " " + ServiceNameStyle.Render(svc.Name)
 	if visualState == visualQueued {
 		line += StartingBadgeStyle.Render("  queued")
 	}
 	if !focused && svc.NewLogCount() > 0 {
 		line += NewLogIndicatorStyle.Render(fmt.Sprintf(" +%d", svc.NewLogCount()))
+	}
+	if disclosure != " " {
+		line += ContextBarStyle.Render(" " + disclosure)
 	}
 	return renderListLine(line, width, focused)
 }

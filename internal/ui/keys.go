@@ -67,7 +67,7 @@ func DefaultKeyMap() KeyMap {
 		),
 		Open: key.NewBinding(
 			key.WithKeys("enter"),
-			key.WithHelp("enter", "expand or run"),
+			key.WithHelp("enter", "expand/collapse"),
 		),
 		Select: key.NewBinding(
 			key.WithKeys(" "),
@@ -75,7 +75,7 @@ func DefaultKeyMap() KeyMap {
 		),
 		Toggle: key.NewBinding(
 			key.WithKeys("s"),
-			key.WithHelp("s", "start/stop selection"),
+			key.WithHelp("s", "start/stop or run action"),
 		),
 		ForceStart: key.NewBinding(
 			key.WithKeys("S", "shift+s"),

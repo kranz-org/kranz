@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/kranz-org/kranz/internal/config"
+	"github.com/kranz-org/kranz/internal/service"
 )
 
 const (
@@ -198,6 +199,7 @@ type actionButton struct {
 }
 
 func (m *Model) actionButtons() []actionButton {
+	actionFocused := m.listMode == listServices && m.focusedAction != nil
 	targets := m.selectedTargetNames()
 	allActive := len(targets) > 0
 	allRunning := len(targets) > 0
@@ -227,7 +229,16 @@ func (m *Model) actionButtons() []actionButton {
 	case operationStart, operationStartSet:
 		interruptibleStart = m.operationCancel != nil && allActive
 	}
-	if len(targets) == 0 || (m.operation != "" && !interruptibleStart) {
+	if actionFocused {
+		toggleStyle = PrimaryButtonStyle
+		toggleLabel = "▶ Run action: s"
+		compactToggle = "Run: s"
+		if state, exists := m.manager.ActionState(*m.focusedAction); exists && state.Status == service.ActionRunning {
+			toggleStyle = DisabledButtonStyle
+			toggleLabel = "◐ Action running"
+			compactToggle = "Running"
+		}
+	} else if len(targets) == 0 || (m.operation != "" && !interruptibleStart) {
 		toggleStyle = DisabledButtonStyle
 	}
 	if m.width < 100 {

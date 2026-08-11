@@ -115,7 +115,7 @@ func TestTagsPanelSelectsLifecycleTargets(t *testing.T) {
 	defer model.Shutdown()
 	model.selected["worker"] = true
 	servicesTitle := ansi.Strip(model.renderServicePanel(40, 8))
-	if !strings.Contains(servicesTitle, "1 → Tags") {
+	if !strings.Contains(servicesTitle, "1→Tags") {
 		t.Fatalf("services panel does not explain tag switching:\n%s", servicesTitle)
 	}
 

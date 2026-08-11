@@ -5,12 +5,13 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/kranz-org/kranz/internal/config"
 	"github.com/kranz-org/kranz/internal/service"
 )
 
-func TestEnterExpandsOwnerAndRunsFocusedAction(t *testing.T) {
+func TestEnterExpandsOwnerAndSRunsFocusedAction(t *testing.T) {
 	model := NewModel(&config.Config{Project: "Keys", Services: map[string]config.Service{
 		"app": {Command: "run", Actions: map[string]config.Action{
 			"check": {Command: "exit 0", Shell: "/bin/sh", Dir: t.TempDir()},
@@ -24,11 +25,24 @@ func TestEnterExpandsOwnerAndRunsFocusedAction(t *testing.T) {
 	}
 	model.moveServiceListCursor(1)
 	_, command = model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyEnter})
+	if command != nil {
+		t.Fatal("Enter scheduled a focused action")
+	}
+	state, _ := model.manager.ActionState(*model.focusedAction)
+	if state.Status != service.ActionReady {
+		t.Fatalf("Enter changed action state = %#v", state)
+	}
+	model.width = 120
+	buttons := model.actionButtons()
+	if len(buttons) == 0 || !strings.Contains(ansi.Strip(buttons[0].rendered), "Run action: s") {
+		t.Fatalf("focused action controls = %#v", buttons)
+	}
+	_, command = model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
 	if command == nil {
-		t.Fatal("Enter did not schedule focused action")
+		t.Fatal("s did not schedule focused action")
 	}
 	_, _ = model.Update(command())
-	state, _ := model.manager.ActionState(*model.focusedAction)
+	state, _ = model.manager.ActionState(*model.focusedAction)
 	if state.Status != service.ActionSucceeded {
 		t.Fatalf("keyboard action state = %#v", state)
 	}
@@ -61,7 +75,7 @@ func TestServiceActionsExpandNavigateRunAndRenderOutput(t *testing.T) {
 		t.Fatalf("focused action = %#v, %#v, %v", id, state, exists)
 	}
 
-	command, handled := model.openFocusedListItem()
+	command, handled := model.runFocusedAction()
 	if !handled || command == nil {
 		t.Fatalf("run action = handled %v, command %v", handled, command)
 	}
@@ -76,8 +90,21 @@ func TestServiceActionsExpandNavigateRunAndRenderOutput(t *testing.T) {
 		t.Fatalf("completed action state = %#v", state)
 	}
 	list := ansi.Strip(model.renderServicePanel(60, 8))
-	if !strings.Contains(list, "⚡ ✓ inspect") || !strings.Contains(list, "succeeded") {
+	if !strings.Contains(list, "✓ inspect") || strings.Contains(list, "⚡ ✓ inspect") || !strings.Contains(list, "succeeded") {
 		t.Fatalf("action list does not expose result:\n%s", list)
+	}
+	lines := strings.Split(list, "\n")
+	serviceColumn, actionColumn := -1, -1
+	for _, line := range lines {
+		if strings.Contains(line, "app") {
+			serviceColumn = lipgloss.Width(line[:strings.Index(line, "●")])
+		}
+		if strings.Contains(line, "inspect") {
+			actionColumn = lipgloss.Width(line[:strings.Index(line, "✓")])
+		}
+	}
+	if serviceColumn < 0 || serviceColumn != actionColumn {
+		t.Fatalf("service/action status columns = %d/%d:\n%s", serviceColumn, actionColumn, list)
 	}
 	details := ansi.Strip(model.renderActionDetails(60, 20))
 	for _, expected := range []string{"Inspect the application", "exit 0", "printf 'hello"} {
@@ -110,11 +137,15 @@ func TestActionOnlyGroupIsFocusableAndRunnable(t *testing.T) {
 	if command, handled := model.openFocusedListItem(); !handled || command != nil {
 		t.Fatalf("expand group = handled %v, command %v", handled, command)
 	}
+	list := ansi.Strip(model.renderServicePanel(60, 8))
+	if !strings.Contains(list, "⚡ tools") || !strings.Contains(list, "○ version") || strings.Count(list, "⚡") != 1 {
+		t.Fatalf("group/action markers are ambiguous:\n%s", list)
+	}
 	model.moveServiceListCursor(1)
 	if model.focusedAction == nil || model.focusedAction.OwnerKind != config.ActionOwnerGroup {
 		t.Fatalf("focused group action = %#v", model.focusedAction)
 	}
-	command, handled := model.openFocusedListItem()
+	command, handled := model.runFocusedAction()
 	if !handled || command == nil {
 		t.Fatalf("run group action = handled %v, command %v", handled, command)
 	}
@@ -138,11 +169,11 @@ func TestProtectedActionsWaitForLaterHandoffOrConfirmation(t *testing.T) {
 	model.expandedActionOwner[actionOwnerKey(config.ActionOwnerService, "app")] = true
 
 	model.focusServiceListRow(1)
-	if command, handled := model.openFocusedListItem(); !handled || command != nil {
+	if command, handled := model.runFocusedAction(); !handled || command != nil {
 		t.Fatalf("confirmation action = handled %v, command %v", handled, command)
 	}
 	model.focusServiceListRow(2)
-	if command, handled := model.openFocusedListItem(); !handled || command != nil {
+	if command, handled := model.runFocusedAction(); !handled || command != nil {
 		t.Fatalf("interactive action = handled %v, command %v", handled, command)
 	}
 	for _, id := range model.cfg.ActionIDs() {

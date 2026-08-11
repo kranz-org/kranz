@@ -472,7 +472,7 @@ func TestServiceAndDetailsTitlesSeparateMetadata(t *testing.T) {
 	defer model.Shutdown()
 
 	services := ansi.Strip(model.renderServicePanel(48, 8))
-	if !strings.Contains(services, "[1] SERVICES │ 2 · 1 → Tags") {
+	if !strings.Contains(services, "[1] SERVICES/ACTIONS │ 2 · 1→Tags") {
 		t.Fatalf("service title does not separate metadata:\n%s", services)
 	}
 
