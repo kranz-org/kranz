@@ -29,6 +29,11 @@ func (m *Model) Shutdown() error {
 }
 
 func (m *Model) handleLifecycleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
+	if m.listMode == listServices && (m.focusedAction != nil || m.focusedActionGroup != "") {
+		if key.Matches(msg, m.keys.Select) || key.Matches(msg, m.keys.ForceStart) || key.Matches(msg, m.keys.Toggle) || key.Matches(msg, m.keys.Restart) {
+			return m, nil, true
+		}
+	}
 	switch {
 	case key.Matches(msg, m.keys.Select):
 		m.toggleCurrentSelection()

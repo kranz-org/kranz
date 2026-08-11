@@ -64,6 +64,21 @@ type tagListRow struct {
 	Service *service.Service
 }
 
+type actionListRowKind uint8
+
+const (
+	actionRowService actionListRowKind = iota
+	actionRowGroup
+	actionRowAction
+)
+
+type actionListRow struct {
+	Kind    actionListRowKind
+	Service *service.Service
+	Group   string
+	Action  config.ActionID
+}
+
 type logSearchMode int
 
 const (
@@ -88,6 +103,12 @@ type operationResultMsg struct {
 	id     int
 	kind   operationKind
 	target string
+	err    error
+}
+
+type actionResultMsg struct {
+	id     config.ActionID
+	result service.ActionResult
 	err    error
 }
 
@@ -136,18 +157,21 @@ type Model struct {
 	version          string
 	workingDirectory string
 
-	manager      *service.Manager
-	services     []*service.Service
-	allServices  []*service.Service
-	focused      int
-	selected     map[string]bool
-	detailOffset int
-	logOffset    int
-	logAnchor    int
-	pinnedOffset int
-	pinnedAnchor int
-	panelFocus   panelFocus
-	listMode     listMode
+	manager             *service.Manager
+	services            []*service.Service
+	allServices         []*service.Service
+	focused             int
+	selected            map[string]bool
+	detailOffset        int
+	logOffset           int
+	logAnchor           int
+	pinnedOffset        int
+	pinnedAnchor        int
+	panelFocus          panelFocus
+	listMode            listMode
+	focusedAction       *config.ActionID
+	focusedActionGroup  string
+	expandedActionOwner map[string]bool
 
 	healthChecker *health.Checker
 	portChecker   port.Checker
@@ -279,32 +303,33 @@ func NewModelWithOptions(cfg *config.Config, version string, options ModelOption
 	services := manager.Services()
 
 	model := &Model{
-		cfg:              cfg,
-		version:          version,
-		workingDirectory: workingDirectory,
-		manager:          manager,
-		services:         services,
-		allServices:      services,
-		healthChecker:    healthChecker,
-		portChecker:      portChecker,
-		portDetails:      make(map[int]*config.PortInfo),
-		selected:         make(map[string]bool),
-		expandedTags:     make(map[string]bool),
-		panelFocus:       panelServices,
-		listMode:         listServices,
-		logSearcher:      kranzlog.NewSearcher(),
-		searchInput:      newSearchInput(),
-		themeColorInput:  newThemeColorInput(),
-		currentMatch:     -1,
-		searchMode:       searchFilter,
-		mode:             ModeNormal,
-		followMode:       true,
-		pinnedFollow:     true,
-		keys:             DefaultKeyMap(),
-		userSettings:     options.Settings,
-		settingsPath:     options.SettingsPath,
-		activeTheme:      activeTheme,
-		terminalDark:     terminalDark,
+		cfg:                 cfg,
+		version:             version,
+		workingDirectory:    workingDirectory,
+		manager:             manager,
+		services:            services,
+		allServices:         services,
+		healthChecker:       healthChecker,
+		portChecker:         portChecker,
+		portDetails:         make(map[int]*config.PortInfo),
+		selected:            make(map[string]bool),
+		expandedTags:        make(map[string]bool),
+		expandedActionOwner: make(map[string]bool),
+		panelFocus:          panelServices,
+		listMode:            listServices,
+		logSearcher:         kranzlog.NewSearcher(),
+		searchInput:         newSearchInput(),
+		themeColorInput:     newThemeColorInput(),
+		currentMatch:        -1,
+		searchMode:          searchFilter,
+		mode:                ModeNormal,
+		followMode:          true,
+		pinnedFollow:        true,
+		keys:                DefaultKeyMap(),
+		userSettings:        options.Settings,
+		settingsPath:        options.SettingsPath,
+		activeTheme:         activeTheme,
+		terminalDark:        terminalDark,
 		// The executable already performed the initial detection. Suppress the
 		// focus event emitted immediately after focus reporting is enabled.
 		lastBackgroundProbe: time.Now(),
@@ -322,6 +347,9 @@ func NewModelWithOptions(cfg *config.Config, version string, options ModelOption
 	}
 	for _, diagnostic := range cfg.Diagnostics {
 		model.addNotification("config", diagnostic, config.LogWarn)
+	}
+	if len(model.services) == 0 && len(model.cfg.ActionGroups) > 0 {
+		model.focusServiceListRow(0)
 	}
 	return model
 }
@@ -389,6 +417,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleMouseMsg(msg)
 	case operationResultMsg:
 		return m.handleOperationResult(msg)
+	case actionResultMsg:
+		return m.handleActionResult(msg)
 	case releasePortResultMsg:
 		if msg.err != nil {
 			m.addNotification("port", msg.err.Error(), config.LogError)

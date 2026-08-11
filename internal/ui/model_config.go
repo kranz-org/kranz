@@ -60,6 +60,16 @@ func (m *Model) handleConfigReload(msg configReloadMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.cfg = msg.cfg
+	if m.focusedAction != nil {
+		if _, exists := msg.cfg.ResolveAction(*m.focusedAction); !exists {
+			m.focusedAction = nil
+		}
+	}
+	if m.focusedActionGroup != "" {
+		if _, exists := msg.cfg.ActionGroups[m.focusedActionGroup]; !exists {
+			m.focusedActionGroup = ""
+		}
+	}
 	m.configWatchPaths = watchedConfigPaths(m.configPaths, msg.cfg.WatchPaths)
 	if stamps, stampErr := readConfigStamps(m.configWatchPaths); stampErr == nil {
 		m.configStamps = stamps
@@ -70,6 +80,9 @@ func (m *Model) handleConfigReload(msg configReloadMsg) (tea.Model, tea.Cmd) {
 			m.focused = index
 			break
 		}
+	}
+	if len(m.services) == 0 && m.focusedAction == nil && m.focusedActionGroup == "" && len(m.cfg.ActionGroups) > 0 {
+		m.focusServiceListRow(0)
 	}
 	if m.PinnedService() == nil {
 		m.pinnedLog = ""

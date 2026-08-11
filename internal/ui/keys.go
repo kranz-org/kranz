@@ -67,7 +67,7 @@ func DefaultKeyMap() KeyMap {
 		),
 		Open: key.NewBinding(
 			key.WithKeys("enter"),
-			key.WithHelp("enter", "expand/collapse tag"),
+			key.WithHelp("enter", "expand or run"),
 		),
 		Select: key.NewBinding(
 			key.WithKeys(" "),

@@ -48,7 +48,7 @@ func helpEntries() []helpEntry {
 		{"↑/↓ j/k", "Navigate or scroll focused panel"},
 		{"←/→", "Cycle Services/Tags while the list panel is focused"},
 		{"t", "Toggle Services/Tags from any panel"},
-		{"Enter", "In Tags: expand or collapse services below the focused tag"},
+		{"Enter", "Expand service actions/action groups, run an action, or expand a tag"},
 		{"Space", "Select/unselect service or tag"},
 		{"s", "Start stopped or stop running targets"},
 		{"Shift+S", "Start or stop only targets, ignoring dependency expansion"},

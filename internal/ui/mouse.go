@@ -217,8 +217,9 @@ func (m *Model) handleServiceRowClick(row, listHeight, column int) {
 	if index < start || index >= end {
 		return
 	}
-	m.moveFocus(index)
-	if column >= checkboxMinColumn && column <= checkboxMaxColumn {
+	rows := m.serviceListRows()
+	m.focusServiceListRow(index)
+	if index < len(rows) && rows[index].Kind == actionRowService && column >= checkboxMinColumn && column <= checkboxMaxColumn {
 		m.toggleFocusedSelection()
 	}
 }

@@ -26,6 +26,8 @@ func (m *Model) moveFocus(next int) {
 		current.ResetNewLogCount()
 	}
 	m.focused = next
+	m.focusedAction = nil
+	m.focusedActionGroup = ""
 	m.detailOffset = 0
 	m.logOffset = 0
 	m.logAnchor = 0
@@ -72,10 +74,7 @@ func (m *Model) movePanelCursor(direction int) {
 			}
 			return
 		}
-		next := m.focused + direction
-		if next >= 0 && next < len(m.services) {
-			m.moveFocus(next)
-		}
+		m.moveServiceListCursor(direction)
 	}
 }
 
@@ -99,6 +98,9 @@ func (m *Model) toggleAllSelection() {
 }
 
 func (m *Model) togglePinnedLog() {
+	if m.focusedAction != nil || m.focusedActionGroup != "" {
+		return
+	}
 	if m.listMode == listTags && m.focusedTagService() == nil {
 		return
 	}
@@ -124,6 +126,8 @@ func (m *Model) togglePinnedLog() {
 func (m *Model) toggleListMode() {
 	if m.listMode == listServices {
 		m.listMode = listTags
+		m.focusedAction = nil
+		m.focusedActionGroup = ""
 	} else {
 		m.listMode = listServices
 	}
@@ -160,6 +164,9 @@ func (m *Model) toggleCurrentSelection() {
 			m.selectedTags = toggleTag(m.selectedTags, row.Tag)
 			m.syncSelectedServicesFromTags()
 		}
+		return
+	}
+	if m.focusedAction != nil || m.focusedActionGroup != "" {
 		return
 	}
 	m.toggleFocusedSelection()

@@ -53,6 +53,15 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if key.Matches(msg, m.keys.Reload) {
 		return m, tea.Batch(m.reloadConfig(true), m.probeTerminalBackground(true))
 	}
+	if key.Matches(msg, m.keys.Open) && m.panelFocus == panelServices {
+		if m.listMode == listTags {
+			m.toggleFocusedTagExpansion()
+			return m, nil
+		}
+		if command, handled := m.openFocusedListItem(); handled {
+			return m, command
+		}
+	}
 	if m.handleNavigationKey(msg) {
 		return m, nil
 	}
@@ -118,11 +127,6 @@ func (m *Model) handleNavigationKey(msg tea.KeyMsg) bool {
 		}
 		m.toggleListMode()
 		return true
-	case key.Matches(msg, m.keys.Open):
-		if m.panelFocus == panelServices && m.listMode == listTags {
-			return m.toggleFocusedTagExpansion()
-		}
-		return false
 	default:
 		return false
 	}
