@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"sync"
@@ -24,7 +23,15 @@ type ProcessManager struct {
 	stderr   *ringbuffer.RingBuffer
 	waitDone chan struct{}
 	waitErr  error
-	pipeWG   sync.WaitGroup
+}
+
+type ringBufferWriter struct {
+	buffer *ringbuffer.RingBuffer
+}
+
+func (w ringBufferWriter) Write(data []byte) (int, error) {
+	w.buffer.Write(string(data))
+	return len(data), nil
 }
 
 // StopOptions customizes graceful shutdown for one process.
@@ -72,15 +79,10 @@ func (pm *ProcessManager) Start(ctx context.Context, command, dir string, env ma
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}
 
-	// Keep streams independent so a blocked reader cannot stall the other pipe.
-	stdoutPipe, err := cmd.StdoutPipe()
-	if err != nil {
-		return 0, fmt.Errorf("create stdout pipe: %w", err)
-	}
-	stderrPipe, err := cmd.StderrPipe()
-	if err != nil {
-		return 0, fmt.Errorf("create stderr pipe: %w", err)
-	}
+	// Non-file writers make os/exec own the stream-copy goroutines. Wait then
+	// cannot complete until both streams have been copied into their buffers.
+	cmd.Stdout = ringBufferWriter{buffer: pm.stdout}
+	cmd.Stderr = ringBufferWriter{buffer: pm.stderr}
 
 	if err := cmd.Start(); err != nil {
 		return 0, fmt.Errorf("start process: %w", err)
@@ -93,39 +95,15 @@ func (pm *ProcessManager) Start(ctx context.Context, command, dir string, env ma
 	pm.waitErr = nil
 	pm.mu.Unlock()
 
-	// stdout and stderr are consumed independently; reap owns the only Wait call.
-	pm.pipeWG.Add(2)
-	go func() {
-		defer pm.pipeWG.Done()
-		pm.readPipe(stdoutPipe, pm.stdout)
-	}()
-	go func() {
-		defer pm.pipeWG.Done()
-		pm.readPipe(stderrPipe, pm.stderr)
-	}()
+	// reap owns the only Wait call.
 	go pm.reap(cmd, waitDone)
 
 	return cmd.Process.Pid, nil
 }
 
-// readPipe copies complete lines from one child stream into a bounded buffer.
-func (pm *ProcessManager) readPipe(r io.Reader, buf *ringbuffer.RingBuffer) {
-	data := make([]byte, 8192)
-	for {
-		n, err := r.Read(data)
-		if n > 0 {
-			buf.Write(string(data[:n]))
-		}
-		if err != nil {
-			return
-		}
-	}
-}
-
 // reap owns the only exec.Cmd.Wait call and always releases the OS process handle.
 func (pm *ProcessManager) reap(cmd *exec.Cmd, done chan struct{}) {
 	err := cmd.Wait()
-	pm.pipeWG.Wait()
 	pm.mu.Lock()
 	if pm.cmd == cmd {
 		pm.waitErr = err

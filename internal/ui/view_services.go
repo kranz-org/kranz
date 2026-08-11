@@ -170,7 +170,7 @@ func (m *Model) renderServiceOwnerLine(svc *service.Service, width int, focused 
 		}
 	}
 	visualState := m.serviceVisualState(svc)
-	selection := "□"
+	selection := ContextBarStyle.Render("□")
 	if m.selected[svc.Name] {
 		selection = RunningBadgeStyle.Render("✓")
 	}
@@ -241,7 +241,7 @@ func (m *Model) renderTagPanel(width, height int) string {
 			if index == m.tagCursor {
 				marker = HelpKeyStyle.Render("› ")
 			}
-			check := "□"
+			check := ContextBarStyle.Render("□")
 			var line string
 			if row.Service == nil {
 				if containsTagStr(m.selectedTags, row.Tag) {
