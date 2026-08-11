@@ -144,7 +144,7 @@ func (m *Model) renderServiceListRow(index int, row actionListRow, width int) st
 		if m.expandedActionOwner[actionOwnerKey(config.ActionOwnerGroup, row.Group)] {
 			disclosure = "▾"
 		}
-		line := "  ⚡ " + ServiceNameStyle.Render(row.Group) + ContextBarStyle.Render(" "+disclosure)
+		line := "   " + ContextBarStyle.Render(disclosure) + "  " + ServiceNameStyle.Render(row.Group)
 		return renderListLine(line, width, focused)
 	case actionRowAction:
 		state, _ := m.manager.ActionState(row.Action)

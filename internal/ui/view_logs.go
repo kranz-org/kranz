@@ -69,7 +69,7 @@ func (m *Model) renderActionLogPanel(width, height int) string {
 	if len(lines) == 0 {
 		message := "Press s to run this action"
 		if state.Status == service.ActionRunning {
-			message = "Waiting for captured output"
+			message = "Running · press s to stop"
 		}
 		return renderTitledPanel(m.panelStyle(panelLogs), m.panelTitleStyle(panelLogs), contentWidth, contentHeight, title, []string{"", ContextBarStyle.Render(message)})
 	}

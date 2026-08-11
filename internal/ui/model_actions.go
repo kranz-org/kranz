@@ -164,7 +164,7 @@ func (m *Model) openFocusedListItem() (tea.Cmd, bool) {
 	return nil, m.toggleFocusedActionOwner()
 }
 
-func (m *Model) runFocusedAction() (tea.Cmd, bool) {
+func (m *Model) toggleFocusedAction() (tea.Cmd, bool) {
 	if m.listMode != listServices || m.focusedAction == nil {
 		return nil, false
 	}
@@ -175,7 +175,11 @@ func (m *Model) runFocusedAction() (tea.Cmd, bool) {
 		return nil, true
 	}
 	if state, ok := m.manager.ActionState(id); ok && state.Status == service.ActionRunning {
-		m.addNotification("action", id.Name+" is already running", config.LogWarn)
+		if m.manager.CancelAction(id) {
+			m.addNotification("action", "Stopping "+id.Name, config.LogWarn)
+		} else {
+			m.addNotification("action", id.Name+" is no longer running", config.LogWarn)
+		}
 		return nil, true
 	}
 	if action.ConfirmationRequired() {

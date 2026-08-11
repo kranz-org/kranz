@@ -234,9 +234,9 @@ func (m *Model) actionButtons() []actionButton {
 		toggleLabel = "▶ Run action: s"
 		compactToggle = "Run: s"
 		if state, exists := m.manager.ActionState(*m.focusedAction); exists && state.Status == service.ActionRunning {
-			toggleStyle = DisabledButtonStyle
-			toggleLabel = "◐ Action running"
-			compactToggle = "Running"
+			toggleStyle = DangerButtonStyle
+			toggleLabel = "■ Stop action: s"
+			compactToggle = "Stop: s"
 		}
 	} else if len(targets) == 0 || (m.operation != "" && !interruptibleStart) {
 		toggleStyle = DisabledButtonStyle
