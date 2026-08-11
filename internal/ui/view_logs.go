@@ -97,10 +97,33 @@ func (m *Model) renderActionLogPanel(width, height int) string {
 func actionOutputLines(state service.ActionResult) []string {
 	lines := make([]string, 0, len(state.Stdout)+len(state.Stderr))
 	for _, line := range state.Stdout {
-		lines = append(lines, strings.TrimRight(line, "\r\n"))
+		lines = appendSafeActionOutput(lines, line, "")
 	}
 	for _, line := range state.Stderr {
-		lines = append(lines, "[stderr] "+strings.TrimRight(line, "\r\n"))
+		lines = appendSafeActionOutput(lines, line, "[stderr] ")
+	}
+	return lines
+}
+
+func appendSafeActionOutput(lines []string, output, prefix string) []string {
+	if output == "" {
+		return lines
+	}
+	output = ansi.Strip(output)
+	output = strings.ReplaceAll(output, "\r\n", "\n")
+	output = strings.ReplaceAll(output, "\r", "\n")
+	parts := strings.Split(output, "\n")
+	if len(parts) > 0 && parts[len(parts)-1] == "" {
+		parts = parts[:len(parts)-1]
+	}
+	for _, part := range parts {
+		part = strings.Map(func(character rune) rune {
+			if character == '\t' || (character >= ' ' && character != '\x7f') {
+				return character
+			}
+			return -1
+		}, part)
+		lines = append(lines, prefix+part)
 	}
 	return lines
 }

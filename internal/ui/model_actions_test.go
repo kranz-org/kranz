@@ -242,6 +242,23 @@ func TestExpandedActionsDoNotInsertBlankRows(t *testing.T) {
 	}
 }
 
+func TestActionOutputCannotRepositionOrGrowTheDashboard(t *testing.T) {
+	state := service.ActionResult{
+		Stdout: []string{"\x1b[2Jtransforming...\rnext\nbuilt\n"},
+		Stderr: []string{"warning\bretry\rfailed\n"},
+	}
+	lines := actionOutputLines(state)
+	want := []string{"transforming...", "next", "built", "[stderr] warningretry", "[stderr] failed"}
+	if strings.Join(lines, "|") != strings.Join(want, "|") {
+		t.Fatalf("sanitized action output = %#v, want %#v", lines, want)
+	}
+	for _, line := range lines {
+		if strings.ContainsAny(line, "\x1b\r\n\b") {
+			t.Fatalf("unsafe terminal control reached action row: %q", line)
+		}
+	}
+}
+
 func TestProtectedActionsWaitForLaterHandoffOrConfirmation(t *testing.T) {
 	confirmation := true
 	interactive := true
