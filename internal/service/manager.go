@@ -22,6 +22,7 @@ import (
 type Manager struct {
 	services             map[string]*Service
 	cfg                  *config.Config
+	actions              *ActionRunner
 	mu                   sync.RWMutex
 	healthChecker        *health.Checker
 	portChecker          port.Checker
@@ -107,6 +108,7 @@ func (m *Manager) ApplyConfig(next *config.Config) (ReloadResult, error) {
 	}
 	m.cfg = next
 	m.mu.Unlock()
+	m.actions.ApplyConfig(next)
 	sort.Strings(result.Added)
 
 	if len(runningChanged) > 0 {
@@ -132,6 +134,7 @@ func NewManager(cfg *config.Config) *Manager {
 	m := &Manager{
 		services:             make(map[string]*Service),
 		cfg:                  cfg,
+		actions:              NewActionRunner(cfg, defaultActionLogBuffer),
 		listenerScanInterval: 2 * time.Second,
 	}
 
@@ -744,6 +747,7 @@ func (m *Manager) expandWithDependencies(names []string) (map[string]bool, error
 func (m *Manager) Shutdown() error {
 	m.shuttingDown.Store(true)
 	m.stopListenerDiscovery()
+	m.actions.Shutdown()
 	return m.StopAll()
 }
 
