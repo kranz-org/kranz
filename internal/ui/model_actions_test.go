@@ -194,7 +194,7 @@ func TestActionOnlyGroupIsFocusableAndRunnable(t *testing.T) {
 		t.Fatalf("expand group = handled %v, command %v", handled, command)
 	}
 	list := ansi.Strip(model.renderServicePanel(60, 8))
-	if !strings.Contains(list, "›  ▾  tools") || !strings.Contains(list, "○ version") || strings.Contains(list, "⚡") {
+	if !strings.Contains(list, "› ▾   tools") || !strings.Contains(list, "○ version") || strings.Contains(list, "⚡") {
 		t.Fatalf("group/action markers are ambiguous:\n%s", list)
 	}
 	model.moveServiceListCursor(1)
@@ -209,6 +209,36 @@ func TestActionOnlyGroupIsFocusableAndRunnable(t *testing.T) {
 	_, _, state, exists := model.focusedActionDefinition()
 	if !exists || state.Status != service.ActionSucceeded || strings.TrimSpace(strings.Join(state.Stdout, "")) != "v1" {
 		t.Fatalf("group action state = %#v, %v", state, exists)
+	}
+}
+
+func TestExpandedActionsDoNotInsertBlankRows(t *testing.T) {
+	model := NewModel(&config.Config{Project: "Rows", Services: map[string]config.Service{
+		"app": {Command: "run", Actions: map[string]config.Action{
+			"build": {Command: "exit 0"},
+			"check": {Command: "exit 0"},
+		}},
+		"worker": {Command: "run"},
+	}}, "test")
+	defer model.Shutdown()
+	model.expandedActionOwner[actionOwnerKey(config.ActionOwnerService, "app")] = true
+	model.focusServiceListRow(1)
+
+	plain := ansi.Strip(model.renderServicePanel(60, 10))
+	lines := strings.Split(plain, "\n")
+	positions := map[string]int{}
+	for index, line := range lines {
+		for _, label := range []string{"build", "check", "worker"} {
+			if strings.Contains(line, label) {
+				positions[label] = index
+			}
+		}
+	}
+	if positions["check"] != positions["build"]+1 || positions["worker"] != positions["check"]+1 {
+		t.Fatalf("expanded actions are not consecutive: positions %v\n%s", positions, plain)
+	}
+	if !strings.Contains(plain, "›   ○ build") || !strings.Contains(plain, "  □ ● worker") {
+		t.Fatalf("single-column selection markers are misaligned:\n%s", plain)
 	}
 }
 

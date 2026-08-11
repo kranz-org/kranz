@@ -144,7 +144,7 @@ func (m *Model) renderServiceListRow(index int, row actionListRow, width int) st
 		if m.expandedActionOwner[actionOwnerKey(config.ActionOwnerGroup, row.Group)] {
 			disclosure = "▾"
 		}
-		line := "   " + ContextBarStyle.Render(disclosure) + "  " + ServiceNameStyle.Render(row.Group)
+		line := "  " + ContextBarStyle.Render(disclosure) + "   " + ServiceNameStyle.Render(row.Group)
 		return renderListLine(line, width, focused)
 	case actionRowAction:
 		state, _ := m.manager.ActionState(row.Action)
@@ -155,7 +155,7 @@ func (m *Model) renderServiceListRow(index int, row actionListRow, width int) st
 		if state.Duration > 0 && state.Status != service.ActionRunning {
 			status += ContextBarStyle.Render(" · " + state.Duration.Round(time.Millisecond).String())
 		}
-		return renderListLine("      "+status, width, focused)
+		return renderListLine("    "+status, width, focused)
 	default:
 		return ""
 	}
@@ -170,9 +170,9 @@ func (m *Model) renderServiceOwnerLine(svc *service.Service, width int, focused 
 		}
 	}
 	visualState := m.serviceVisualState(svc)
-	selection := "[ ]"
+	selection := "□"
 	if m.selected[svc.Name] {
-		selection = RunningBadgeStyle.Render("[✓]")
+		selection = RunningBadgeStyle.Render("✓")
 	}
 	line := "  " + selection + " " + serviceStatusIndicator(visualState) + " " + ServiceNameStyle.Render(svc.Name)
 	if visualState == visualQueued {
@@ -241,11 +241,11 @@ func (m *Model) renderTagPanel(width, height int) string {
 			if index == m.tagCursor {
 				marker = HelpKeyStyle.Render("› ")
 			}
-			check := "[ ]"
+			check := "□"
 			var line string
 			if row.Service == nil {
 				if containsTagStr(m.selectedTags, row.Tag) {
-					check = RunningBadgeStyle.Render("[✓]")
+					check = RunningBadgeStyle.Render("✓")
 				}
 				disclosure := "▸"
 				if m.expandedTags[row.Tag] {
@@ -255,7 +255,7 @@ func (m *Model) renderTagPanel(width, height int) string {
 				line = fmt.Sprintf("%s%s %s %s (%d)", marker, check, disclosure, row.Tag, count)
 			} else {
 				if m.selected[row.Service.Name] {
-					check = RunningBadgeStyle.Render("[✓]")
+					check = RunningBadgeStyle.Render("✓")
 				}
 				visualState := m.serviceVisualState(row.Service)
 				line = fmt.Sprintf("%s  %s %s %s", marker, check, serviceStatusIndicator(visualState), row.Service.Name)
