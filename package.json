@@ -1,0 +1,16 @@
+{
+  "name": "kranz-docs",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs",
+    "docs:check-links": "node scripts/check-doc-links.mjs"
+  },
+  "devDependencies": {
+    "vitepress": "1.6.4"
+  }
+}

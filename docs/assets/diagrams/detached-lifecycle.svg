@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 280" role="img" aria-labelledby="title desc">
+  <title id="title">Detached lifecycle</title><desc id="desc">Start and stop commands control an external resource while a status probe observes it across Kranz sessions.</desc>
+  <style>text{font:600 18px ui-sans-serif,system-ui;fill:#172033}.box{fill:#fff;stroke:#94a3b8;stroke-width:2}.resource{fill:#e0f2fe;stroke:#0ea5e9;stroke-width:3}.edge{fill:none;stroke:#0ea5e9;stroke-width:3}.observe{fill:none;stroke:#22c55e;stroke-width:3;stroke-dasharray:8 7}.note{font-size:14px;fill:#526176}@media(prefers-color-scheme:dark){text{fill:#e7edf5}.box{fill:#111923;stroke:#526176}.resource{fill:#102a3a}.note{fill:#9aa8b8}}</style>
+  <defs><marker id="blue" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0 0L9 3L0 6Z" fill="#0ea5e9"/></marker><marker id="green" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0 0L9 3L0 6Z" fill="#22c55e"/></marker></defs>
+  <rect class="box" x="35" y="50" width="190" height="70" rx="10"/><text x="130" y="82" text-anchor="middle">start command</text><text class="note" x="130" y="104" text-anchor="middle">exits after creation</text>
+  <rect class="resource" x="350" y="35" width="200" height="100" rx="16"/><text x="450" y="78" text-anchor="middle">external resource</text><text class="note" x="450" y="105" text-anchor="middle">no child PID</text>
+  <rect class="box" x="675" y="50" width="190" height="70" rx="10"/><text x="770" y="82" text-anchor="middle">stop command</text><text class="note" x="770" y="104" text-anchor="middle">explicit cleanup</text>
+  <path class="edge" d="M225 85H350" marker-end="url(#blue)"/><path class="edge" d="M550 85H675" marker-end="url(#blue)"/>
+  <rect class="box" x="350" y="195" width="200" height="58" rx="10"/><text x="450" y="230" text-anchor="middle">status probe</text>
+  <path class="observe" d="M450 195V137" marker-end="url(#green)"/><text class="note" x="470" y="170">reconnects state</text>
+</svg>

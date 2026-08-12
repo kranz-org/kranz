@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 220" role="img" aria-labelledby="title desc">
+  <title id="title">Native example dependency graph</title><desc id="desc">Migration completes before the API starts; the worker waits for API health. Preview is independent.</desc>
+  <style>text{font:600 18px ui-sans-serif,system-ui;fill:#172033}.box{fill:#fff;stroke:#94a3b8;stroke-width:2}.edge{fill:none;stroke:#0ea5e9;stroke-width:3}.note{font-size:13px;fill:#526176}@media(prefers-color-scheme:dark){text{fill:#e7edf5}.box{fill:#111923;stroke:#526176}.note{fill:#9aa8b8}}</style>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0 0L9 3L0 6Z" fill="#0ea5e9"/></marker></defs>
+  <rect class="box" x="40" y="45" width="170" height="64" rx="10"/><text x="125" y="83" text-anchor="middle">migrate</text>
+  <rect class="box" x="365" y="45" width="170" height="64" rx="10"/><text x="450" y="83" text-anchor="middle">api</text>
+  <rect class="box" x="690" y="45" width="170" height="64" rx="10"/><text x="775" y="83" text-anchor="middle">worker</text>
+  <path class="edge" d="M210 77H365" marker-end="url(#arrow)"/><text class="note" x="287" y="65" text-anchor="middle">completed successfully</text>
+  <path class="edge" d="M535 77H690" marker-end="url(#arrow)"/><text class="note" x="612" y="65" text-anchor="middle">readiness healthy</text>
+  <rect class="box" x="365" y="145" width="170" height="54" rx="10"/><text x="450" y="178" text-anchor="middle">preview</text><text class="note" x="555" y="177">independent</text>
+</svg>

@@ -2,6 +2,68 @@
 
 All notable changes to Kranz are documented here. The project follows [Semantic Versioning](https://semver.org/), and release notes are generated from conventional commit subjects.
 
+## [Unreleased]
+
+### Added
+
+- Detached service supervision with optional lifecycle start, stop, status,
+  and log commands, observe-only resources, external-state reconciliation, and
+  `stop_on_exit` ownership.
+- Configurable lifecycle start confirmation and a runnable detached lifecycle
+  playground covering actions, health, dependencies, and status transitions.
+- A VitePress documentation site configured for GitHub Pages at `/kranz/`,
+  including guides, reference pages, safe runnable examples, and link checks.
+- Beginner-oriented documentation, individual walkthroughs for every runnable
+  example, theme-aware brand artwork, and responsive SVG lifecycle diagrams.
+- `before_start` prerequisites: a service can require named actions to succeed
+  before it starts, referencing its own, another service's, or an action
+  group's action, running them once per session or before every start, and
+  sharing one run between services that require the same prerequisite.
+- A runnable prerequisites example, an annotated reference configuration that
+  is loaded and validated by a test, a complete field-by-field configuration
+  reference, and new CLI, appearance, troubleshooting, and Process Compose
+  compatibility pages.
+- Reproducible terminal recordings generated from tapes in
+  `docs/assets/tapes/`.
+
+### Changed
+
+- `command` is now shorthand for `lifecycle.start` and is normalized before
+  layered configuration merging.
+- A lifecycle status probe now follows the ordinary shell convention by
+  default: exit `0` means running and any other exit code means stopped.
+  Declaring `stopped_exit_codes` opts into the three-way contract in which an
+  unlisted code is unclassified and becomes `unknown`. A probe that produced no
+  exit code at all is never reported as stopped.
+- `lifecycle.status.stopped_interval` defaults to a flat `30s` instead of a
+  value derived from `interval`.
+- TUI service stops always require confirmation, including `s`, `Shift+S`,
+  restart, and all-service variants.
+- The README is now a concise project overview and quickstart, with detailed
+  usage moved into the documentation site.
+- Detached services with a status probe show a neutral checking state before
+  the first observation and can attach to an already-running external resource
+  without invoking the start command again.
+- Successful lifecycle commands keep noisy tool progress out of service logs;
+  failed lifecycle commands retain bounded diagnostic output.
+- Quit confirmation now presents the actual exit plan, separating managed
+  processes, detached stop commands, and detached resources that will remain
+  running, with retained resources visually emphasized.
+- The primary list panel is labeled `SERVICES`, `ACTIONS`, or
+  `SERVICES/ACTIONS` according to whether it contains services, top-level
+  action groups, or both.
+- Lifecycle start confirmation highlights each affected service and the exact
+  command awaiting approval, including confirmed dependency starts.
+- Confirmed actions use the same visual hierarchy for their owner,
+  description, and command so consequential operations stand out before run.
+
+### Fixed
+
+- `disabled` services are now actually excluded from select-all and start-all
+  batch operations instead of only displaying a badge that claimed they were.
+- An out-of-range service status is no longer rendered as the deliberate
+  `unknown` state.
+
 ## [0.6.1] - 2026-08-10
 
 ### Changed
