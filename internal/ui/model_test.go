@@ -69,7 +69,7 @@ func TestMouseActivatesDashboardAndModalControls(t *testing.T) {
 	if model.listMode != listTags {
 		t.Fatal("clicking the focused [1] title did not switch to tags")
 	}
-	clickRenderedText(t, model, "□ ▸ backend")
+	clickRenderedText(t, model, "[ ] ▸ backend")
 	if len(model.selectedTags) != 1 || model.selectedTags[0] != "backend" {
 		t.Fatalf("clicking a tag checkbox selected %v", model.selectedTags)
 	}
@@ -347,7 +347,7 @@ func TestTagsExpandServicesInlineAndToggleWithEnter(t *testing.T) {
 	}
 	_, _ = model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyEnter})
 	plain = ansi.Strip(model.renderServicePanel(48, 12))
-	for _, expected := range []string{"☑ ▾ backend", "☑ ● api", "☑ ● worker"} {
+	for _, expected := range []string{"[✓] ▾ backend", "[✓] ● api", "[✓] ● worker"} {
 		if !strings.Contains(plain, expected) {
 			t.Errorf("selected tag expansion does not contain %q:\n%s", expected, plain)
 		}

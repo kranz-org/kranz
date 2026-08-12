@@ -144,7 +144,7 @@ func (m *Model) renderServiceListRow(index int, row actionListRow, width int) st
 		if m.expandedActionOwner[actionOwnerKey(config.ActionOwnerGroup, row.Group)] {
 			disclosure = "▾"
 		}
-		line := "  " + ContextBarStyle.Render(disclosure) + "   " + ServiceNameStyle.Render(row.Group)
+		line := "   " + ContextBarStyle.Render(disclosure) + "  " + ServiceNameStyle.Render(row.Group)
 		return renderListLine(line, width, focused)
 	case actionRowAction:
 		state, _ := m.manager.ActionState(row.Action)
@@ -155,7 +155,7 @@ func (m *Model) renderServiceListRow(index int, row actionListRow, width int) st
 		if state.Duration > 0 && state.Status != service.ActionRunning {
 			status += ContextBarStyle.Render(" · " + state.Duration.Round(time.Millisecond).String())
 		}
-		return renderListLine("    "+status, width, focused)
+		return renderListLine("      "+status, width, focused)
 	default:
 		return ""
 	}
@@ -202,9 +202,9 @@ func renderListLine(line string, width int, focused bool) string {
 
 func selectionIndicator(selected bool) string {
 	if selected {
-		return RunningBadgeStyle.Render("☑")
+		return RunningBadgeStyle.Render("[✓]")
 	}
-	return ContextBarStyle.Render("□")
+	return ContextBarStyle.Render("[ ]")
 }
 
 func actionStatusIndicator(status service.ActionStatus) string {

@@ -147,7 +147,7 @@ func TestServiceActionsExpandNavigateRunAndRenderOutput(t *testing.T) {
 	}
 	model.selected["app"] = true
 	list := ansi.Strip(model.renderServicePanel(60, 8))
-	if !strings.Contains(list, "☑ ● app") || !strings.Contains(list, "✓ inspect") || strings.Contains(list, "☑ inspect") || strings.Contains(list, "⚡ ✓ inspect") || !strings.Contains(list, "succeeded") {
+	if !strings.Contains(list, "[✓] ● app") || !strings.Contains(list, "✓ inspect") || strings.Contains(list, "[✓] inspect") || strings.Contains(list, "⚡ ✓ inspect") || !strings.Contains(list, "succeeded") {
 		t.Fatalf("action list does not expose result:\n%s", list)
 	}
 	lines := strings.Split(list, "\n")
@@ -177,18 +177,21 @@ func TestServiceActionsExpandNavigateRunAndRenderOutput(t *testing.T) {
 	}
 }
 
-func TestSelectionAndActionSuccessUseDistinctSingleCellMarkers(t *testing.T) {
-	for name, marker := range map[string]string{
-		"not selected": selectionIndicator(false),
-		"selected":     selectionIndicator(true),
-		"succeeded":    actionStatusIndicator(service.ActionSucceeded),
+func TestSelectionAndActionSuccessUseDistinctMarkers(t *testing.T) {
+	for name, testCase := range map[string]struct {
+		marker string
+		width  int
+	}{
+		"not selected": {selectionIndicator(false), 3},
+		"selected":     {selectionIndicator(true), 3},
+		"succeeded":    {actionStatusIndicator(service.ActionSucceeded), 1},
 	} {
-		if width := lipgloss.Width(marker); width != 1 {
-			t.Errorf("%s marker width = %d, want 1", name, width)
+		if width := lipgloss.Width(testCase.marker); width != testCase.width {
+			t.Errorf("%s marker width = %d, want %d", name, width, testCase.width)
 		}
 	}
-	if selected, succeeded := ansi.Strip(selectionIndicator(true)), ansi.Strip(actionStatusIndicator(service.ActionSucceeded)); selected != "☑" || succeeded != "✓" || selected == succeeded {
-		t.Fatalf("selection/action markers = %q/%q, want distinct ☑/✓", selected, succeeded)
+	if selected, succeeded := ansi.Strip(selectionIndicator(true)), ansi.Strip(actionStatusIndicator(service.ActionSucceeded)); selected != "[✓]" || succeeded != "✓" || selected == succeeded {
+		t.Fatalf("selection/action markers = %q/%q, want distinct [✓]/✓", selected, succeeded)
 	}
 }
 
@@ -210,7 +213,7 @@ func TestActionOnlyGroupIsFocusableAndRunnable(t *testing.T) {
 		t.Fatalf("expand group = handled %v, command %v", handled, command)
 	}
 	list := ansi.Strip(model.renderServicePanel(60, 8))
-	if !strings.Contains(list, "› ▾   tools") || !strings.Contains(list, "○ version") || strings.Contains(list, "⚡") {
+	if !strings.Contains(list, "›  ▾  tools") || !strings.Contains(list, "○ version") || strings.Contains(list, "⚡") {
 		t.Fatalf("group/action markers are ambiguous:\n%s", list)
 	}
 	model.moveServiceListCursor(1)
@@ -253,7 +256,7 @@ func TestExpandedActionsDoNotInsertBlankRows(t *testing.T) {
 	if positions["check"] != positions["build"]+1 || positions["worker"] != positions["check"]+1 {
 		t.Fatalf("expanded actions are not consecutive: positions %v\n%s", positions, plain)
 	}
-	if !strings.Contains(plain, "›   ○ build") || !strings.Contains(plain, "  □ ● worker") {
+	if !strings.Contains(plain, "›     ○ build") || !strings.Contains(plain, "  [ ] ● worker") {
 		t.Fatalf("single-column selection markers are misaligned:\n%s", plain)
 	}
 }
