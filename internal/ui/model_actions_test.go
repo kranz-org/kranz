@@ -145,8 +145,9 @@ func TestServiceActionsExpandNavigateRunAndRenderOutput(t *testing.T) {
 	if state.Status != service.ActionSucceeded || state.ExitCode != 0 {
 		t.Fatalf("completed action state = %#v", state)
 	}
+	model.selected["app"] = true
 	list := ansi.Strip(model.renderServicePanel(60, 8))
-	if !strings.Contains(list, "✓ inspect") || strings.Contains(list, "⚡ ✓ inspect") || !strings.Contains(list, "succeeded") {
+	if !strings.Contains(list, "☑ ● app") || !strings.Contains(list, "✓ inspect") || strings.Contains(list, "☑ inspect") || strings.Contains(list, "⚡ ✓ inspect") || !strings.Contains(list, "succeeded") {
 		t.Fatalf("action list does not expose result:\n%s", list)
 	}
 	lines := strings.Split(list, "\n")
@@ -173,6 +174,21 @@ func TestServiceActionsExpandNavigateRunAndRenderOutput(t *testing.T) {
 		if !strings.Contains(output, expected) {
 			t.Fatalf("action output missing %q:\n%s", expected, output)
 		}
+	}
+}
+
+func TestSelectionAndActionSuccessUseDistinctSingleCellMarkers(t *testing.T) {
+	for name, marker := range map[string]string{
+		"not selected": selectionIndicator(false),
+		"selected":     selectionIndicator(true),
+		"succeeded":    actionStatusIndicator(service.ActionSucceeded),
+	} {
+		if width := lipgloss.Width(marker); width != 1 {
+			t.Errorf("%s marker width = %d, want 1", name, width)
+		}
+	}
+	if selected, succeeded := ansi.Strip(selectionIndicator(true)), ansi.Strip(actionStatusIndicator(service.ActionSucceeded)); selected != "☑" || succeeded != "✓" || selected == succeeded {
+		t.Fatalf("selection/action markers = %q/%q, want distinct ☑/✓", selected, succeeded)
 	}
 }
 

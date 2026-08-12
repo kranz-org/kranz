@@ -347,7 +347,7 @@ func TestTagsExpandServicesInlineAndToggleWithEnter(t *testing.T) {
 	}
 	_, _ = model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyEnter})
 	plain = ansi.Strip(model.renderServicePanel(48, 12))
-	for _, expected := range []string{"✓ ▾ backend", "✓ ● api", "✓ ● worker"} {
+	for _, expected := range []string{"☑ ▾ backend", "☑ ● api", "☑ ● worker"} {
 		if !strings.Contains(plain, expected) {
 			t.Errorf("selected tag expansion does not contain %q:\n%s", expected, plain)
 		}

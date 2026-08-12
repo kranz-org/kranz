@@ -170,10 +170,7 @@ func (m *Model) renderServiceOwnerLine(svc *service.Service, width int, focused 
 		}
 	}
 	visualState := m.serviceVisualState(svc)
-	selection := ContextBarStyle.Render("□")
-	if m.selected[svc.Name] {
-		selection = RunningBadgeStyle.Render("✓")
-	}
+	selection := selectionIndicator(m.selected[svc.Name])
 	line := "  " + selection + " " + serviceStatusIndicator(visualState) + " " + ServiceNameStyle.Render(svc.Name)
 	if visualState == visualQueued {
 		line += StartingBadgeStyle.Render("  queued")
@@ -201,6 +198,13 @@ func renderListLine(line string, width int, focused bool) string {
 		return renderSelectedLine(line)
 	}
 	return line
+}
+
+func selectionIndicator(selected bool) string {
+	if selected {
+		return RunningBadgeStyle.Render("☑")
+	}
+	return ContextBarStyle.Render("□")
 }
 
 func actionStatusIndicator(status service.ActionStatus) string {
@@ -241,11 +245,11 @@ func (m *Model) renderTagPanel(width, height int) string {
 			if index == m.tagCursor {
 				marker = HelpKeyStyle.Render("› ")
 			}
-			check := ContextBarStyle.Render("□")
+			check := selectionIndicator(false)
 			var line string
 			if row.Service == nil {
 				if containsTagStr(m.selectedTags, row.Tag) {
-					check = RunningBadgeStyle.Render("✓")
+					check = selectionIndicator(true)
 				}
 				disclosure := "▸"
 				if m.expandedTags[row.Tag] {
@@ -255,7 +259,7 @@ func (m *Model) renderTagPanel(width, height int) string {
 				line = fmt.Sprintf("%s%s %s %s (%d)", marker, check, disclosure, row.Tag, count)
 			} else {
 				if m.selected[row.Service.Name] {
-					check = RunningBadgeStyle.Render("✓")
+					check = selectionIndicator(true)
 				}
 				visualState := m.serviceVisualState(row.Service)
 				line = fmt.Sprintf("%s  %s %s %s", marker, check, serviceStatusIndicator(visualState), row.Service.Name)
