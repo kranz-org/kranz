@@ -304,7 +304,7 @@ func (m *Model) handleOverlayMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			m.mode = ModeNormal
 		}
 	case ModeConfirmAction:
-		if renderedTextHit(rendered, msg.X, msg.Y, "[Enter/y] Run") {
+		if renderedTextHit(rendered, msg.X, msg.Y, "[Enter/y] Run") || renderedTextHit(rendered, msg.X, msg.Y, "[Enter/y] Stop") {
 			return m, m.confirmPendingAction()
 		}
 		if renderedTextHit(rendered, msg.X, msg.Y, "[Esc/n] Cancel") {

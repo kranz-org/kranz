@@ -210,12 +210,13 @@ type Model struct {
 	toastMessage  string
 	toastTimer    time.Time
 
-	confirmAction  string
-	confirmTarget  string
-	pendingAction  *config.ActionID
-	themeSaveScope themeSaveScope
-	clearTarget    string
-	clearPinned    bool
+	confirmAction     string
+	confirmTarget     string
+	pendingAction     *config.ActionID
+	pendingActionStop bool
+	themeSaveScope    themeSaveScope
+	clearTarget       string
+	clearPinned       bool
 
 	conflictService  string
 	conflictPorts    map[int]*config.PortInfo

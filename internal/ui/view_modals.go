@@ -310,6 +310,14 @@ func (m *Model) renderConfirmActionView() string {
 		))
 	}
 	id := *m.pendingAction
+	if m.pendingActionStop {
+		content := renderConfirmationModal(
+			fmt.Sprintf("Stop action %q?", id.Name),
+			[]string{fmt.Sprintf("Owner: %s", id.Owner), "The running action will be cancelled."},
+			"[Enter/y] Stop  [Esc/n] Cancel",
+		)
+		return m.placeOverlay(content)
+	}
 	action, exists := m.cfg.ResolveAction(id)
 	if !exists {
 		return m.placeOverlay(renderConfirmationModal(

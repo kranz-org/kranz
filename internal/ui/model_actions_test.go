@@ -12,7 +12,7 @@ import (
 	"github.com/kranz-org/kranz/internal/service"
 )
 
-func TestSStopsRunningAction(t *testing.T) {
+func TestSConfirmsBeforeStoppingRunningAction(t *testing.T) {
 	model := NewModel(&config.Config{Project: "Stop", Services: map[string]config.Service{
 		"app": {Command: "run", Actions: map[string]config.Action{
 			"slow": {Command: "printf 'started\\n'; sleep 10", Shell: "/bin/sh", Dir: t.TempDir()},
@@ -21,7 +21,7 @@ func TestSStopsRunningAction(t *testing.T) {
 	defer model.Shutdown()
 	model.expandedActionOwner[actionOwnerKey(config.ActionOwnerService, "app")] = true
 	model.focusServiceListRow(1)
-	model.width = 120
+	model.width, model.height, model.ready = 120, 30, true
 
 	_, command := model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
 	if command == nil {
@@ -49,8 +49,31 @@ func TestSStopsRunningAction(t *testing.T) {
 		t.Fatalf("running action output is not streamed with its command:\n%s", output)
 	}
 	_, stopCommand := model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
-	if stopCommand != nil {
-		t.Fatalf("stop action unexpectedly scheduled another command: %v", stopCommand)
+	if stopCommand != nil || model.mode != ModeConfirmAction || model.pendingAction == nil || !model.pendingActionStop {
+		t.Fatalf("stop confirmation = command %v, mode %v, action %#v, stop %v", stopCommand, model.mode, model.pendingAction, model.pendingActionStop)
+	}
+	confirmationView := ansi.Strip(model.renderConfirmActionView())
+	for _, expected := range []string{"Stop action \"slow\"?", "will be cancelled", "[Enter/y] Stop", "[Esc/n] Cancel"} {
+		if !strings.Contains(confirmationView, expected) {
+			t.Fatalf("stop confirmation missing %q:\n%s", expected, confirmationView)
+		}
+	}
+	_, stopCommand = model.handleConfirmActionKeys(tea.KeyMsg{Type: tea.KeyEsc})
+	if stopCommand != nil || model.mode != ModeNormal || model.pendingAction != nil || model.pendingActionStop {
+		t.Fatalf("cancel stop = command %v, mode %v, action %#v, stop %v", stopCommand, model.mode, model.pendingAction, model.pendingActionStop)
+	}
+	state, _ = model.manager.ActionState(*model.focusedAction)
+	if state.Status != service.ActionRunning {
+		t.Fatalf("cancelled stop changed action state = %#v", state)
+	}
+
+	_, stopCommand = model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	if stopCommand != nil || model.mode != ModeConfirmAction {
+		t.Fatalf("second stop confirmation = command %v, mode %v", stopCommand, model.mode)
+	}
+	_, stopCommand = model.handleConfirmActionKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	if stopCommand != nil || model.mode != ModeNormal {
+		t.Fatalf("accepted stop = command %v, mode %v", stopCommand, model.mode)
 	}
 	select {
 	case message := <-done:
@@ -336,7 +359,7 @@ func TestConfiguredActionConfirmationCanCancelOrRun(t *testing.T) {
 	}
 }
 
-func TestStoppingConfirmedRunningActionDoesNotAskAgain(t *testing.T) {
+func TestStartConfirmFlagDoesNotBypassStopConfirmation(t *testing.T) {
 	confirmation := true
 	model := NewModel(&config.Config{Project: "Stop confirmed", Services: map[string]config.Service{
 		"app": {Command: "run", Actions: map[string]config.Action{
@@ -361,8 +384,12 @@ func TestStoppingConfirmedRunningActionDoesNotAskAgain(t *testing.T) {
 	}
 
 	stopCommand, handled := model.toggleFocusedAction()
-	if !handled || stopCommand != nil || model.mode != ModeNormal || model.pendingAction != nil {
-		t.Fatalf("stop confirmed action = handled %v, command %v, mode %v, pending %#v", handled, stopCommand, model.mode, model.pendingAction)
+	if !handled || stopCommand != nil || model.mode != ModeConfirmAction || model.pendingAction == nil || !model.pendingActionStop {
+		t.Fatalf("stop confirmed action = handled %v, command %v, mode %v, pending %#v, stop %v", handled, stopCommand, model.mode, model.pendingAction, model.pendingActionStop)
+	}
+	_, stopCommand = model.handleConfirmActionKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	if stopCommand != nil || model.mode != ModeNormal || model.pendingAction != nil || model.pendingActionStop {
+		t.Fatalf("accepted stop = command %v, mode %v, pending %#v, stop %v", stopCommand, model.mode, model.pendingAction, model.pendingActionStop)
 	}
 	select {
 	case message := <-done:

@@ -175,20 +175,21 @@ func (m *Model) toggleFocusedAction() (tea.Cmd, bool) {
 		return nil, true
 	}
 	if state, ok := m.manager.ActionState(id); ok && state.Status == service.ActionRunning {
-		if m.manager.CancelAction(id) {
-			m.addNotification("action", "Stopping "+id.Name, config.LogWarn)
-		} else {
-			m.addNotification("action", id.Name+" is no longer running", config.LogWarn)
-		}
+		m.beginActionConfirmation(id, true)
 		return nil, true
 	}
 	if action.ConfirmationRequired() {
-		pending := id
-		m.pendingAction = &pending
-		m.mode = ModeConfirmAction
+		m.beginActionConfirmation(id, false)
 		return nil, true
 	}
 	return m.runAction(id, action), true
+}
+
+func (m *Model) beginActionConfirmation(id config.ActionID, stop bool) {
+	pending := id
+	m.pendingAction = &pending
+	m.pendingActionStop = stop
+	m.mode = ModeConfirmAction
 }
 
 func (m *Model) runAction(id config.ActionID, action config.Action) tea.Cmd {
@@ -205,9 +206,19 @@ func (m *Model) runAction(id config.ActionID, action config.Action) tea.Cmd {
 
 func (m *Model) confirmPendingAction() tea.Cmd {
 	id := m.pendingAction
+	stop := m.pendingActionStop
 	m.pendingAction = nil
+	m.pendingActionStop = false
 	m.mode = ModeNormal
 	if id == nil {
+		return nil
+	}
+	if stop {
+		if m.manager.CancelAction(*id) {
+			m.addNotification("action", "Stopping "+id.Name, config.LogWarn)
+		} else {
+			m.addNotification("action", id.Name+" is no longer running", config.LogWarn)
+		}
 		return nil
 	}
 	action, exists := m.cfg.ResolveAction(*id)
@@ -220,6 +231,7 @@ func (m *Model) confirmPendingAction() tea.Cmd {
 
 func (m *Model) cancelPendingAction() {
 	m.pendingAction = nil
+	m.pendingActionStop = false
 	m.mode = ModeNormal
 }
 
