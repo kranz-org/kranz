@@ -4,23 +4,89 @@ defaults:
   shell: /bin/sh
 
 services:
-  detected-only:
-    description: No hint; Details learns 18301 from the running process.
+  auto-detected:
+    description: No ports hint; Details learns 18301 from the running process.
     command: python3 -u -m http.server 18301 --bind 127.0.0.1
+    actions:
+      check-http:
+        description: Fetch the local endpoint and print its HTTP status.
+        command: >-
+          python3 -c 'import urllib.request;
+          response = urllib.request.urlopen("http://127.0.0.1:18301", timeout=3);
+          print("HTTP", response.status)'
+        timeout: 5s
+      python-console:
+        description: Open an interactive Python REPL in the service context.
+        command: python3
+        interactive: true
 
-  declared-and-listening:
-    description: The configured hint and actual listener appear once.
+  configured-and-detected:
+    description: The configured hint and actual listener match and appear once.
     command: python3 -u -m http.server 18302 --bind 127.0.0.1
     ports: [18302]
     detect_ports: true
 
   different-runtime-port:
-    description: A stale hint remains distinct from the actual listener.
+    description: A deliberately stale hint stays separate from the actual listener.
     command: python3 -u -m http.server 18303 --bind 127.0.0.1
     ports: [18399]
     detect_ports: true
 
-  detection-disabled:
-    description: Explicit opt-out keeps runtime inspection disabled.
+  dynamic-http-health:
+    description: Python chooses a free port; readiness inserts it into an HTTP URL.
+    command: python3 -u -m http.server 0 --bind 127.0.0.1
+    healthcheck:
+      readiness:
+        type: http
+        url: http://127.0.0.1/
+        interval: 1s
+
+  configured-only:
+    description: A configured hint with no listener remains a preflight fact only.
     command: while true; do sleep 10; done
+    ports: [18304]
+
+  cycling-listener:
+    description: A child listener on 18307 alternates between six seconds open and closed.
+    command: /bin/sh ./cycling_listener.sh
+
+  subprocess-listener:
+    description: A child Python process opens 18305 and maps to its service process group.
+    command: /bin/sh ./child_listener.sh
+
+  two-dynamic-health-ports:
+    description: Mixed-width runtime ports; readiness selects the first and liveness the second.
+    command: python3 -u ./two_port_service.py
+    healthcheck:
+      readiness:
+        type: tcp
+        detected_port_index: 0
+        interval: 1s
+      liveness:
+        type: tcp
+        detected_port_index: 1
+        interval: 2s
+
+  detection-disabled:
+    description: The process listens on 18306, but explicit opt-out disables inspection.
+    command: python3 -u -m http.server 18306 --bind 127.0.0.1
     detect_ports: false
+
+action_groups:
+  example-tools:
+    description: Safe finishing commands for inspecting this example project.
+    dir: .
+    env:
+      KRANZ_EXAMPLE: runtime-ports
+    actions:
+      describe:
+        description: Print the execution context inherited from the group.
+        command: printf 'example=%s\ndirectory=%s\n' "$KRANZ_EXAMPLE" "$PWD"
+      list-files:
+        description: List the files used by the runtime-port scenarios.
+        command: ls -1
+        timeout: 5s
+      confirm-demo:
+        description: Demonstrate confirmation without changing project state.
+        command: printf 'confirmed action for %s\n' "$KRANZ_EXAMPLE"
+        confirm: true

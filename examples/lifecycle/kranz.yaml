@@ -1,0 +1,125 @@
+project: Lifecycle Playground
+
+defaults:
+  dir: .
+  shell: /bin/sh
+
+action_groups:
+  playground:
+    description: Utilities for resetting the local demo state.
+    actions:
+      reset:
+        description: Remove every marker created by this example.
+        command: rm -f .kranz-demo/*.running .kranz-demo/*.ready .kranz-demo/*.unknown .kranz-demo/*.done
+        confirm: true
+
+services:
+  ticker:
+    description: A normal PID-supervised process using command shorthand.
+    command: while true; do echo "process tick $(date +%H:%M:%S)"; sleep 2; done
+    tags: [process, shorthand]
+    actions:
+      say-hello:
+        description: A service action that needs no confirmation.
+        command: echo "hello from a service action"
+      guarded-action:
+        description: A service action protected by confirm.
+        command: echo "the guarded action ran"
+        confirm: true
+
+  guarded-worker:
+    description: A normal process whose explicit lifecycle start asks first.
+    tags: [process, explicit-start, confirmed-start]
+    lifecycle:
+      start:
+        command: while true; do echo "guarded worker tick $(date +%H:%M:%S)"; sleep 3; done
+        description: Simulates an expensive local process that should not start accidentally.
+        confirm: true
+
+  remote-stack:
+    description: A fully managed detached resource, analogous to docker compose up -d.
+    supervision: detached
+    stop_on_exit: false
+    detect_ports: false
+    tags: [detached, managed]
+    lifecycle:
+      start:
+        command: mkdir -p .kranz-demo && rm -f .kranz-demo/stack.unknown .kranz-demo/stack.ready && touch .kranz-demo/stack.running
+        description: Detached start deliberately has no confirmation.
+        timeout: 10s
+      stop:
+        command: rm -f .kranz-demo/stack.running .kranz-demo/stack.ready .kranz-demo/stack.unknown
+        timeout: 10s
+      # Declaring stopped_exit_codes opts into the three-way contract: 0 is
+      # running, 3 is stopped, and any other code is unclassified and becomes
+      # unknown. Without these two fields the default applies instead: 0 is
+      # running and every other exit code is stopped.
+      status:
+        type: command
+        command: if test -f .kranz-demo/stack.unknown; then exit 4; elif test -f .kranz-demo/stack.running; then exit 0; else exit 3; fi
+        interval: 1s
+        stopped_interval: 3s
+        timeout: 2s
+        failure_threshold: 2
+        running_exit_codes: [0]
+        stopped_exit_codes: [3]
+      logs:
+        command: while test -f .kranz-demo/stack.running; do echo "detached stack log $(date +%H:%M:%S)"; sleep 2; done
+    healthcheck:
+      readiness:
+        type: command
+        command: test -f .kranz-demo/stack.ready
+        interval: 1s
+        timeout: 1s
+        failure_threshold: 2
+    actions:
+      mark-ready:
+        description: Make readiness pass so dependent-app can start.
+        command: mkdir -p .kranz-demo && touch .kranz-demo/stack.ready
+      mark-unready:
+        description: Make readiness fail while lifecycle status remains running.
+        command: rm -f .kranz-demo/stack.ready
+      status-unknown:
+        description: Make the status probe return an unclassified exit code.
+        command: mkdir -p .kranz-demo && touch .kranz-demo/stack.unknown
+      status-recover:
+        description: Return the status probe to running or stopped observation.
+        command: rm -f .kranz-demo/stack.unknown
+
+  dependent-app:
+    description: Starts only when remote-stack readiness is healthy.
+    command: while true; do echo "dependent app is working"; sleep 3; done
+    tags: [process, dependency]
+    depends_on: [remote-stack]
+    dependency_conditions:
+      remote-stack:
+        condition: process_healthy
+
+  observed-resource:
+    description: Observe-only detached resource; s is unavailable because it has no start or stop.
+    supervision: detached
+    detect_ports: false
+    tags: [detached, observe-only]
+    lifecycle:
+      status:
+        type: command
+        command: if test -f .kranz-demo/observed.unknown; then exit 4; elif test -f .kranz-demo/observed.running; then exit 0; else exit 3; fi
+        interval: 1s
+        stopped_interval: 3s
+        timeout: 2s
+        failure_threshold: 2
+        running_exit_codes: [0]
+        stopped_exit_codes: [3]
+    actions:
+      external-start:
+        description: Simulate another tool creating the external resource.
+        command: mkdir -p .kranz-demo && rm -f .kranz-demo/observed.unknown && touch .kranz-demo/observed.running
+      external-stop:
+        description: Simulate another tool removing the external resource.
+        command: rm -f .kranz-demo/observed.running .kranz-demo/observed.unknown
+        confirm: true
+      status-unknown:
+        description: Simulate an unreachable status source.
+        command: mkdir -p .kranz-demo && touch .kranz-demo/observed.unknown
+      status-recover:
+        command: rm -f .kranz-demo/observed.unknown
