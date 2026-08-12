@@ -278,7 +278,7 @@ func TestActionOutputCannotRepositionOrGrowTheDashboard(t *testing.T) {
 	}
 }
 
-func TestProtectedActionsWaitForLaterHandoffOrConfirmation(t *testing.T) {
+func TestConfiguredActionConfirmationCanCancelOrRun(t *testing.T) {
 	confirmation := true
 	interactive := true
 	model := NewModel(&config.Config{Project: "Protected", Services: map[string]config.Service{
@@ -288,20 +288,90 @@ func TestProtectedActionsWaitForLaterHandoffOrConfirmation(t *testing.T) {
 		}},
 	}}, "test")
 	defer model.Shutdown()
+	model.width, model.height, model.ready = 100, 30, true
 	model.expandedActionOwner[actionOwnerKey(config.ActionOwnerService, "app")] = true
 
 	model.focusServiceListRow(1)
 	if command, handled := model.toggleFocusedAction(); !handled || command != nil {
 		t.Fatalf("confirmation action = handled %v, command %v", handled, command)
 	}
+	if model.mode != ModeConfirmAction || model.pendingAction == nil || model.pendingAction.Name != "confirm" {
+		t.Fatalf("confirmation modal state = mode %v, action %#v", model.mode, model.pendingAction)
+	}
+	confirmationView := ansi.Strip(model.renderConfirmActionView())
+	for _, expected := range []string{"Run action \"confirm\"?", "Command:", "exit 0", "[Enter/y] Run", "[Esc/n] Cancel"} {
+		if !strings.Contains(confirmationView, expected) {
+			t.Fatalf("confirmation view missing %q:\n%s", expected, confirmationView)
+		}
+	}
+	_, command := model.handleConfirmActionKeys(tea.KeyMsg{Type: tea.KeyEsc})
+	if command != nil || model.mode != ModeNormal || model.pendingAction != nil {
+		t.Fatalf("cancel confirmation = command %v, mode %v, action %#v", command, model.mode, model.pendingAction)
+	}
+	state, _ := model.manager.ActionState(config.ActionID{OwnerKind: config.ActionOwnerService, Owner: "app", Name: "confirm"})
+	if state.Status != service.ActionReady {
+		t.Fatalf("cancelled confirmation changed action state = %#v", state)
+	}
+
+	if command, handled := model.toggleFocusedAction(); !handled || command != nil {
+		t.Fatalf("second confirmation action = handled %v, command %v", handled, command)
+	}
+	_, command = model.handleConfirmActionKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	if command == nil || model.mode != ModeNormal || model.pendingAction != nil {
+		t.Fatalf("accept confirmation = command %v, mode %v, action %#v", command, model.mode, model.pendingAction)
+	}
+	_, _ = model.Update(command())
+	state, _ = model.manager.ActionState(config.ActionID{OwnerKind: config.ActionOwnerService, Owner: "app", Name: "confirm"})
+	if state.Status != service.ActionSucceeded {
+		t.Fatalf("confirmed action state = %#v", state)
+	}
+
 	model.focusServiceListRow(2)
 	if command, handled := model.toggleFocusedAction(); !handled || command != nil {
 		t.Fatalf("interactive action = handled %v, command %v", handled, command)
 	}
-	for _, id := range model.cfg.ActionIDs() {
+	state, _ = model.manager.ActionState(config.ActionID{OwnerKind: config.ActionOwnerService, Owner: "app", Name: "interactive"})
+	if state.Status != service.ActionReady {
+		t.Fatalf("interactive action state = %#v", state)
+	}
+}
+
+func TestStoppingConfirmedRunningActionDoesNotAskAgain(t *testing.T) {
+	confirmation := true
+	model := NewModel(&config.Config{Project: "Stop confirmed", Services: map[string]config.Service{
+		"app": {Command: "run", Actions: map[string]config.Action{
+			"slow": {Command: "sleep 10", Shell: "/bin/sh", Dir: t.TempDir(), Confirm: &confirmation},
+		}},
+	}}, "test")
+	defer model.Shutdown()
+	id := config.ActionID{OwnerKind: config.ActionOwnerService, Owner: "app", Name: "slow"}
+	model.expandedActionOwner[actionOwnerKey(config.ActionOwnerService, "app")] = true
+	model.focusServiceListRow(1)
+
+	command := model.runAction(id, model.cfg.Services["app"].Actions["slow"])
+	done := make(chan tea.Msg, 1)
+	go func() { done <- command() }()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
 		state, _ := model.manager.ActionState(id)
-		if state.Status != service.ActionReady {
-			t.Fatalf("protected action %s state = %#v", id.Name, state)
+		if state.Status == service.ActionRunning {
+			break
 		}
+		time.Sleep(time.Millisecond)
+	}
+
+	stopCommand, handled := model.toggleFocusedAction()
+	if !handled || stopCommand != nil || model.mode != ModeNormal || model.pendingAction != nil {
+		t.Fatalf("stop confirmed action = handled %v, command %v, mode %v, pending %#v", handled, stopCommand, model.mode, model.pendingAction)
+	}
+	select {
+	case message := <-done:
+		_, _ = model.Update(message)
+	case <-time.After(2 * time.Second):
+		t.Fatal("stopped confirmed action did not finish")
+	}
+	state, _ := model.manager.ActionState(id)
+	if state.Status != service.ActionCancelled {
+		t.Fatalf("stopped confirmed action state = %#v", state)
 	}
 }

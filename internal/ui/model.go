@@ -31,6 +31,7 @@ const (
 	ModePortConflict
 	ModeConfirmRestart
 	ModeConfirmClearLogs
+	ModeConfirmAction
 	ModeConfirmThemeSave
 	ModeThemes
 )
@@ -211,6 +212,7 @@ type Model struct {
 
 	confirmAction  string
 	confirmTarget  string
+	pendingAction  *config.ActionID
 	themeSaveScope themeSaveScope
 	clearTarget    string
 	clearPinned    bool

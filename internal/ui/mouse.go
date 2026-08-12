@@ -303,6 +303,13 @@ func (m *Model) handleOverlayMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			m.clearPinned = false
 			m.mode = ModeNormal
 		}
+	case ModeConfirmAction:
+		if renderedTextHit(rendered, msg.X, msg.Y, "[Enter/y] Run") {
+			return m, m.confirmPendingAction()
+		}
+		if renderedTextHit(rendered, msg.X, msg.Y, "[Esc/n] Cancel") {
+			m.cancelPendingAction()
+		}
 	case ModeConfirmThemeSave:
 		if renderedTextHit(rendered, msg.X, msg.Y, "[Enter/y] Save") {
 			return m.handleConfirmThemeSaveKeys(keyMessage("enter"))

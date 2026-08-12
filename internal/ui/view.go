@@ -41,6 +41,8 @@ func (m *Model) View() string {
 		content = m.renderConfirmRestartView()
 	case ModeConfirmClearLogs:
 		content = m.renderConfirmClearLogsView()
+	case ModeConfirmAction:
+		content = m.renderConfirmActionView()
 	case ModeConfirmThemeSave:
 		content = m.renderConfirmThemeSaveView()
 	case ModeThemes:

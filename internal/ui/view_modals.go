@@ -301,6 +301,37 @@ func (m *Model) renderConfirmClearLogsView() string {
 	return m.placeOverlay(content)
 }
 
+func (m *Model) renderConfirmActionView() string {
+	if m.pendingAction == nil {
+		return m.placeOverlay(renderConfirmationModal(
+			"Run action?",
+			[]string{"The selected action is no longer available."},
+			"[Esc/n] Cancel",
+		))
+	}
+	id := *m.pendingAction
+	action, exists := m.cfg.ResolveAction(id)
+	if !exists {
+		return m.placeOverlay(renderConfirmationModal(
+			fmt.Sprintf("Run action %q?", id.Name),
+			[]string{"The action is no longer configured."},
+			"[Esc/n] Cancel",
+		))
+	}
+	body := []string{fmt.Sprintf("Owner: %s", id.Owner)}
+	if action.Description != "" {
+		body = append(body, action.Description)
+	}
+	body = append(body, "", "Command:")
+	body = append(body, wrapDetailValue(action.Command, max(20, m.width-20))...)
+	content := renderConfirmationModal(
+		fmt.Sprintf("Run action %q?", id.Name),
+		body,
+		"[Enter/y] Run  [Esc/n] Cancel",
+	)
+	return m.placeOverlay(content)
+}
+
 func (m *Model) renderConfirmThemeSaveView() string {
 	title := "Save global appearance?"
 	path := m.settingsPath

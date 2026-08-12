@@ -389,3 +389,13 @@ func (m *Model) handleConfirmClearLogsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 	}
 	return m, nil
 }
+
+func (m *Model) handleConfirmActionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y", "enter":
+		return m, m.confirmPendingAction()
+	case "n", "N", "esc":
+		m.cancelPendingAction()
+	}
+	return m, nil
+}

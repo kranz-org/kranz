@@ -183,18 +183,44 @@ func (m *Model) toggleFocusedAction() (tea.Cmd, bool) {
 		return nil, true
 	}
 	if action.ConfirmationRequired() {
-		m.addNotification("action", id.Name+" requires confirmation", config.LogWarn)
+		pending := id
+		m.pendingAction = &pending
+		m.mode = ModeConfirmAction
 		return nil, true
 	}
+	return m.runAction(id, action), true
+}
+
+func (m *Model) runAction(id config.ActionID, action config.Action) tea.Cmd {
 	if action.InteractiveEnabled() {
 		m.addNotification("action", id.Name+" requires terminal handoff", config.LogWarn)
-		return nil, true
+		return nil
 	}
 	m.addNotification("action", "Running "+id.Name, config.LogInfo)
 	return func() tea.Msg {
 		result, err := m.manager.RunAction(context.Background(), id)
 		return actionResultMsg{id: id, result: result, err: err}
-	}, true
+	}
+}
+
+func (m *Model) confirmPendingAction() tea.Cmd {
+	id := m.pendingAction
+	m.pendingAction = nil
+	m.mode = ModeNormal
+	if id == nil {
+		return nil
+	}
+	action, exists := m.cfg.ResolveAction(*id)
+	if !exists {
+		m.addNotification("action", "Action is no longer configured", config.LogWarn)
+		return nil
+	}
+	return m.runAction(*id, action)
+}
+
+func (m *Model) cancelPendingAction() {
+	m.pendingAction = nil
+	m.mode = ModeNormal
 }
 
 func (m *Model) handleActionResult(msg actionResultMsg) (tea.Model, tea.Cmd) {
