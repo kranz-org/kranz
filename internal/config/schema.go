@@ -2,6 +2,7 @@
 package config
 
 import (
+	"fmt"
 	"net/url"
 	"sort"
 	"time"
@@ -60,8 +61,11 @@ type Defaults struct {
 
 // Service describes one managed process and its lifecycle policy.
 type Service struct {
-	Command              string                      `yaml:"command"`
+	Command              string                      `yaml:"command,omitempty"`
 	Description          string                      `yaml:"description,omitempty"`
+	Supervision          SupervisionMode             `yaml:"supervision,omitempty"`
+	StopOnExit           *bool                       `yaml:"stop_on_exit,omitempty"`
+	Lifecycle            LifecycleConfig             `yaml:"lifecycle,omitempty"`
 	Dir                  string                      `yaml:"dir,omitempty"`
 	Shell                string                      `yaml:"shell,omitempty"`
 	Ports                []int                       `yaml:"ports,omitempty"`
@@ -79,7 +83,132 @@ type Service struct {
 	Disabled             bool                        `yaml:"disabled,omitempty"`
 	DisableDotenv        bool                        `yaml:"is_dotenv_disabled,omitempty"`
 	Actions              map[string]Action           `yaml:"actions,omitempty"`
+	BeforeStart          []Prerequisite              `yaml:"before_start,omitempty"`
 	disabledSet          bool                        `yaml:"-"`
+}
+
+// SupervisionMode identifies the source of truth for a service lifecycle.
+type SupervisionMode string
+
+const (
+	SupervisionProcess  SupervisionMode = "process"
+	SupervisionDetached SupervisionMode = "detached"
+)
+
+// LifecycleConfig contains the explicit form of service lifecycle operations.
+// Command is shorthand for Start and is normalized before layered merging.
+type LifecycleConfig struct {
+	Start  *Action                `yaml:"start,omitempty"`
+	Stop   *Action                `yaml:"stop,omitempty"`
+	Status *LifecycleStatusConfig `yaml:"status,omitempty"`
+	Logs   *Action                `yaml:"logs,omitempty"`
+}
+
+// LifecycleStatusConfig observes whether a detached resource exists. It uses
+// the common check shape without conflating existence with service health.
+type LifecycleStatusConfig struct {
+	CheckConfig      `yaml:",inline"`
+	StoppedInterval  time.Duration `yaml:"stopped_interval,omitempty"`
+	RunningExitCodes []int         `yaml:"running_exit_codes,omitempty"`
+	StoppedExitCodes []int         `yaml:"stopped_exit_codes,omitempty"`
+}
+
+// SupervisionMode resolves the backwards-compatible default.
+func (s Service) SupervisionMode() SupervisionMode {
+	if s.Supervision == "" {
+		return SupervisionProcess
+	}
+	return s.Supervision
+}
+
+// IsDetached reports whether lifecycle state is external to the start process.
+func (s Service) IsDetached() bool { return s.SupervisionMode() == SupervisionDetached }
+
+// StartAction returns the canonical start operation, with a fallback for
+// programmatically constructed configurations that have not passed the loader.
+func (s Service) StartAction() *Action {
+	if s.Lifecycle.Start != nil {
+		return s.Lifecycle.Start
+	}
+	if s.Command == "" {
+		return nil
+	}
+	return &Action{
+		Command:  s.Command,
+		Dir:      s.Dir,
+		Shell:    s.Shell,
+		Env:      s.Env,
+		EnvFiles: s.EnvFiles,
+	}
+}
+
+// StopOnExitEnabled resolves supervision-specific shutdown ownership.
+func (s Service) StopOnExitEnabled() bool {
+	if s.StopOnExit != nil {
+		return *s.StopOnExit
+	}
+	return !s.IsDetached()
+}
+
+// PrerequisiteRun controls how often a prerequisite runs within one session.
+type PrerequisiteRun string
+
+const (
+	// PrerequisiteOnce runs a prerequisite until it first succeeds, then treats
+	// it as satisfied for the rest of the session, including restarts.
+	PrerequisiteOnce PrerequisiteRun = "once"
+	// PrerequisiteAlways runs a prerequisite before every start and restart.
+	PrerequisiteAlways PrerequisiteRun = "always"
+)
+
+// Prerequisite references an action that must succeed before a service starts.
+// It is a structured reference rather than an inline command, so prerequisites
+// stay visible, runnable, and inspectable as ordinary actions on their own.
+type Prerequisite struct {
+	// Service names the service owning the action. Empty means the service
+	// declaring the prerequisite.
+	Service string `yaml:"service,omitempty"`
+	// Group names the action group owning the action. Mutually exclusive with
+	// Service.
+	Group  string          `yaml:"group,omitempty"`
+	Action string          `yaml:"action"`
+	Run    PrerequisiteRun `yaml:"run,omitempty"`
+}
+
+// RunPolicy resolves the optional run frequency.
+func (p Prerequisite) RunPolicy() PrerequisiteRun {
+	if p.Run == "" {
+		return PrerequisiteOnce
+	}
+	return p.Run
+}
+
+// ActionID resolves the referenced action's identity. owner is the service that
+// declared the prerequisite and supplies the default scope.
+func (p Prerequisite) ActionID(owner string) ActionID {
+	if p.Group != "" {
+		return ActionID{OwnerKind: ActionOwnerGroup, Owner: p.Group, Name: p.Action}
+	}
+	service := p.Service
+	if service == "" {
+		service = owner
+	}
+	return ActionID{OwnerKind: ActionOwnerService, Owner: service, Name: p.Action}
+}
+
+// String renders the reference for logs, confirmations, and error messages.
+// The owning scope is named only when it differs from the declaring service,
+// so the common case reads as plain prose instead of a qualified path.
+func (p Prerequisite) String(owner string) string {
+	id := p.ActionID(owner)
+	switch {
+	case id.OwnerKind == ActionOwnerGroup:
+		return fmt.Sprintf("group %q action %q", id.Owner, id.Name)
+	case id.Owner != owner:
+		return fmt.Sprintf("service %q action %q", id.Owner, id.Name)
+	default:
+		return fmt.Sprintf("action %q", id.Name)
+	}
 }
 
 // Action describes one explicitly configured command that runs to completion.
@@ -121,8 +250,9 @@ type ActionGroup struct {
 type ActionOwnerKind string
 
 const (
-	ActionOwnerService ActionOwnerKind = "service"
-	ActionOwnerGroup   ActionOwnerKind = "group"
+	ActionOwnerService   ActionOwnerKind = "service"
+	ActionOwnerGroup     ActionOwnerKind = "group"
+	ActionOwnerLifecycle ActionOwnerKind = "lifecycle"
 )
 
 // ActionID is a comparable, unambiguous runtime identity. Names remain opaque,
@@ -196,6 +326,9 @@ func sortedActionNames(actions map[string]Action) []string {
 func (s Service) PortDiscoveryEnabled() bool {
 	if s.DetectPorts != nil {
 		return *s.DetectPorts
+	}
+	if s.IsDetached() {
+		return false
 	}
 	return len(s.Ports) == 0
 }
@@ -289,6 +422,19 @@ const (
 	PortFromDetected           = "detected"
 )
 
+// Default probe timings. These are the single source of truth for every
+// documented default: readiness, liveness, and lifecycle status probes all
+// resolve unset values through these constants.
+const (
+	DefaultCheckInterval         = 5 * time.Second
+	DefaultCheckTimeout          = 2 * time.Second
+	DefaultCheckFailureThreshold = 3
+	// DefaultStoppedStatusInterval polls a resource that is stopped or unknown.
+	// Such a resource only changes when something outside Kranz acts on it, so
+	// it is polled on a flat, predictable schedule rather than a derived one.
+	DefaultStoppedStatusInterval = 30 * time.Second
+)
+
 // ServiceStatus is the current lifecycle state of a managed service.
 type ServiceStatus int
 
@@ -298,6 +444,7 @@ const (
 	StatusRunning
 	StatusUnhealthy
 	StatusStopping
+	StatusUnknown
 )
 
 // String returns the human-readable lifecycle state.
@@ -313,8 +460,12 @@ func (s ServiceStatus) String() string {
 		return "unhealthy"
 	case StatusStopping:
 		return "stopping"
-	default:
+	case StatusUnknown:
 		return "unknown"
+	default:
+		// Unreachable for configured states. Kept distinct from StatusUnknown so
+		// a corrupted value is never mistaken for a deliberate observation.
+		return fmt.Sprintf("invalid(%d)", int(s))
 	}
 }
 
