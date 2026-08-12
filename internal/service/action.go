@@ -160,6 +160,22 @@ func (r *ActionRunner) Run(ctx context.Context, id config.ActionID) (ActionResul
 		r.mu.Unlock()
 		return ActionResult{}, fmt.Errorf("%w: %s/%s", ErrActionNotFound, id.Owner, id.Name)
 	}
+	r.mu.Unlock()
+	return r.RunDefinition(ctx, id, action)
+}
+
+// RunDefinition executes a normalized internal action definition. Lifecycle
+// operations use reserved IDs while sharing owner serialization, cancellation,
+// timeout handling, output capture, and process reaping with user actions.
+func (r *ActionRunner) RunDefinition(ctx context.Context, id config.ActionID, action config.Action) (ActionResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	r.mu.Lock()
+	if r.shuttingDown {
+		r.mu.Unlock()
+		return ActionResult{}, ErrActionRunnerStopping
+	}
 	if action.InteractiveEnabled() {
 		r.mu.Unlock()
 		return ActionResult{}, ErrInteractiveAction
@@ -330,6 +346,23 @@ func (r *ActionRunner) Shutdown() {
 		active = append(active, run)
 	}
 	r.mu.Unlock()
+	for _, run := range active {
+		run.cancel()
+	}
+	for _, run := range active {
+		<-run.done
+	}
+}
+
+// CancelActive cancels and reaps current actions while keeping the runner
+// available for ordered lifecycle-stop operations during manager shutdown.
+func (r *ActionRunner) CancelActive() {
+	r.mu.RLock()
+	active := make([]*activeAction, 0, len(r.active))
+	for _, run := range r.active {
+		active = append(active, run)
+	}
+	r.mu.RUnlock()
 	for _, run := range active {
 		run.cancel()
 	}

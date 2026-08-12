@@ -35,6 +35,24 @@ type Manager struct {
 	exitRequested        atomic.Bool
 	exitCode             atomic.Int64
 	reloadMu             sync.Mutex
+	statusMu             sync.Mutex
+	statusMonitors       map[string]*statusMonitor
+	logsMu               sync.Mutex
+	detachedLogs         map[string]*detachedLogFollower
+	prereqMu             sync.Mutex
+	prereqSatisfied      map[config.ActionID]bool
+	prereqRuns           map[config.ActionID]*prereqRun
+}
+
+type statusMonitor struct {
+	cancel context.CancelFunc
+	wake   chan struct{}
+	done   chan struct{}
+}
+
+type detachedLogFollower struct {
+	cancel context.CancelFunc
+	done   chan struct{}
 }
 
 // ReloadResult summarizes the services changed by a live configuration reload.
@@ -54,6 +72,15 @@ func (m *Manager) ApplyConfig(next *config.Config) (ReloadResult, error) {
 	if next == nil {
 		return ReloadResult{}, errors.New("new configuration is nil")
 	}
+	m.stopAllStatusMonitors()
+	m.stopAllDetachedLogs()
+	reconcileBackground := true
+	defer func() {
+		if reconcileBackground {
+			m.reconcileStatusMonitors(m.configSnapshot())
+			m.reconcileDetachedLogs()
+		}
+	}()
 	result := ReloadResult{}
 	runningChanged := make([]string, 0)
 
@@ -69,13 +96,30 @@ func (m *Manager) ApplyConfig(next *config.Config) (ReloadResult, error) {
 		svc, _ := m.GetService(name)
 		incoming, exists := next.Services[name]
 		if !exists {
-			if err := m.StopService(name); err != nil {
-				return result, fmt.Errorf("stop removed service %s: %w", name, err)
+			// An observe-only detached resource cannot be stopped. Removing it
+			// only detaches Kranz from the external lifecycle.
+			if !svc.Config.IsDetached() || svc.Config.Lifecycle.Stop != nil {
+				if err := m.StopService(name); err != nil {
+					return result, fmt.Errorf("stop removed service %s: %w", name, err)
+				}
 			}
 			result.Removed = append(result.Removed, name)
 			continue
 		}
 		if sameManagedServiceConfig(svc.Config, incoming) {
+			continue
+		}
+		// Detached resources are external to Kranz. Reload their definition
+		// without cycling the external resource, while retaining observed state.
+		if svc.Config.IsDetached() && incoming.IsDetached() {
+			replacement := NewService(name, incoming, 1000)
+			replacement.Logs = svc.Logs
+			replacement.HealthHistory = svc.HealthHistory
+			replacement.RestoreState(svc.GetState(), svc.DesiredRunning())
+			m.mu.Lock()
+			m.services[name] = replacement
+			m.mu.Unlock()
+			result.Updated = append(result.Updated, name)
 			continue
 		}
 		wasRunning := svc.Status() != config.StatusStopped || svc.DesiredRunning()
@@ -106,9 +150,14 @@ func (m *Manager) ApplyConfig(next *config.Config) (ReloadResult, error) {
 			result.Added = append(result.Added, name)
 		}
 	}
+	previous := m.cfg
 	m.cfg = next
 	m.mu.Unlock()
+	m.forgetChangedPrerequisites(previous, next)
 	m.actions.ApplyConfig(next)
+	m.reconcileStatusMonitors(next)
+	m.reconcileDetachedLogs()
+	reconcileBackground = false
 	sort.Strings(result.Added)
 
 	if len(runningChanged) > 0 {
@@ -136,10 +185,19 @@ func NewManager(cfg *config.Config) *Manager {
 		cfg:                  cfg,
 		actions:              NewActionRunner(cfg, defaultActionLogBuffer),
 		listenerScanInterval: 2 * time.Second,
+		statusMonitors:       make(map[string]*statusMonitor),
+		detachedLogs:         make(map[string]*detachedLogFollower),
+		prereqSatisfied:      make(map[config.ActionID]bool),
+		prereqRuns:           make(map[config.ActionID]*prereqRun),
 	}
 
 	for name, svcCfg := range cfg.Services {
 		m.services[name] = NewService(name, svcCfg, 1000)
+	}
+	for name, svcCfg := range cfg.Services {
+		if svcCfg.Lifecycle.Status != nil {
+			m.startStatusMonitor(name)
+		}
 	}
 
 	return m
@@ -158,6 +216,11 @@ func (m *Manager) SetHealthChecker(hc *health.Checker) {
 			}
 			return svc.DetectedPorts()
 		})
+		for _, svc := range m.Services() {
+			if svc.Status() == config.StatusRunning || svc.Status() == config.StatusUnhealthy {
+				hc.StartMonitoring(svc.Name, svc.Config.HealthCheck)
+			}
+		}
 	}
 }
 
@@ -207,10 +270,13 @@ func (m *Manager) configSnapshot() *config.Config {
 
 // StartService starts one service after validating ports and dependencies.
 func (m *Manager) StartService(name string) error {
-	return m.startService(name, false)
+	return m.startService(context.Background(), name, false)
 }
 
-func (m *Manager) startService(name string, recovery bool) error {
+func (m *Manager) startService(ctx context.Context, name string, recovery bool) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if m.shuttingDown.Load() {
 		return errors.New("application is shutting down; new processes are disabled")
 	}
@@ -220,9 +286,24 @@ func (m *Manager) startService(name string, recovery bool) error {
 	}
 	svc.lifecycleMu.Lock()
 	defer svc.lifecycleMu.Unlock()
+	if svc.Config.IsDetached() {
+		if alreadyRunning(svc.Status()) {
+			return m.startDetachedService(ctx, svc)
+		}
+		if err := m.runPrerequisites(ctx, svc); err != nil {
+			return err
+		}
+		return m.startDetachedService(ctx, svc)
+	}
 
 	if status := svc.Status(); status != config.StatusStopped {
 		return fmt.Errorf("service %q is already running", name)
+	}
+	// Prerequisites run after dependencies are ready and before this service
+	// starts, so a failed prerequisite leaves the service stopped rather than
+	// starting it against an unprepared environment.
+	if err := m.runPrerequisites(ctx, svc); err != nil {
+		return err
 	}
 	svc.SetDesiredRunning(true)
 	if !recovery {
@@ -262,9 +343,14 @@ func (m *Manager) startService(name string, recovery bool) error {
 	svc.AppendLog("[Kranz] Starting")
 
 	pm := NewProcessManager(1000)
+	start := svc.Config.StartAction()
+	if start == nil {
+		svc.SetDesiredRunning(false)
+		svc.SetStatus(config.StatusStopped)
+		return fmt.Errorf("service %q has no start capability", name)
+	}
 
-	ctx := context.Background()
-	pid, err := pm.Start(ctx, svc.Config.Command, svc.Config.Dir, svc.Config.Env, svc.Config.Shell)
+	pid, err := pm.Start(ctx, start.Command, start.Dir, start.Env, start.Shell)
 	if err != nil {
 		svc.SetDesiredRunning(false)
 		svc.SetStatus(config.StatusStopped)
@@ -296,6 +382,60 @@ func (m *Manager) startService(name string, recovery bool) error {
 	return nil
 }
 
+// alreadyRunning reports states in which a detached start is a no-op, so that
+// prerequisites are not run again for a resource that is already up.
+func alreadyRunning(status config.ServiceStatus) bool {
+	return status == config.StatusRunning || status == config.StatusUnhealthy
+}
+
+func (m *Manager) startDetachedService(ctx context.Context, svc *Service) error {
+	start := svc.Config.Lifecycle.Start
+	if start == nil {
+		return fmt.Errorf("service %q has no start capability", svc.Name)
+	}
+	status := svc.Status()
+	if status == config.StatusRunning || status == config.StatusUnhealthy {
+		return nil
+	}
+	if status != config.StatusStopped && status != config.StatusUnknown {
+		return fmt.Errorf("service %q is already running", svc.Name)
+	}
+	if status == config.StatusUnknown && svc.Config.Lifecycle.Status != nil {
+		failures := 0
+		m.reconcileDetachedStatus(ctx, svc, &failures)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if observed := svc.Status(); observed == config.StatusRunning || observed == config.StatusUnhealthy {
+			return nil
+		}
+	}
+	svc.SetDesiredRunning(true)
+	svc.SetStatus(config.StatusStarting)
+	svc.AppendLog("[Kranz] Starting detached service")
+	id := lifecycleActionID(svc.Name, "start")
+	result, err := m.actions.RunDefinition(ctx, id, *start)
+	m.appendLifecycleResult(svc, "start", result)
+	if err != nil {
+		svc.SetDesiredRunning(false)
+		// A detached start can mutate external state before failing, timing out,
+		// or being canceled. Never claim it is stopped without observing that.
+		svc.SetStatus(config.StatusUnknown)
+		return fmt.Errorf("start detached service %q: %w", svc.Name, err)
+	}
+	svc.SetPID(0)
+	svc.SetStatus(config.StatusRunning)
+	m.mu.RLock()
+	hc := m.healthChecker
+	m.mu.RUnlock()
+	if hc != nil {
+		hc.StartMonitoring(svc.Name, svc.Config.HealthCheck)
+	}
+	m.startDetachedLogs(svc)
+	m.wakeStatusMonitor(svc.Name)
+	return nil
+}
+
 // StopService gracefully stops one service and releases its process group.
 func (m *Manager) StopService(name string) error {
 	svc, ok := m.GetService(name)
@@ -304,6 +444,9 @@ func (m *Manager) StopService(name string) error {
 	}
 	svc.lifecycleMu.Lock()
 	defer svc.lifecycleMu.Unlock()
+	if svc.Config.IsDetached() {
+		return m.stopDetachedService(svc)
+	}
 	svc.SetDesiredRunning(false)
 
 	pm, monitorStop := svc.runtime()
@@ -345,14 +488,90 @@ func (m *Manager) StopService(name string) error {
 	return stopErr
 }
 
+func (m *Manager) stopDetachedService(svc *Service) error {
+	if svc.Status() == config.StatusStopped {
+		return nil
+	}
+	stop := svc.Config.Lifecycle.Stop
+	if stop == nil {
+		return fmt.Errorf("service %q has no stop capability", svc.Name)
+	}
+	svc.SetDesiredRunning(false)
+	svc.SetStatus(config.StatusStopping)
+	svc.AppendLog("[Kranz] Stopping detached service")
+	m.stopDetachedLogs(svc.Name)
+	m.mu.RLock()
+	hc := m.healthChecker
+	m.mu.RUnlock()
+	if hc != nil {
+		hc.StopMonitoring(svc.Name)
+	}
+	id := lifecycleActionID(svc.Name, "stop")
+	result, err := m.actions.RunDefinition(context.Background(), id, *stop)
+	m.appendLifecycleResult(svc, "stop", result)
+	if err != nil {
+		svc.SetStatus(config.StatusUnknown)
+		m.wakeStatusMonitor(svc.Name)
+		return fmt.Errorf("stop detached service %q: %w", svc.Name, err)
+	}
+	svc.SetPID(0)
+	svc.SetStatus(config.StatusStopped)
+	m.wakeStatusMonitor(svc.Name)
+	return nil
+}
+
+func lifecycleActionID(serviceName, operation string) config.ActionID {
+	return config.ActionID{OwnerKind: config.ActionOwnerLifecycle, Owner: serviceName, Name: operation}
+}
+
+func (m *Manager) appendLifecycleResult(svc *Service, operation string, result ActionResult) {
+	// Compose and similar tools render progress to stderr even on success. A
+	// successful lifecycle operation only needs its concise boundary; keep
+	// command output for failures where it is diagnostic.
+	if result.Status != ActionSucceeded {
+		lines := append([]string(nil), result.Stdout...)
+		for _, line := range result.Stderr {
+			lines = append(lines, "[stderr] "+line)
+		}
+		const maxLifecycleFailureLines = 40
+		if omitted := len(lines) - maxLifecycleFailureLines; omitted > 0 {
+			svc.AppendLog(fmt.Sprintf("[Kranz] %d earlier lifecycle output lines omitted", omitted))
+			lines = lines[omitted:]
+		}
+		for _, line := range lines {
+			svc.AppendLog(line)
+		}
+	}
+	var resultErr error
+	if result.Error != "" {
+		resultErr = errors.New(result.Error)
+	}
+	svc.RecordExit(result.ExitCode, resultErr)
+	svc.AppendLog(fmt.Sprintf("[Kranz] Lifecycle %s %s · exit %d", operation, result.Status.String(), result.ExitCode))
+}
+
 // StartAll starts every enabled service in dependency order.
 func (m *Manager) StartAll() error {
-	return m.StartServices(m.configSnapshot().ServiceNames())
+	return m.StartServices(m.enabledServiceNames())
+}
+
+// enabledServiceNames lists the services a "start everything" operation may
+// touch. A disabled service is excluded: it remains startable by name, which is
+// the difference between hidden and manual.
+func (m *Manager) enabledServiceNames() []string {
+	cfg := m.configSnapshot()
+	names := make([]string, 0, len(cfg.Services))
+	for _, name := range cfg.ServiceNames() {
+		if !cfg.Services[name].Disabled {
+			names = append(names, name)
+		}
+	}
+	return names
 }
 
 // StartAllContext starts all services and lets callers cancel readiness waits.
 func (m *Manager) StartAllContext(ctx context.Context) error {
-	return m.StartServicesContext(ctx, m.configSnapshot().ServiceNames())
+	return m.StartServicesContext(ctx, m.enabledServiceNames())
 }
 
 // StartServices starts the requested services and any dependencies they require.
@@ -381,7 +600,7 @@ func (m *Manager) ForceStartServices(names []string) error {
 	var startErrors []error
 	for _, name := range unique {
 		svc, _ := m.GetService(name)
-		if svc.Status() != config.StatusStopped {
+		if !svc.CanStart() {
 			continue
 		}
 		if err := m.StartService(name); err != nil {
@@ -439,7 +658,7 @@ func (m *Manager) queuePendingStarts(selected map[string]bool) []pendingStartInt
 	queued := make([]pendingStartIntent, 0, len(selected))
 	for name := range selected {
 		svc, ok := m.GetService(name)
-		if !ok || svc.Status() != config.StatusStopped {
+		if !ok || !svc.CanStart() {
 			continue
 		}
 		startedAt := svc.GetState().StartedAt
@@ -456,7 +675,7 @@ func (m *Manager) clearPendingStarts(queued []pendingStartIntent) {
 			continue
 		}
 		state := svc.GetState()
-		if state.Status == config.StatusStopped && state.StartedAt.Equal(intent.startedAt) {
+		if (state.Status == config.StatusStopped || state.Status == config.StatusUnknown) && state.StartedAt.Equal(intent.startedAt) {
 			svc.SetDesiredRunning(false)
 		}
 	}
@@ -472,10 +691,10 @@ func (m *Manager) startDependencyGroup(ctx context.Context, group []string, sele
 			return startErrors, err
 		}
 		svc, _ := m.GetService(name)
-		if svc != nil && svc.Status() != config.StatusStopped {
+		if svc != nil && !svc.CanStart() {
 			continue
 		}
-		if err := m.StartService(name); err != nil {
+		if err := m.startService(ctx, name, false); err != nil {
 			startErrors = append(startErrors, fmt.Errorf("%s: %w", name, err))
 			if svc, _ := m.GetService(name); svc != nil {
 				svc.AppendLog(fmt.Sprintf("[Kranz] Start failed: %v", err))
@@ -550,7 +769,7 @@ func (m *Manager) waitForDependencyCondition(ctx context.Context, name string, c
 		state := svc.GetState()
 		switch condition {
 		case config.DependencyStarted:
-			if !state.StartedAt.IsZero() {
+			if !state.StartedAt.IsZero() && state.Status != config.StatusStopped && state.Status != config.StatusUnknown {
 				return nil
 			}
 		case config.DependencyCompleted:
@@ -704,6 +923,9 @@ func (m *Manager) stopServices(names []string, includeDependents bool) error {
 		if !selected[name] {
 			continue
 		}
+		if svc, ok := m.GetService(name); ok && svc.Config.IsDetached() && !svc.CanStop() {
+			continue
+		}
 		if err := m.StopService(name); err != nil {
 			stopErrors = append(stopErrors, fmt.Errorf("%s: %w", name, err))
 			svc, _ := m.GetService(name)
@@ -747,8 +969,18 @@ func (m *Manager) expandWithDependencies(names []string) (map[string]bool, error
 func (m *Manager) Shutdown() error {
 	m.shuttingDown.Store(true)
 	m.stopListenerDiscovery()
+	m.stopAllStatusMonitors()
+	m.stopAllDetachedLogs()
+	m.actions.CancelActive()
+	names := make([]string, 0)
+	for _, svc := range m.Services() {
+		if svc.Config.StopOnExitEnabled() {
+			names = append(names, svc.Name)
+		}
+	}
+	err := m.ForceStopServices(names)
 	m.actions.Shutdown()
-	return m.StopAll()
+	return err
 }
 
 // RestartService restarts a service and all transitive dependents.
@@ -1088,7 +1320,7 @@ func (m *Manager) handleNaturalExit(name string, svc *Service, exitCode int) {
 			if !svc.DesiredRunning() || m.shuttingDown.Load() {
 				return
 			}
-			if err := m.startService(name, true); err != nil {
+			if err := m.startService(context.Background(), name, true); err != nil {
 				svc.AppendLog("[Kranz] Automatic restart failed: " + err.Error())
 			}
 		}()
@@ -1138,7 +1370,7 @@ func (m *Manager) HasRunningServices() bool {
 
 	for _, svc := range m.services {
 		status := svc.Status()
-		if status == config.StatusRunning || status == config.StatusStarting {
+		if status == config.StatusRunning || status == config.StatusStarting || status == config.StatusUnhealthy || status == config.StatusStopping {
 			return true
 		}
 	}
@@ -1189,7 +1421,8 @@ func (m *Manager) waitForReadiness(ctx context.Context, name string, timeout tim
 		return false
 	}
 	if svc.Config.HealthCheck == nil || svc.Config.HealthCheck.Readiness == nil {
-		return svc.Status() != config.StatusStopped
+		status := svc.Status()
+		return status == config.StatusRunning || status == config.StatusUnhealthy
 	}
 
 	m.mu.RLock()

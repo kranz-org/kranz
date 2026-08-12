@@ -28,13 +28,15 @@ type Service struct {
 	HealthHistory *ringbuffer.RingBuffer
 
 	// lifecycleMu serializes start, stop, and restart for this service.
-	lifecycleMu       sync.Mutex
-	runtimeMu         sync.RWMutex
-	process           *ProcessManager
-	monitorStop       chan struct{}
-	runtimeGeneration uint64
-	detectedPorts     []int
-	desiredRunning    atomic.Bool
+	lifecycleMu         sync.Mutex
+	runtimeMu           sync.RWMutex
+	process             *ProcessManager
+	monitorStop         chan struct{}
+	runtimeGeneration   uint64
+	lifecycleGeneration uint64
+	detectedPorts       []int
+	desiredRunning      atomic.Bool
+	statusObserved      atomic.Bool
 }
 
 func (s *Service) setRuntime(process *ProcessManager, monitorStop chan struct{}) uint64 {
@@ -110,6 +112,10 @@ func NewService(name string, cfg config.Service, logBufSize int) *Service {
 	if logBufSize <= 0 {
 		logBufSize = 1000
 	}
+	status := config.StatusStopped
+	if cfg.IsDetached() {
+		status = config.StatusUnknown
+	}
 	return &Service{
 		Name:          name,
 		Config:        cfg,
@@ -117,7 +123,7 @@ func NewService(name string, cfg config.Service, logBufSize int) *Service {
 		logTimes:      make([]time.Time, logBufSize),
 		HealthHistory: ringbuffer.New(50),
 		State: config.ServiceState{
-			Status: config.StatusStopped,
+			Status: status,
 		},
 	}
 }
@@ -127,12 +133,43 @@ func (s *Service) SetStatus(status config.ServiceStatus) {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
 	s.State.Status = status
+	if status == config.StatusStarting || status == config.StatusStopping {
+		s.lifecycleGeneration++
+	}
 	if status == config.StatusStarting {
 		s.State.StartedAt = time.Now()
 		s.State.Completed = false
 		s.State.ExitCode = 0
 		s.State.ExitError = ""
 	}
+	if status == config.StatusRunning && s.State.StartedAt.IsZero() {
+		s.State.StartedAt = time.Now()
+	}
+}
+
+// LifecycleGeneration identifies results started before the latest transition.
+func (s *Service) LifecycleGeneration() uint64 {
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
+	return s.lifecycleGeneration
+}
+
+// CanStart reports whether the configured start capability applies now.
+func (s *Service) CanStart() bool {
+	status := s.Status()
+	if !s.Config.IsDetached() {
+		return status == config.StatusStopped
+	}
+	return s.Config.Lifecycle.Start != nil && (status == config.StatusStopped || status == config.StatusUnknown)
+}
+
+// CanStop reports whether the current lifecycle can be explicitly stopped.
+func (s *Service) CanStop() bool {
+	status := s.Status()
+	if !s.Config.IsDetached() {
+		return status != config.StatusStopped && status != config.StatusUnknown
+	}
+	return s.Config.Lifecycle.Stop != nil && (status == config.StatusRunning || status == config.StatusUnhealthy || (status == config.StatusUnknown && s.DesiredRunning()))
 }
 
 // SetDesiredRunning records whether lifecycle policy expects the service to run.
@@ -140,6 +177,12 @@ func (s *Service) SetDesiredRunning(value bool) { s.desiredRunning.Store(value) 
 
 // DesiredRunning reports whether lifecycle policy expects the service to run.
 func (s *Service) DesiredRunning() bool { return s.desiredRunning.Load() }
+
+// LifecycleStatusObserved reports whether a configured detached status probe
+// has completed at least once in this session.
+func (s *Service) LifecycleStatusObserved() bool { return s.statusObserved.Load() }
+
+func (s *Service) markLifecycleStatusObserved() { s.statusObserved.Store(true) }
 
 // RecordExit stores the most recent process completion result.
 func (s *Service) RecordExit(code int, err error) {
@@ -300,4 +343,13 @@ func (s *Service) GetState() config.ServiceState {
 	s.stateMu.RLock()
 	defer s.stateMu.RUnlock()
 	return s.State
+}
+
+// RestoreState copies lifecycle state when a detached service definition is
+// hot-reloaded. Detached services have no owned process runtime to preserve.
+func (s *Service) RestoreState(state config.ServiceState, desiredRunning bool) {
+	s.stateMu.Lock()
+	s.State = state
+	s.stateMu.Unlock()
+	s.desiredRunning.Store(desiredRunning)
 }
