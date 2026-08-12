@@ -57,7 +57,7 @@ func (m *Model) renderActionGroupLogPanel(width, height int) string {
 func (m *Model) renderActionLogPanel(width, height int) string {
 	contentWidth := max(1, width-2)
 	contentHeight := max(1, height-2)
-	id, _, state, exists := m.focusedActionDefinition()
+	id, action, state, exists := m.focusedActionDefinition()
 	if !exists {
 		return renderTitledPanel(m.panelStyle(panelLogs), m.panelTitleStyle(panelLogs), contentWidth, contentHeight, "[3] ACTION OUTPUT", []string{"", "Select an action"})
 	}
@@ -65,13 +65,16 @@ func (m *Model) renderActionLogPanel(width, height int) string {
 	if state.Status == service.ActionRunning {
 		title += StartingBadgeStyle.Render(" RUNNING")
 	}
-	lines := actionOutputLines(state)
+	outputLines := actionOutputLines(state)
+	lines := outputLines
+	if state.Status != service.ActionReady {
+		lines = append(appendSafeActionOutput(nil, action.Command, "$ "), lines...)
+	}
+	if state.Status == service.ActionRunning && len(outputLines) == 0 {
+		lines = append(lines, "Running · press s to stop")
+	}
 	if len(lines) == 0 {
-		message := "Press s to run this action"
-		if state.Status == service.ActionRunning {
-			message = "Running · press s to stop"
-		}
-		return renderTitledPanel(m.panelStyle(panelLogs), m.panelTitleStyle(panelLogs), contentWidth, contentHeight, title, []string{"", ContextBarStyle.Render(message)})
+		return renderTitledPanel(m.panelStyle(panelLogs), m.panelTitleStyle(panelLogs), contentWidth, contentHeight, title, []string{"", ContextBarStyle.Render("Press s to run this action")})
 	}
 	rows := make([]string, 0, len(lines))
 	for _, line := range lines {

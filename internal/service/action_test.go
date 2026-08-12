@@ -47,6 +47,36 @@ func TestActionRunnerCapturesSuccessfulResultAndEnvironment(t *testing.T) {
 	}
 }
 
+func TestActionRunnerExposesOutputWhileRunning(t *testing.T) {
+	id := serviceActionID("app", "stream")
+	runner := newTestActionRunner(t.TempDir(), map[string]config.Action{
+		"stream": {Command: "printf 'first\\n'; sleep 10", Shell: "/bin/sh"},
+	})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _ = runner.Run(context.Background(), id)
+	}()
+	defer func() {
+		_ = runner.Cancel(id)
+		<-done
+	}()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		state, _ := runner.State(id)
+		if state.Status == ActionRunning && strings.Contains(strings.Join(state.Stdout, ""), "first") {
+			if state.Duration <= 0 || !state.FinishedAt.IsZero() {
+				t.Fatalf("running state timing = %#v", state)
+			}
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	state, _ := runner.State(id)
+	t.Fatalf("running output was not exposed: %#v", state)
+}
+
 func TestActionRunnerReportsFailureAndExitCode(t *testing.T) {
 	id := serviceActionID("app", "fail")
 	runner := newTestActionRunner(t.TempDir(), map[string]config.Action{

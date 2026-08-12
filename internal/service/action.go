@@ -95,9 +95,10 @@ type actionOwner struct {
 }
 
 type activeAction struct {
-	id     config.ActionID
-	cancel context.CancelFunc
-	done   chan struct{}
+	id      config.ActionID
+	cancel  context.CancelFunc
+	done    chan struct{}
+	process *ProcessManager
 }
 
 // ActionRunner executes normalized non-interactive actions and retains their
@@ -192,6 +193,7 @@ func (r *ActionRunner) execute(ctx context.Context, id config.ActionID, action c
 	}
 
 	process := NewProcessManager(r.logBufSize)
+	r.setActionProcess(id, process)
 	pid, err := process.Start(context.Background(), action.Command, action.Dir, action.Env, action.Shell)
 	if err != nil {
 		return finishActionResult(result, ActionFailed, process, err)
@@ -251,14 +253,36 @@ func (r *ActionRunner) setActionPID(id config.ActionID, pid int) {
 	r.mu.Unlock()
 }
 
+func (r *ActionRunner) setActionProcess(id config.ActionID, process *ProcessManager) {
+	r.mu.Lock()
+	owner := actionOwner{kind: id.OwnerKind, name: id.Owner}
+	if active, exists := r.active[owner]; exists && active.id == id {
+		active.process = process
+	}
+	r.mu.Unlock()
+}
+
 // State returns the current or most recent result of a configured action.
 func (r *ActionRunner) State(id config.ActionID) (ActionResult, bool) {
 	r.mu.RLock()
-	defer r.mu.RUnlock()
-	if state, exists := r.states[id]; exists && (r.isActiveLocked(id) || r.actionExistsLocked(id)) {
-		return cloneActionResult(state), true
+	state, stateExists := r.states[id]
+	actionExists := r.actionExistsLocked(id)
+	active := r.activeActionLocked(id)
+	var process *ProcessManager
+	if active != nil {
+		process = active.process
 	}
-	if r.actionExistsLocked(id) {
+	r.mu.RUnlock()
+	if stateExists && (active != nil || actionExists) {
+		state = cloneActionResult(state)
+		if process != nil {
+			state.Stdout = append([]string(nil), process.Stdout().Lines()...)
+			state.Stderr = append([]string(nil), process.Stderr().Lines()...)
+			state.Duration = time.Since(state.StartedAt)
+		}
+		return state, true
+	}
+	if actionExists {
 		return ActionResult{ID: id, Status: ActionReady, ExitCode: -1}, true
 	}
 	return ActionResult{}, false
@@ -315,12 +339,16 @@ func (r *ActionRunner) Shutdown() {
 }
 
 func (r *ActionRunner) isActiveLocked(id config.ActionID) bool {
-	for _, active := range r.active {
-		if active.id == id {
-			return true
-		}
+	return r.activeActionLocked(id) != nil
+}
+
+func (r *ActionRunner) activeActionLocked(id config.ActionID) *activeAction {
+	owner := actionOwner{kind: id.OwnerKind, name: id.Owner}
+	active := r.active[owner]
+	if active != nil && active.id == id {
+		return active
 	}
-	return false
+	return nil
 }
 
 func (r *ActionRunner) actionExistsLocked(id config.ActionID) bool {

@@ -15,7 +15,7 @@ import (
 func TestSStopsRunningAction(t *testing.T) {
 	model := NewModel(&config.Config{Project: "Stop", Services: map[string]config.Service{
 		"app": {Command: "run", Actions: map[string]config.Action{
-			"slow": {Command: "sleep 10", Shell: "/bin/sh", Dir: t.TempDir()},
+			"slow": {Command: "printf 'started\\n'; sleep 10", Shell: "/bin/sh", Dir: t.TempDir()},
 		}},
 	}}, "test")
 	defer model.Shutdown()
@@ -32,21 +32,21 @@ func TestSStopsRunningAction(t *testing.T) {
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		state, _ := model.manager.ActionState(*model.focusedAction)
-		if state.Status == service.ActionRunning && state.PID > 0 {
+		if state.Status == service.ActionRunning && state.PID > 0 && strings.Contains(strings.Join(state.Stdout, ""), "started") {
 			break
 		}
 		time.Sleep(time.Millisecond)
 	}
 	state, _ := model.manager.ActionState(*model.focusedAction)
-	if state.Status != service.ActionRunning || state.PID <= 0 {
+	if state.Status != service.ActionRunning || state.PID <= 0 || !strings.Contains(strings.Join(state.Stdout, ""), "started") {
 		t.Fatalf("long-running action state = %#v", state)
 	}
 	buttons := model.actionButtons()
 	if !strings.Contains(ansi.Strip(buttons[0].rendered), "Stop action: s") {
 		t.Fatalf("running action controls = %#v", buttons)
 	}
-	if output := ansi.Strip(model.renderActionLogPanel(60, 8)); !strings.Contains(output, "press s to stop") {
-		t.Fatalf("running action output has stale controls:\n%s", output)
+	if output := ansi.Strip(model.renderActionLogPanel(60, 8)); !strings.Contains(output, "$ printf 'started\\n'; sleep 10") || !strings.Contains(output, "started") {
+		t.Fatalf("running action output is not streamed with its command:\n%s", output)
 	}
 	_, stopCommand := model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
 	if stopCommand != nil {
