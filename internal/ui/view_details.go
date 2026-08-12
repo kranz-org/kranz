@@ -240,12 +240,38 @@ func (m *Model) serviceDetailLines(svc *service.Service, contentWidth int) []str
 	if svc.Config.Description != "" {
 		lines = append(lines, detailFieldLines("ABOUT", svc.Config.Description, contentWidth)...)
 	}
+	supervision := string(svc.Config.SupervisionMode())
+	if svc.Config.IsDetached() {
+		if svc.Config.Lifecycle.Status != nil {
+			supervision += " · observed"
+		} else {
+			supervision += " · assumed"
+		}
+	}
+	lines = append(lines, detailFieldLines("SUPERVISION", supervision, contentWidth)...)
+	if svc.Config.IsDetached() {
+		capabilities := make([]string, 0, 4)
+		if svc.Config.Lifecycle.Start != nil {
+			capabilities = append(capabilities, "start")
+		}
+		if svc.Config.Lifecycle.Stop != nil {
+			capabilities = append(capabilities, "stop")
+		}
+		if svc.Config.Lifecycle.Status != nil {
+			capabilities = append(capabilities, "status")
+		}
+		if svc.Config.Lifecycle.Logs != nil {
+			capabilities = append(capabilities, "logs")
+		}
+		lines = append(lines, detailFieldLines("LIFECYCLE", strings.Join(capabilities, ", "), contentWidth)...)
+	}
 	if len(svc.Config.Tags) == 0 {
 		lines = append(lines, detailFieldLines("TAGS", "—", contentWidth)...)
 	} else {
 		lines = append(lines, detailListItemsLines("TAGS", svc.Config.Tags, ", ", contentWidth)...)
 	}
 	lines = append(lines, dependencyDetailLines(svc, contentWidth)...)
+	lines = append(lines, prerequisiteDetailLines(svc, contentWidth)...)
 	lines = append(lines, m.renderPortDetailLines(svc, contentWidth)...)
 	detectedPorts := svc.DetectedPorts()
 	serviceActive := svc.Status() != config.StatusStopped
@@ -267,6 +293,32 @@ func (m *Model) serviceDetailLines(svc *service.Service, contentWidth int) []str
 		lines = append(lines, detailFieldLines("SUCCESS", "0, "+strings.Join(codes, ", "), contentWidth)...)
 	}
 	lines = append(lines, detailFieldLines("COMMAND", svc.Config.Command, contentWidth)...)
+	return lines
+}
+
+// prerequisiteDetailLines renders before_start so the reason a service runs
+// extra work before starting is visible without opening the configuration.
+func prerequisiteDetailLines(svc *service.Service, contentWidth int) []string {
+	if len(svc.Config.BeforeStart) == 0 {
+		return nil
+	}
+	parts := make([]string, 0, len(svc.Config.BeforeStart))
+	for _, prerequisite := range svc.Config.BeforeStart {
+		id := prerequisite.ActionID(svc.Name)
+		part := id.Name
+		if id.Owner != svc.Name {
+			part = id.Owner + " · " + id.Name
+		}
+		parts = append(parts, part+" · "+string(prerequisite.RunPolicy()))
+	}
+	combined := strings.Join(parts, "; ")
+	if lipgloss.Width("BEFORE START "+combined) <= contentWidth {
+		return detailFieldLines("BEFORE START", combined, contentWidth)
+	}
+	lines := []string{DetailLabelStyle.Render("BEFORE START")}
+	for _, part := range parts {
+		lines = append(lines, ContextBarStyle.Render("  ↳ ")+detailValue(part))
+	}
 	return lines
 }
 

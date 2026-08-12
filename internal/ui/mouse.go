@@ -289,9 +289,10 @@ func (m *Model) handleOverlayMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 	case ModeConfirmRestart:
 		if renderedTextHit(rendered, msg.X, msg.Y, "[Enter/y] Continue") {
-			return m.beginRestart(m.confirmTarget)
+			return m.confirmRestart()
 		}
 		if renderedTextHit(rendered, msg.X, msg.Y, "[Esc/n] Cancel") {
+			m.confirmRestartAll = false
 			m.mode = ModeNormal
 		}
 	case ModeConfirmClearLogs:
@@ -309,6 +310,20 @@ func (m *Model) handleOverlayMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 		if renderedTextHit(rendered, msg.X, msg.Y, "[Esc/n] Cancel") {
 			m.cancelPendingAction()
+		}
+	case ModeConfirmServiceStart:
+		if renderedTextHit(rendered, msg.X, msg.Y, "[Enter/y] Start") {
+			return m.confirmServiceStart()
+		}
+		if renderedTextHit(rendered, msg.X, msg.Y, "[Esc/n] Cancel") {
+			m.cancelServiceStartConfirmation()
+		}
+	case ModeConfirmServiceStop:
+		if renderedTextHit(rendered, msg.X, msg.Y, "[Enter/y] Stop") {
+			return m.confirmServiceStop()
+		}
+		if renderedTextHit(rendered, msg.X, msg.Y, "[Esc/n] Cancel") {
+			m.cancelServiceStopConfirmation()
 		}
 	case ModeConfirmThemeSave:
 		if renderedTextHit(rendered, msg.X, msg.Y, "[Enter/y] Save") {

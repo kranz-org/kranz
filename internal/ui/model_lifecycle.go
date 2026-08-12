@@ -53,12 +53,25 @@ func (m *Model) handleLifecycleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 		return m, nil, true
 	case key.Matches(msg, m.keys.StopAll):
 		m.cancelStartOperation()
+		names := m.cfg.ServiceNames()
+		if m.requiresStopConfirmation(names) {
+			model, command := m.beginServiceStopConfirmation(names, "all services", false)
+			m.pendingStopAll = true
+			return model, command, true
+		}
 		model, command := m.beginOperation(operationStopAll, "all services", "Stopping all services", m.manager.StopAll)
 		return model, command, true
 	case key.Matches(msg, m.keys.Restart):
 		model, command := m.restartSelectedService()
 		return model, command, true
 	case key.Matches(msg, m.keys.RestartAll):
+		if m.manager.HasRunningServices() {
+			m.mode = ModeConfirmRestart
+			m.confirmTarget = "running services"
+			m.confirmAction = ""
+			m.confirmRestartAll = true
+			return m, nil, true
+		}
 		model, command := m.beginOperation(operationRestartAll, "running services", "Restarting services", m.manager.RestartAll)
 		return model, command, true
 	default:
@@ -109,9 +122,12 @@ func (m *Model) startSelectedService() (tea.Model, tea.Cmd) {
 	if svc == nil {
 		return m, nil
 	}
-	if svc.Status() != config.StatusStopped {
+	if !svc.CanStart() {
 		m.addNotification(svc.Name, "Service is already running. Press s to stop it.", config.LogInfo)
 		return m, nil
+	}
+	if m.requiresStartConfirmation([]string{svc.Name}, true) {
+		return m.beginServiceStartConfirmation([]string{svc.Name}, svc.Name, false)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return m.beginCancelableOperation(operationStart, svc.Name, "Starting "+svc.Name, cancel, func() error {
@@ -194,10 +210,30 @@ func (m *Model) toggleSelectedServices() (tea.Model, tea.Cmd) {
 	}
 	target := m.selectedTargetLabel(names)
 	if allActive {
+		for _, name := range names {
+			svc, ok := m.manager.GetService(name)
+			if ok && !svc.CanStop() {
+				m.addNotification(name, "Service has no stop capability", config.LogWarn)
+				return m, nil
+			}
+		}
 		m.cancelStartOperation()
+		if m.requiresStopConfirmation(names) {
+			return m.beginServiceStopConfirmation(names, target, false)
+		}
 		return m.beginOperation(operationStopSet, target, "Stopping "+target, func() error {
 			return m.manager.StopServices(names)
 		})
+	}
+	for _, name := range names {
+		svc, ok := m.manager.GetService(name)
+		if ok && !serviceStartPlanned(svc) && !svc.CanStart() {
+			m.addNotification(name, "Service has no start capability", config.LogWarn)
+			return m, nil
+		}
+	}
+	if m.requiresStartConfirmation(names, true) {
+		return m.beginServiceStartConfirmation(names, target, false)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return m.beginCancelableOperation(operationStartSet, target, "Starting "+target, cancel, func() error {
@@ -206,7 +242,11 @@ func (m *Model) toggleSelectedServices() (tea.Model, tea.Cmd) {
 }
 
 func serviceStartPlanned(svc *service.Service) bool {
-	return svc.Status() != config.StatusStopped || svc.DesiredRunning()
+	status := svc.Status()
+	if status == config.StatusUnknown {
+		return svc.DesiredRunning()
+	}
+	return status != config.StatusStopped || svc.DesiredRunning()
 }
 
 func (m *Model) forceToggleSelectedServices() (tea.Model, tea.Cmd) {
@@ -222,19 +262,112 @@ func (m *Model) forceToggleSelectedServices() (tea.Model, tea.Cmd) {
 	allRunning := true
 	for _, name := range names {
 		svc, ok := m.manager.GetService(name)
-		if !ok || svc.Status() == config.StatusStopped {
+		if !ok || svc.CanStart() {
 			allRunning = false
 			break
 		}
 	}
 	if allRunning {
+		for _, name := range names {
+			svc, ok := m.manager.GetService(name)
+			if ok && !svc.CanStop() {
+				m.addNotification(name, "Service has no stop capability", config.LogWarn)
+				return m, nil
+			}
+		}
+		if m.requiresStopConfirmation(names) {
+			return m.beginServiceStopConfirmation(names, target, true)
+		}
 		return m.beginOperation(operationForceStop, target, "Force stopping "+target, func() error {
 			return m.manager.ForceStopServices(names)
 		})
 	}
+	for _, name := range names {
+		svc, ok := m.manager.GetService(name)
+		if ok && !serviceStartPlanned(svc) && !svc.CanStart() {
+			m.addNotification(name, "Service has no start capability", config.LogWarn)
+			return m, nil
+		}
+	}
+	if m.requiresStartConfirmation(names, false) {
+		return m.beginServiceStartConfirmation(names, target, true)
+	}
 	return m.beginOperation(operationForceStart, target, "Force starting "+target, func() error {
 		return m.manager.ForceStartServices(names)
 	})
+}
+
+func (m *Model) requiresStartConfirmation(names []string, includeDependencies bool) bool {
+	return len(m.startConfirmationServiceNames(names, includeDependencies)) > 0
+}
+
+func (m *Model) startConfirmationServiceNames(names []string, includeDependencies bool) []string {
+	selected := make(map[string]bool)
+	confirmed := make([]string, 0, len(names))
+	var visit func(string)
+	visit = func(name string) {
+		if selected[name] {
+			return
+		}
+		selected[name] = true
+		if includeDependencies {
+			for _, dependency := range m.cfg.Services[name].DependsOn {
+				visit(dependency)
+			}
+		}
+		svc, ok := m.manager.GetService(name)
+		if !ok || !svc.CanStart() {
+			return
+		}
+		if start := svc.Config.StartAction(); start != nil && start.ConfirmationRequired() {
+			confirmed = append(confirmed, name)
+		}
+	}
+	for _, name := range names {
+		visit(name)
+	}
+	return confirmed
+}
+
+func (m *Model) beginServiceStartConfirmation(names []string, target string, force bool) (tea.Model, tea.Cmd) {
+	m.pendingStartNames = append([]string(nil), names...)
+	m.pendingStartTarget = target
+	m.pendingStartForce = force
+	m.mode = ModeConfirmServiceStart
+	return m, nil
+}
+
+func (m *Model) confirmServiceStart() (tea.Model, tea.Cmd) {
+	names := append([]string(nil), m.pendingStartNames...)
+	target := m.pendingStartTarget
+	force := m.pendingStartForce
+	m.cancelServiceStartConfirmation()
+	if force {
+		return m.beginOperation(operationForceStart, target, "Force starting "+target, func() error {
+			return m.manager.ForceStartServices(names)
+		})
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	return m.beginCancelableOperation(operationStartSet, target, "Starting "+target, cancel, func() error {
+		return m.manager.StartServicesContext(ctx, names)
+	})
+}
+
+func (m *Model) cancelServiceStartConfirmation() {
+	m.pendingStartNames = nil
+	m.pendingStartTarget = ""
+	m.pendingStartForce = false
+	m.mode = ModeNormal
+}
+
+func (m *Model) handleConfirmServiceStartKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y", "enter":
+		return m.confirmServiceStart()
+	case "n", "N", "esc":
+		m.cancelServiceStartConfirmation()
+	}
+	return m, nil
 }
 
 func (m *Model) restartSelectedService() (tea.Model, tea.Cmd) {
@@ -242,17 +375,74 @@ func (m *Model) restartSelectedService() (tea.Model, tea.Cmd) {
 	if svc == nil {
 		return m, nil
 	}
-	if svc.Status() == config.StatusStopped {
+	if svc.CanStart() {
 		return m.startSelectedService()
 	}
 	affected := m.manager.GetAffectedServices(svc.Name)
+	m.mode = ModeConfirmRestart
+	m.confirmTarget = svc.Name
+	m.confirmRestartAll = false
 	if len(affected) > 1 {
-		m.mode = ModeConfirmRestart
-		m.confirmTarget = svc.Name
 		m.confirmAction = strings.Join(affected[1:], ", ")
-		return m, nil
+	} else {
+		m.confirmAction = ""
 	}
-	return m.beginRestart(svc.Name)
+	return m, nil
+}
+
+func (m *Model) requiresStopConfirmation(names []string) bool {
+	for _, name := range names {
+		svc, ok := m.manager.GetService(name)
+		if ok && svc.CanStop() {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *Model) beginServiceStopConfirmation(names []string, target string, force bool) (tea.Model, tea.Cmd) {
+	m.pendingStopNames = append([]string(nil), names...)
+	m.pendingStopTarget = target
+	m.pendingStopForce = force
+	m.mode = ModeConfirmServiceStop
+	return m, nil
+}
+
+func (m *Model) confirmServiceStop() (tea.Model, tea.Cmd) {
+	names := append([]string(nil), m.pendingStopNames...)
+	target := m.pendingStopTarget
+	force := m.pendingStopForce
+	stopAll := m.pendingStopAll
+	m.cancelServiceStopConfirmation()
+	if stopAll {
+		return m.beginOperation(operationStopAll, target, "Stopping all services", m.manager.StopAll)
+	}
+	if force {
+		return m.beginOperation(operationForceStop, target, "Force stopping "+target, func() error {
+			return m.manager.ForceStopServices(names)
+		})
+	}
+	return m.beginOperation(operationStopSet, target, "Stopping "+target, func() error {
+		return m.manager.StopServices(names)
+	})
+}
+
+func (m *Model) cancelServiceStopConfirmation() {
+	m.pendingStopNames = nil
+	m.pendingStopTarget = ""
+	m.pendingStopForce = false
+	m.pendingStopAll = false
+	m.mode = ModeNormal
+}
+
+func (m *Model) handleConfirmServiceStopKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y", "enter":
+		return m.confirmServiceStop()
+	case "n", "N", "esc":
+		m.cancelServiceStopConfirmation()
+	}
+	return m, nil
 }
 
 func (m *Model) beginRestart(name string) (tea.Model, tea.Cmd) {
@@ -371,11 +561,21 @@ func (m *Model) handleConfirmQuitKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) handleConfirmRestartKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "y", "Y", "enter":
-		return m.beginRestart(m.confirmTarget)
+		return m.confirmRestart()
 	case "n", "N", "esc":
+		m.confirmRestartAll = false
 		m.mode = ModeNormal
 	}
 	return m, nil
+}
+
+func (m *Model) confirmRestart() (tea.Model, tea.Cmd) {
+	if m.confirmRestartAll {
+		m.confirmRestartAll = false
+		m.mode = ModeNormal
+		return m.beginOperation(operationRestartAll, "running services", "Restarting services", m.manager.RestartAll)
+	}
+	return m.beginRestart(m.confirmTarget)
 }
 
 func (m *Model) handleConfirmClearLogsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

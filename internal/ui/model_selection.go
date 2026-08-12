@@ -78,21 +78,31 @@ func (m *Model) movePanelCursor(direction int) {
 	}
 }
 
+// toggleAllSelection selects or clears every service that batch operations may
+// touch. Services marked disabled are deliberately skipped: they stay visible
+// and can still be selected and started one by one, which is what "manual start
+// only" means.
 func (m *Model) toggleAllSelection() {
-	allSelected := len(m.allServices) > 0 && len(m.selected) == len(m.allServices)
+	selectable := make([]string, 0, len(m.allServices))
+	for _, svc := range m.allServices {
+		if !svc.Config.Disabled {
+			selectable = append(selectable, svc.Name)
+		}
+	}
+	allSelected := len(selectable) > 0 && len(m.selected) == len(selectable)
 	if allSelected {
-		for _, svc := range m.allServices {
-			if !m.selected[svc.Name] {
+		for _, name := range selectable {
+			if !m.selected[name] {
 				allSelected = false
 				break
 			}
 		}
 	}
 	m.selectedTags = nil
-	m.selected = make(map[string]bool, len(m.allServices))
+	m.selected = make(map[string]bool, len(selectable))
 	if !allSelected {
-		for _, svc := range m.allServices {
-			m.selected[svc.Name] = true
+		for _, name := range selectable {
+			m.selected[name] = true
 		}
 	}
 }

@@ -43,6 +43,10 @@ func (m *Model) View() string {
 		content = m.renderConfirmClearLogsView()
 	case ModeConfirmAction:
 		content = m.renderConfirmActionView()
+	case ModeConfirmServiceStart:
+		content = m.renderConfirmServiceStartView()
+	case ModeConfirmServiceStop:
+		content = m.renderConfirmServiceStopView()
 	case ModeConfirmThemeSave:
 		content = m.renderConfirmThemeSaveView()
 	case ModeThemes:
@@ -205,6 +209,7 @@ func (m *Model) actionButtons() []actionButton {
 	targets := m.selectedTargetNames()
 	allActive := len(targets) > 0
 	allRunning := len(targets) > 0
+	canToggle := len(targets) > 0
 	for _, name := range targets {
 		svc, ok := m.manager.GetService(name)
 		if !ok || !serviceStartPlanned(svc) {
@@ -212,6 +217,9 @@ func (m *Model) actionButtons() []actionButton {
 		}
 		if !ok || svc.Status() == config.StatusStopped {
 			allRunning = false
+		}
+		if !ok || (serviceStartPlanned(svc) && !svc.CanStop()) || (!serviceStartPlanned(svc) && !svc.CanStart()) {
+			canToggle = false
 		}
 	}
 	toggleStyle := PrimaryButtonStyle
@@ -240,7 +248,7 @@ func (m *Model) actionButtons() []actionButton {
 			toggleLabel = "■ Stop action: s"
 			compactToggle = "Stop: s"
 		}
-	} else if len(targets) == 0 || (m.operation != "" && !interruptibleStart) {
+	} else if !canToggle || (m.operation != "" && !interruptibleStart) {
 		toggleStyle = DisabledButtonStyle
 	}
 	if m.width < 100 {
@@ -376,6 +384,9 @@ const (
 	visualStarting
 	visualRunning
 	visualUnhealthy
+	visualExternal
+	visualChecking
+	visualUnknown
 )
 
 func sortedStringSet(values map[string]bool) []string {

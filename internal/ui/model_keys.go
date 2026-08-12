@@ -37,6 +37,10 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleConfirmClearLogsKeys(msg)
 	case ModeConfirmAction:
 		return m.handleConfirmActionKeys(msg)
+	case ModeConfirmServiceStart:
+		return m.handleConfirmServiceStartKeys(msg)
+	case ModeConfirmServiceStop:
+		return m.handleConfirmServiceStopKeys(msg)
 	case ModeConfirmThemeSave:
 		return m.handleConfirmThemeSaveKeys(msg)
 	case ModePortConflict:

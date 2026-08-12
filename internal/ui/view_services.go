@@ -36,7 +36,7 @@ func (m *Model) renderServiceColumn(width, height int) string {
 	listHeight, detailHeight := m.serviceColumnLayout(height)
 	serviceList := m.renderServicePanel(width, listHeight)
 	if listHeight == collapsedPanelHeight {
-		title := "[1] SERVICES/ACTIONS"
+		title := "[1] " + m.servicePanelLabel()
 		if m.listMode == listTags {
 			title = "[1] TAGS"
 		}
@@ -58,6 +58,20 @@ func (m *Model) renderServiceColumn(width, height int) string {
 		details = renderCollapsedPanel("[2] DETAILS", width)
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, serviceList, details)
+}
+
+func (m *Model) servicePanelLabel() string {
+	hasServices := m.cfg != nil && len(m.cfg.Services) > 0
+	hasActionGroups := m.cfg != nil && len(m.cfg.ActionGroups) > 0
+
+	switch {
+	case hasServices && hasActionGroups:
+		return "SERVICES/ACTIONS"
+	case hasActionGroups:
+		return "ACTIONS"
+	default:
+		return "SERVICES"
+	}
 }
 
 func (m *Model) serviceColumnLayout(height int) (listHeight, detailHeight int) {
@@ -96,8 +110,9 @@ func (m *Model) renderServicePanel(width, height int) string {
 	contentWidth := max(1, width-2)
 	contentHeight := max(1, height-2)
 	rows := m.serviceListRows()
+	panelTitle := "[1] " + m.servicePanelLabel()
 	if len(rows) == 0 {
-		return renderTitledPanel(m.panelStyle(panelServices), m.panelTitleStyle(panelServices), contentWidth, contentHeight, "[1] SERVICES/ACTIONS", []string{"", "No services or actions"})
+		return renderTitledPanel(m.panelStyle(panelServices), m.panelTitleStyle(panelServices), contentWidth, contentHeight, panelTitle, []string{"", "No services or actions"})
 	}
 
 	meta := fmt.Sprintf("%d · 1→Tags · %d actions · Enter open · s run", len(m.services), len(m.cfg.ActionIDs()))
@@ -106,7 +121,7 @@ func (m *Model) renderServicePanel(width, height int) string {
 	} else if len(m.selectedTags) > 0 {
 		meta += fmt.Sprintf(" · TAGS %d", len(m.selectedTags))
 	}
-	title := "[1] SERVICES/ACTIONS" + ContextBarStyle.Render(" │ "+meta)
+	title := panelTitle + ContextBarStyle.Render(" │ "+meta)
 	lines := make([]string, 0, contentHeight)
 	start, end := m.visibleServiceRange(height)
 	for index := start; index < end; index++ {
@@ -308,6 +323,12 @@ func serviceStatusIndicator(state serviceVisualState) string {
 		return StartingBadgeStyle.Render("●")
 	case visualUnhealthy:
 		return FailedBadgeStyle.Render("●")
+	case visualExternal:
+		return ContextBarStyle.Render("○")
+	case visualChecking:
+		return StartingBadgeStyle.Render("○")
+	case visualUnknown:
+		return ContextBarStyle.Render("?")
 	default:
 		return StoppedBadgeStyle.Render("●")
 	}
@@ -326,6 +347,12 @@ func serviceStatusLabel(status config.ServiceStatus, state serviceVisualState) s
 		return "Queued"
 	case visualUnhealthy:
 		return "Unhealthy"
+	case visualExternal:
+		return "External"
+	case visualChecking:
+		return "Checking"
+	case visualUnknown:
+		return "Unknown"
 	default:
 		return "Stopped"
 	}
@@ -333,6 +360,16 @@ func serviceStatusLabel(status config.ServiceStatus, state serviceVisualState) s
 
 func (m *Model) serviceVisualState(svc *service.Service) serviceVisualState {
 	switch svc.Status() {
+	case config.StatusUnknown:
+		if svc.Config.IsDetached() {
+			if svc.Config.Lifecycle.Status == nil {
+				return visualExternal
+			}
+			if !svc.LifecycleStatusObserved() {
+				return visualChecking
+			}
+		}
+		return visualUnknown
 	case config.StatusStopped:
 		if svc.DesiredRunning() {
 			return visualQueued

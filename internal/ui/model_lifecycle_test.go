@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -8,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/kranz-org/kranz/internal/config"
+	"github.com/kranz-org/kranz/internal/service"
 )
 
 // Tests for service lifecycle actions driven from the dashboard.
@@ -23,6 +26,190 @@ func TestEnterDoesNotControlServiceLifecycle(t *testing.T) {
 	}
 	if serviceInstance.Status() != config.StatusStopped {
 		t.Fatalf("Enter changed status to %s", serviceInstance.Status())
+	}
+}
+
+func TestDetachedServiceStartsFromUnknownAndConfirmsStop(t *testing.T) {
+	directory := t.TempDir()
+	marker := filepath.Join(directory, "running")
+	model := NewModel(&config.Config{Project: "Detached", Services: map[string]config.Service{
+		"stack": {
+			Supervision: config.SupervisionDetached,
+			Lifecycle: config.LifecycleConfig{
+				Start: &config.Action{Command: "touch " + marker, Dir: directory, Shell: "/bin/sh"},
+				Stop:  &config.Action{Command: "rm " + marker, Dir: directory, Shell: "/bin/sh"},
+			},
+		},
+	}}, "test")
+	defer model.Shutdown()
+	model.width, model.height, model.ready = 100, 30, true
+	if model.FocusedService().Status() != config.StatusUnknown {
+		t.Fatalf("initial status = %s", model.FocusedService().Status())
+	}
+	_, command := model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	if command == nil {
+		t.Fatal("detached start was not scheduled")
+	}
+	_, _ = model.Update(command())
+	if model.FocusedService().Status() != config.StatusRunning {
+		t.Fatalf("started status = %s", model.FocusedService().Status())
+	}
+	_, command = model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'A'}})
+	if command != nil || model.mode != ModeConfirmServiceStop || !model.pendingStopAll {
+		t.Fatalf("stop-all confirmation = command %v, mode %v, all %v", command, model.mode, model.pendingStopAll)
+	}
+	_, _ = model.handleConfirmServiceStopKeys(tea.KeyMsg{Type: tea.KeyEsc})
+	_, command = model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	if command != nil || model.mode != ModeConfirmServiceStop {
+		t.Fatalf("detached stop confirmation = command %v, mode %v", command, model.mode)
+	}
+	view := ansi.Strip(model.renderConfirmServiceStopView())
+	if !strings.Contains(view, "Stop stack?") || !strings.Contains(view, "[Enter/y] Stop") {
+		t.Fatalf("detached stop modal:\n%s", view)
+	}
+	_, command = model.handleConfirmServiceStopKeys(tea.KeyMsg{Type: tea.KeyEsc})
+	if command != nil || model.FocusedService().Status() != config.StatusRunning {
+		t.Fatal("cancelled stop changed service")
+	}
+	_, _ = model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	_, command = model.handleConfirmServiceStopKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	if command == nil {
+		t.Fatal("confirmed stop was not scheduled")
+	}
+	_, _ = model.Update(command())
+	if model.FocusedService().Status() != config.StatusStopped {
+		t.Fatalf("stopped status = %s", model.FocusedService().Status())
+	}
+}
+
+func TestUnobservedDetachedServiceUsesNeutralExternalVisualState(t *testing.T) {
+	model := &Model{}
+	unobserved := service.NewService("remote", config.Service{
+		Supervision: config.SupervisionDetached,
+		Lifecycle: config.LifecycleConfig{
+			Start: &config.Action{Command: "true"},
+			Stop:  &config.Action{Command: "true"},
+		},
+	}, 10)
+	if state := model.serviceVisualState(unobserved); state != visualExternal {
+		t.Fatalf("unobserved detached visual state = %v, want external", state)
+	}
+	if label := serviceStatusLabel(config.StatusUnknown, visualExternal); label != "External" {
+		t.Fatalf("unobserved detached label = %q, want External", label)
+	}
+
+	observed := service.NewService("remote", config.Service{
+		Supervision: config.SupervisionDetached,
+		Lifecycle: config.LifecycleConfig{Status: &config.LifecycleStatusConfig{
+			CheckConfig: config.CheckConfig{Type: config.CheckCommand, Command: "exit 4"},
+		}},
+	}, 10)
+	if state := model.serviceVisualState(observed); state != visualChecking {
+		t.Fatalf("unobserved status probe visual state = %v, want checking", state)
+	}
+}
+
+func TestLifecycleStartConfirmationIsConfigurable(t *testing.T) {
+	directory := t.TempDir()
+	marker := filepath.Join(directory, "started")
+	confirm := true
+	model := NewModel(&config.Config{Project: "Confirmed start", Services: map[string]config.Service{
+		"migration": {
+			Lifecycle: config.LifecycleConfig{Start: &config.Action{
+				Command: "touch " + marker, Dir: directory, Shell: "/bin/sh", Confirm: &confirm,
+			}},
+		},
+	}}, "test")
+	defer model.Shutdown()
+	model.width, model.height, model.ready = 100, 30, true
+	_, command := model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	if command != nil || model.mode != ModeConfirmServiceStart {
+		t.Fatalf("start confirmation = command %v, mode %v", command, model.mode)
+	}
+	body := model.renderServiceStartConfirmationBody()
+	plainBody := ansi.Strip(strings.Join(body, "\n"))
+	for _, expected := range []string{"⚠ CONFIRM BEFORE STARTING", "SERVICE  migration", "COMMAND"} {
+		if !strings.Contains(plainBody, expected) {
+			t.Fatalf("start confirmation body is missing %q:\n%s", expected, plainBody)
+		}
+	}
+	unwrappedBody := strings.ReplaceAll(plainBody, "\n  ", "")
+	if !strings.Contains(unwrappedBody, "touch "+marker) {
+		t.Fatalf("start confirmation body does not contain the complete command:\n%s", plainBody)
+	}
+	if body[0] != StartingBadgeStyle.Render("⚠ CONFIRM BEFORE STARTING") ||
+		!strings.Contains(body[1], ServiceNameStyle.Render("migration")) {
+		t.Fatalf("start confirmation does not emphasize its warning and service:\n%q", body)
+	}
+	view := ansi.Strip(model.renderConfirmServiceStartView())
+	if !strings.Contains(view, "Start migration?") || !strings.Contains(view, "[Enter/y] Start") {
+		t.Fatalf("start confirmation modal:\n%s", view)
+	}
+	_, command = model.handleConfirmServiceStartKeys(tea.KeyMsg{Type: tea.KeyEsc})
+	if command != nil {
+		t.Fatal("cancelled start scheduled a command")
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("cancelled start created marker: %v", err)
+	}
+	_, _ = model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	_, command = model.handleConfirmServiceStartKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	if command == nil {
+		t.Fatal("confirmed start was not scheduled")
+	}
+	_, _ = model.Update(command())
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(marker); err == nil {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("confirmed start did not create %s", marker)
+}
+
+func TestStartConfirmationIdentifiesConfirmedDependencyCommand(t *testing.T) {
+	confirm := true
+	model := NewModel(&config.Config{Project: "Confirmed dependency", Services: map[string]config.Service{
+		"app": {
+			Command:   "start-app",
+			DependsOn: []string{"migration"},
+		},
+		"migration": {
+			Lifecycle: config.LifecycleConfig{Start: &config.Action{
+				Command: "run-migrations", Confirm: &confirm,
+			}},
+		},
+	}}, "test")
+	defer model.Shutdown()
+	model.width = 100
+	model.pendingStartNames = []string{"app"}
+
+	body := ansi.Strip(strings.Join(model.renderServiceStartConfirmationBody(), "\n"))
+	for _, expected := range []string{"SERVICE  migration", "COMMAND", "run-migrations"} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("dependency confirmation is missing %q:\n%s", expected, body)
+		}
+	}
+	if strings.Contains(body, "start-app") {
+		t.Fatalf("dependency confirmation includes an unconfirmed command:\n%s", body)
+	}
+}
+
+func TestRestartOperationsConfirmTheirStopPhase(t *testing.T) {
+	model := newTestModel()
+	defer model.Shutdown()
+	model.FocusedService().SetStatus(config.StatusRunning)
+
+	_, command := model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	if command != nil || model.mode != ModeConfirmRestart || model.confirmRestartAll {
+		t.Fatalf("single restart confirmation = command %v, mode %v, all %v", command, model.mode, model.confirmRestartAll)
+	}
+	_, _ = model.handleConfirmRestartKeys(tea.KeyMsg{Type: tea.KeyEsc})
+
+	_, command = model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
+	if command != nil || model.mode != ModeConfirmRestart || !model.confirmRestartAll {
+		t.Fatalf("restart-all confirmation = command %v, mode %v, all %v", command, model.mode, model.confirmRestartAll)
 	}
 }
 
@@ -60,6 +247,7 @@ func TestSStopsTargetsWhenAllAreActive(t *testing.T) {
 	}
 
 	_, command := model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	command = acceptServiceStop(t, model, command)
 	message := command().(operationResultMsg)
 	if message.kind != operationStopSet || message.err != nil {
 		t.Fatalf("selection result = kind %q, error %v", message.kind, message.err)
@@ -153,9 +341,7 @@ func TestStopInterruptsReadinessGatedStart(t *testing.T) {
 	waitForServiceStatus(t, model.FocusedService(), config.StatusRunning)
 
 	_, stopCommand := model.toggleSelectedServices()
-	if stopCommand == nil {
-		t.Fatal("s was blocked while start waited for readiness")
-	}
+	stopCommand = acceptServiceStop(t, model, stopCommand)
 	stopMessage := stopCommand().(operationResultMsg)
 	_, _ = model.Update(stopMessage)
 	if model.FocusedService().Status() != config.StatusStopped {
@@ -212,6 +398,7 @@ func TestSStopsDependentsAndShiftSStopsOnlySelectedService(t *testing.T) {
 		model := newModel(t)
 		defer model.Shutdown()
 		_, command := model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+		command = acceptServiceStop(t, model, command)
 		if command == nil || model.operationKind != operationStopSet {
 			t.Fatal("s did not schedule dependency-aware stop")
 		}
@@ -231,6 +418,7 @@ func TestSStopsDependentsAndShiftSStopsOnlySelectedService(t *testing.T) {
 		model := newModel(t)
 		defer model.Shutdown()
 		_, command := model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'S'}})
+		command = acceptServiceStop(t, model, command)
 		if command == nil || model.operationKind != operationForceStop {
 			t.Fatal("Shift+S did not schedule force stop")
 		}
@@ -244,6 +432,18 @@ func TestSStopsDependentsAndShiftSStopsOnlySelectedService(t *testing.T) {
 			t.Fatalf("force stop notification = %q", model.toastMessage)
 		}
 	})
+}
+
+func acceptServiceStop(t *testing.T, model *Model, command tea.Cmd) tea.Cmd {
+	t.Helper()
+	if command != nil || model.mode != ModeConfirmServiceStop {
+		t.Fatalf("stop did not request confirmation: command %v, mode %v", command, model.mode)
+	}
+	_, command = model.handleConfirmServiceStopKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	if command == nil {
+		t.Fatal("confirmed stop was not scheduled")
+	}
+	return command
 }
 
 func TestShiftSOverridesQueuedDependencyStart(t *testing.T) {

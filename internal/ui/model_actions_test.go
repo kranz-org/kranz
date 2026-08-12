@@ -306,7 +306,7 @@ func TestConfiguredActionConfirmationCanCancelOrRun(t *testing.T) {
 	interactive := true
 	model := NewModel(&config.Config{Project: "Protected", Services: map[string]config.Service{
 		"app": {Command: "run", Actions: map[string]config.Action{
-			"confirm":     {Command: "exit 0", Confirm: &confirmation},
+			"confirm":     {Command: "exit 0", Description: "Protected operation", Confirm: &confirmation},
 			"interactive": {Command: "sh", Interactive: &interactive},
 		}},
 	}}, "test")
@@ -321,8 +321,16 @@ func TestConfiguredActionConfirmationCanCancelOrRun(t *testing.T) {
 	if model.mode != ModeConfirmAction || model.pendingAction == nil || model.pendingAction.Name != "confirm" {
 		t.Fatalf("confirmation modal state = mode %v, action %#v", model.mode, model.pendingAction)
 	}
+	action, _ := model.cfg.ResolveAction(*model.pendingAction)
+	body := model.renderActionStartConfirmationBody(*model.pendingAction, action)
+	if body[0] != StartingBadgeStyle.Render("⚠ CONFIRM BEFORE RUNNING") ||
+		!strings.Contains(body[1], LogSystemStyle.Render("app")) ||
+		body[2] != ServiceNameStyle.Render("Protected operation") ||
+		!strings.Contains(body[len(body)-1], LogSystemStyle.Render("exit 0")) {
+		t.Fatalf("action confirmation does not emphasize important fields:\n%q", body)
+	}
 	confirmationView := ansi.Strip(model.renderConfirmActionView())
-	for _, expected := range []string{"Run action \"confirm\"?", "Command:", "exit 0", "[Enter/y] Run", "[Esc/n] Cancel"} {
+	for _, expected := range []string{"Run action \"confirm\"?", "⚠ CONFIRM BEFORE RUNNING", "OWNER  app", "Protected operation", "COMMAND", "exit 0", "[Enter/y] Run", "[Esc/n] Cancel"} {
 		if !strings.Contains(confirmationView, expected) {
 			t.Fatalf("confirmation view missing %q:\n%s", expected, confirmationView)
 		}
