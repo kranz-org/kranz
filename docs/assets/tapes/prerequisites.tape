@@ -6,7 +6,7 @@ Set Shell "bash"
 Set FontSize 13
 Set Width 1180
 Set Height 620
-Set Padding 12
+Set Padding 16
 Set PlaybackSpeed 1.0
 
 Hide

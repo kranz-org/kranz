@@ -27,11 +27,21 @@
 
 .demo-frame {
   margin: 32px 0;
+  /* No padding here on purpose. Each recording carries its own terminal-style
+     padding inside the image, so it scales with the frame instead of staying a
+     fixed number of pixels that looks generous on a wide screen and wasteful on
+     a narrow one. */
   overflow: hidden;
   border: 1px solid var(--vp-c-divider);
   border-radius: 12px;
   background: #07111b;
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.14);
+}
+
+/* Markdown wraps the image in a paragraph whose vertical margin would
+   otherwise add 16px above and below inside an otherwise even frame. */
+.demo-frame p {
+  margin: 0;
 }
 
 .demo-frame img {
