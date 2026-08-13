@@ -6,7 +6,7 @@ SSH. This playground teaches that model without Docker or a remote host.
 
 <div class="demo-frame">
 
-![Starting a detached resource, reading its status, and confirming its stop](../assets/lifecycle.gif)
+![Starting a detached resource, making its readiness pass, and confirming its stop](../assets/lifecycle.gif)
 
 </div>
 

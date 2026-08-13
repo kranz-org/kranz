@@ -4,10 +4,11 @@
 Output docs/assets/prerequisites.gif
 
 Set Shell "bash"
-Set FontSize 13
-Set Width 1180
+Set FontSize 15
+Set Width 1000
 Set Height 620
 Set Padding 16
+Set LineHeight 1.2
 Set PlaybackSpeed 1.0
 
 Hide

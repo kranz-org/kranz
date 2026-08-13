@@ -11,9 +11,11 @@ export default defineConfig({
     ['link', { rel: 'icon', href: '/kranz/favicon.svg', type: 'image/svg+xml' }]
   ],
   themeConfig: {
+    // The header uses a compact variant whose hub is large enough to read at
+    // navigation size; the full mark stays on the home page and in the README.
     logo: {
-      light: '/logo-light.svg',
-      dark: '/logo.svg',
+      light: '/logo-mark-light.svg',
+      dark: '/logo-mark.svg',
       alt: 'Kranz'
     },
     siteTitle: 'Kranz',

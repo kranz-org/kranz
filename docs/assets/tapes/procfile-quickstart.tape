@@ -4,10 +4,11 @@
 Output docs/assets/procfile-quickstart.gif
 
 Set Shell "bash"
-Set FontSize 13
-Set Width 1180
+Set FontSize 15
+Set Width 1000
 Set Height 620
 Set Padding 16
+Set LineHeight 1.2
 
 Hide
 Type "cd examples/procfile && export PATH=$PWD/../../bin:$PATH && cp -f .env.example .env && clear"

@@ -4,10 +4,11 @@
 Output docs/assets/interactive-action.gif
 
 Set Shell "bash"
-Set FontSize 13
-Set Width 1180
-Set Height 560
+Set FontSize 15
+Set Width 1000
+Set Height 620
 Set Padding 16
+Set LineHeight 1.2
 
 Hide
 Type "cd examples/prerequisites && export PATH=$PWD/../../bin:$PATH && clear"
