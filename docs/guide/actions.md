@@ -159,4 +159,5 @@ Two limits follow from what handoff means:
 `confirm` and `interactive` answer different questions. `confirm` is about
 whether the command should run at all — use it for anything destructive.
 `interactive` is about who owns the terminal while it runs. An interactive
-action confirms regardless, so setting both only changes the wording.
+action already forces confirmation with handoff-specific wording, so adding
+`confirm: true` to it has no further effect.

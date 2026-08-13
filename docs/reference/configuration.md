@@ -576,8 +576,8 @@ success_exit_codes: [0, 2]
 
 **Type:** bool · **Default:** `false`
 
-The service stays visible and startable by hand but is excluded from `a`-style
-batch starts.
+The service stays visible and startable by hand. Pressing `a` does not select
+it, and start-all skips it, so it is excluded from `a`-style batch starts.
 
 ```yaml
 disabled: true
