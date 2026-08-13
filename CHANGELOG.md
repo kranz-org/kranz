@@ -25,15 +25,19 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
   compatibility pages.
 - Interactive actions: `interactive: true` hands the real terminal to a command
   that has to be answered, such as a migration that confirms before it writes,
-  and records its exit code and duration when it finishes. Lifecycle commands
+  and records its exit code and duration when it finishes. Running one always
+  asks first, warning that Kranz is about to leave the screen, so the interface
+  never disappears unannounced. Lifecycle commands
   and prerequisites cannot be interactive, because both run unattended.
 - A MoonFlight showcase example: shared detached infrastructure, a migration
   other services wait to finish, two APIs behind an edge gateway, a front end
   on a runtime-discovered port with a prerequisite, two workers, and a project
   action group. It is the project shown in the documentation recordings.
 - Reproducible terminal recordings generated from tapes in
-  `docs/assets/tapes/`, including the site hero and the Procfile quickstart,
-  which were previously captured by hand.
+  `docs/assets/tapes/`, one per feature: actions, interactive handoff,
+  dependency gates, log search, appearance, prerequisites, detached lifecycle,
+  runtime ports, and the Procfile quickstart. The site hero and the quickstart
+  were previously captured by hand and could not be reproduced.
 
 ### Changed
 

@@ -110,7 +110,8 @@ prerequisite is retried too, since only success is remembered.
 usually looks like: it lists what it would apply and waits for an answer.
 
 Expand `catalog-api` with `Enter`, focus `migrate-interactive`, and press `s`.
-Kranz steps aside and gives the command your terminal:
+Kranz asks first, in yellow, because it is about to leave the screen. Accept,
+and the command gets your terminal:
 
 ```text
 Pending migrations:

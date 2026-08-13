@@ -4,6 +4,12 @@ Actions are explicit one-shot operations: migrations, builds, tests, data
 seeding, or inspection commands. They are not represented as continuously
 running services.
 
+<div class="demo-frame">
+
+![Running a service action, declining a destructive one, and running a project action](../assets/actions.gif)
+
+</div>
+
 ## Service actions
 
 ```yaml
@@ -114,9 +120,32 @@ actions:
     interactive: true
 ```
 
-Kranz suspends its interface, the command owns the terminal until it exits, and
-Kranz resumes and records the result — running, succeeded or failed, with the
-exit code and duration — exactly like a captured action. Because the output
+Running one always asks first, whether or not it also sets `confirm`. The
+confirmation says plainly that Kranz is about to leave the screen, because
+handing the terminal over is not something that should happen to someone who
+just pressed a key in a list:
+
+```text
+Run action "migrate"?
+
+⚠ KRANZ WILL LEAVE THE SCREEN
+OWNER  api
+
+This action takes over your terminal so you can answer it.
+Kranz returns as soon as the command exits.
+
+[Enter/y] Hand over the terminal  [Esc/n] Cancel
+```
+
+<div class="demo-frame">
+
+![Confirming the handoff, answering the command in the terminal, and returning to Kranz](../assets/interactive-action.gif)
+
+</div>
+
+After you accept, the command owns the terminal until it exits. Kranz then
+resumes and records the result — running, succeeded or failed, with the exit
+code and duration — exactly like a captured action. Because the output
 went to your terminal rather than into a buffer, the action's log pane says so
 instead of showing an empty capture.
 
@@ -127,6 +156,7 @@ Two limits follow from what handoff means:
 - an interactive action cannot be a [prerequisite](#running-an-action-before-a-service-starts),
   because prerequisites run while a start is already in flight.
 
-Use `confirm: true` for the different case where *Kranz* should ask before
-running a command. `confirm` guards the launch; `interactive` gives the command
-the terminal once it is running.
+`confirm` and `interactive` answer different questions. `confirm` is about
+whether the command should run at all — use it for anything destructive.
+`interactive` is about who owns the terminal while it runs. An interactive
+action confirms regardless, so setting both only changes the wording.

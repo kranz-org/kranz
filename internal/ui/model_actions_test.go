@@ -357,18 +357,41 @@ func TestConfiguredActionConfirmationCanCancelOrRun(t *testing.T) {
 		t.Fatalf("confirmed action state = %#v", state)
 	}
 
-	// An interactive action returns a terminal-handoff command instead of
-	// running in the background. The command is not executed here: it would take
-	// over the test's terminal.
+	// An interactive action always confirms first, even without confirm: true,
+	// because running it removes Kranz from the screen.
 	model.focusServiceListRow(2)
-	command, handled := model.toggleFocusedAction()
-	if !handled || command == nil {
-		t.Fatalf("interactive action = handled %v, command %v", handled, command)
+	if command, handled := model.toggleFocusedAction(); !handled || command != nil {
+		t.Fatalf("interactive action = handled %v, command %v, want a confirmation instead", handled, command)
+	}
+	if model.mode != ModeConfirmAction || model.pendingAction == nil {
+		t.Fatalf("interactive action did not open a confirmation: mode %v, pending %#v", model.mode, model.pendingAction)
 	}
 	interactiveID := config.ActionID{OwnerKind: config.ActionOwnerService, Owner: "app", Name: "interactive"}
+	// The confirmation says plainly that the terminal is about to change hands.
+	view := model.renderConfirmActionView()
+	for _, phrase := range []string{"KRANZ WILL LEAVE THE SCREEN", "takes over your terminal", "Hand over the terminal"} {
+		if !strings.Contains(view, phrase) {
+			t.Fatalf("handoff confirmation does not mention %q:\n%s", phrase, view)
+		}
+	}
+	// Cancelling leaves the action untouched.
+	_, _ = model.handleConfirmActionKeys(tea.KeyMsg{Type: tea.KeyEsc})
+	state, _ = model.manager.ActionState(interactiveID)
+	if state.Status != service.ActionReady {
+		t.Fatalf("cancelled handoff state = %#v, want ready", state)
+	}
+
+	// Accepting it hands the terminal over. The command is not executed here:
+	// it would take over the test's terminal.
+	model.focusServiceListRow(2)
+	_, _ = model.toggleFocusedAction()
+	_, command = model.handleConfirmActionKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	if command == nil {
+		t.Fatal("accepted handoff produced no command")
+	}
 	state, _ = model.manager.ActionState(interactiveID)
 	if state.Status != service.ActionRunning {
-		t.Fatalf("interactive action state = %#v, want running while the terminal is handed over", state)
+		t.Fatalf("accepted handoff state = %#v, want running while the terminal is handed over", state)
 	}
 }
 

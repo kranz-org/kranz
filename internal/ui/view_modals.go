@@ -393,18 +393,33 @@ func (m *Model) renderConfirmActionView() string {
 		))
 	}
 	body := m.renderActionStartConfirmationBody(id, action)
+	prompt := "[Enter/y] Run  [Esc/n] Cancel"
+	if action.InteractiveEnabled() {
+		prompt = "[Enter/y] Hand over the terminal  [Esc/n] Cancel"
+	}
 	content := renderConfirmationModal(
 		fmt.Sprintf("Run action %q?", id.Name),
 		body,
-		"[Enter/y] Run  [Esc/n] Cancel",
+		prompt,
 	)
 	return m.placeOverlay(content)
 }
 
 func (m *Model) renderActionStartConfirmationBody(id config.ActionID, action config.Action) []string {
+	notice := "⚠ CONFIRM BEFORE RUNNING"
+	if action.InteractiveEnabled() {
+		notice = "⚠ KRANZ WILL LEAVE THE SCREEN"
+	}
 	body := []string{
-		StartingBadgeStyle.Render("⚠ CONFIRM BEFORE RUNNING"),
+		StartingBadgeStyle.Render(notice),
 		DetailLabelStyle.Render("OWNER  ") + LogSystemStyle.Render(id.Owner),
+	}
+	if action.InteractiveEnabled() {
+		body = append(body,
+			"",
+			ServiceStartingStyle.Render("This action takes over your terminal so you can answer it."),
+			ServiceStartingStyle.Render("Kranz returns as soon as the command exits."),
+		)
 	}
 	if action.Description != "" {
 		body = append(body, ServiceNameStyle.Render(action.Description))

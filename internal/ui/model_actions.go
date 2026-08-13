@@ -178,7 +178,10 @@ func (m *Model) toggleFocusedAction() (tea.Cmd, bool) {
 		m.beginActionConfirmation(id, true)
 		return nil, true
 	}
-	if action.ConfirmationRequired() {
+	// An interactive action always confirms, whether or not it asked to. Taking
+	// over the terminal removes Kranz from the screen, and that must never
+	// happen to someone who only pressed a key in a list.
+	if action.ConfirmationRequired() || action.InteractiveEnabled() {
 		m.beginActionConfirmation(id, false)
 		return nil, true
 	}
