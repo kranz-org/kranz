@@ -1,0 +1,156 @@
+# Project identity
+project: Northstar          # Required. Shown in the header.
+version: "1.0"              # Optional label for you; Kranz does not read it.
+
+# Appearance for this project
+# Personal preferences live in your user settings file instead. Ctrl+T opens
+# the live picker and can write either place.
+ui:
+  theme: tokyo-night        # A named built-in theme.
+  accent: "#7AA2F7"         # Overrides the theme accent.
+  background: terminal      # terminal | theme | #RRGGBB
+  color_mode: auto          # auto | dark | light
+
+# Shared execution context
+# Inherited by every service that does not override it.
+defaults:
+  dir: .                    # Relative to this file, not to your shell.
+  shell: /bin/sh            # Default is /bin/bash.
+  env:
+    NODE_ENV: development
+  env_files: [.env.shared]  # Applied in order, before service-level files.
+
+# Project-level one-shot commands
+# For work that belongs to no single service.
+action_groups:
+  infrastructure:
+    description: Shared development infrastructure
+    dir: infra              # Inherited by the actions below.
+    env_files: [.env.infra]
+    actions:
+      up:
+        command: docker compose up -d
+        timeout: 2m         # Covers the whole command.
+      inspect:
+        command: docker compose ps
+      reset:
+        command: docker compose down --volumes
+        confirm: true       # Destructive, so ask first.
+
+services:
+  # A plain long-running process
+  api:
+    description: REST API and background scheduler
+    command: npm run dev    # Shorthand for lifecycle.start.command.
+    dir: apps/api           # Relative to this file.
+    shell: /bin/bash
+    env_files: [.env, .env.local]
+    env:
+      PORT: "3001"          # Highest precedence; wins over every dotenv file.
+    ports: [3001]           # Checked before start; conflicts are reported.
+    tags: [backend, core]   # Expandable groups in the list.
+
+    # What "ready" means for anything depending on this service.
+    healthcheck:
+      readiness:
+        type: http
+        url: http://127.0.0.1:3001/ready
+        interval: 2s
+        timeout: 1s
+        failure_threshold: 5
+      liveness:             # Independent of readiness.
+        type: tcp
+        port: 3001
+        initial_delay: 10s
+        interval: 15s
+
+    # Recovery for this process only. Detached resources are never restarted.
+    availability:
+      restart: on_failure   # no | always | on_failure | exit_on_failure
+      backoff: 2s
+      max_restarts: 3
+
+    # How the process group is stopped.
+    shutdown:
+      signal: 15            # SIGTERM.
+      timeout: 10s          # Then the group is killed.
+
+    # One-shot commands owned by this service.
+    actions:
+      migrate:
+        command: npm run db:migrate
+        description: Apply pending database migrations
+        timeout: 2m
+        confirm: true
+      test:
+        command: npm test
+        timeout: 5m
+      console:
+        command: npm run console
+        interactive: true   # Hands the terminal over until the command exits.
+
+    # Work that must succeed before this service starts. Each entry points at
+    # an action that also stays runnable on its own.
+    before_start:
+      - group: infrastructure
+        action: up
+        run: always         # Before every start; default is once per session.
+      - action: migrate     # This service's own action, once per session.
+
+  # A service that waits for another one
+  web:
+    command: npm run dev
+    dir: apps/web
+    tags: [frontend]
+    detect_ports: true      # Discover the port Vite actually chose.
+    depends_on: [api]
+    dependency_conditions:
+      api:
+        condition: process_healthy   # Wait for readiness, not just for a PID.
+    healthcheck:
+      readiness:
+        type: tcp           # No port: use the first detected listener.
+        interval: 3s
+
+  # A worker with no endpoint to probe
+  worker:
+    command: npm run worker
+    dir: apps/worker
+    tags: [backend]
+    depends_on: [api]
+    ready_log_line: "worker listening"   # Readiness from output instead.
+    success_exit_codes: [0, 2]           # 2 is also a clean exit here.
+    disabled: true                       # Visible, but not started by `a`.
+
+  # An external resource Kranz does not own
+  # The start command finishes while the thing it started keeps running.
+  remote-stack:
+    description: Docker stack on the build host
+    supervision: detached   # process (default) | detached
+    stop_on_exit: false     # Survives Kranz. This is the detached default.
+    detect_ports: false     # No local process group to inspect.
+    tags: [infra, remote]
+    lifecycle:
+      start:
+        command: ssh build-host 'cd app && docker compose up -d'
+        timeout: 2m
+      stop:
+        command: ssh build-host 'cd app && docker compose down'
+        timeout: 2m
+      status:
+        # Does the resource exist? This is not a health check.
+        type: command
+        command: ssh build-host 'cd app && docker compose ps -q api | grep -q .'
+        interval: 10s
+        stopped_interval: 30s
+        timeout: 15s
+        # With no exit codes declared, 0 means running and anything else means
+        # stopped. Declare stopped_exit_codes only when the probe can also say
+        # "I could not tell" — see the note below this file.
+      logs:
+        command: ssh build-host 'cd app && docker compose logs -f --tail=100'
+    ports: [5432, 6379]     # Documentation; discovery is unavailable here.
+    actions:
+      status:
+        command: ssh build-host 'cd app && docker compose ps -a'
+        timeout: 30s

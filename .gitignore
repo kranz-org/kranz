@@ -25,6 +25,9 @@ go.work
 # Build output
 dist/
 .release/
+node_modules/
+docs/.vitepress/cache/
+docs/.vitepress/dist/
 
 # Local agent workflow state
 .agents/

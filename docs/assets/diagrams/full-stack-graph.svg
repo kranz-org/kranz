@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 360" role="img" aria-labelledby="title desc">
+  <title id="title">Full-stack dependency graph</title><desc id="desc">Migration fans out to catalog and billing APIs, which fan in to a gateway followed by an orders worker.</desc>
+  <style>text{font:600 17px ui-sans-serif,system-ui;fill:#172033}.box{fill:#fff;stroke:#94a3b8;stroke-width:2}.edge{fill:none;stroke:#0ea5e9;stroke-width:3}.note{font-size:13px;fill:#526176}@media(prefers-color-scheme:dark){text{fill:#e7edf5}.box{fill:#111923;stroke:#526176}.note{fill:#9aa8b8}}</style>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0 0L9 3L0 6Z" fill="#0ea5e9"/></marker></defs>
+  <rect class="box" x="35" y="145" width="160" height="70" rx="10"/><text x="115" y="186" text-anchor="middle">migrate</text>
+  <rect class="box" x="300" y="55" width="180" height="70" rx="10"/><text x="390" y="96" text-anchor="middle">catalog-api</text>
+  <rect class="box" x="300" y="235" width="180" height="70" rx="10"/><text x="390" y="276" text-anchor="middle">billing-api</text>
+  <rect class="box" x="600" y="145" width="160" height="70" rx="10"/><text x="680" y="186" text-anchor="middle">gateway</text>
+  <rect class="box" x="825" y="145" width="150" height="70" rx="10"/><text x="900" y="176" text-anchor="middle">orders-</text><text x="900" y="198" text-anchor="middle">worker</text>
+  <path class="edge" d="M195 180C235 180 245 90 300 90" marker-end="url(#arrow)"/><path class="edge" d="M195 180C235 180 245 270 300 270" marker-end="url(#arrow)"/>
+  <path class="edge" d="M480 90C540 90 540 180 600 180" marker-end="url(#arrow)"/><path class="edge" d="M480 270C540 270 540 180 600 180" marker-end="url(#arrow)"/><path class="edge" d="M760 180H825" marker-end="url(#arrow)"/>
+  <text class="note" x="240" y="174" text-anchor="middle">completion</text><text class="note" x="540" y="174" text-anchor="middle">both healthy</text><text class="note" x="792" y="168" text-anchor="middle">healthy</text>
+</svg>

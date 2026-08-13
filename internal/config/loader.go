@@ -87,6 +87,9 @@ func loadFile(path, basePath string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := normalizeServiceStartSyntax(cfg); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
 
 	dotenv = dotenvWithoutHostOverrides(dotenv)
 	cfg.explicitEnv = mergeStringMap(nil, cfg.Defaults.Env)
@@ -148,6 +151,16 @@ func mergeConfig(base, override *Config) error {
 			base.ServiceOrder = append(base.ServiceOrder, name)
 		}
 	}
+	if base.ActionGroups == nil {
+		base.ActionGroups = make(map[string]ActionGroup)
+	}
+	for name, incoming := range override.ActionGroups {
+		if current, exists := base.ActionGroups[name]; exists {
+			base.ActionGroups[name] = mergeActionGroup(current, incoming)
+		} else {
+			base.ActionGroups[name] = incoming
+		}
+	}
 	if baseSource == SourceKranz || overrideSource == SourceKranz {
 		base.Source = SourceKranz
 	}
@@ -174,8 +187,13 @@ func mergeDefaults(base *Defaults, override Defaults) {
 }
 
 func mergeService(base, override Service, mergeDependencies bool) Service {
-	if override.Command != "" {
-		base.Command = override.Command
+	base.Lifecycle = mergeLifecycle(base.Lifecycle, override.Lifecycle)
+	if override.Supervision != "" {
+		base.Supervision = override.Supervision
+	}
+	if override.StopOnExit != nil {
+		value := *override.StopOnExit
+		base.StopOnExit = &value
 	}
 	if override.Description != "" {
 		base.Description = override.Description
@@ -195,6 +213,12 @@ func mergeService(base, override Service, mergeDependencies bool) Service {
 	}
 	if len(override.Tags) > 0 {
 		base.Tags = append([]string(nil), override.Tags...)
+	}
+	// Prerequisites are an ordered sequence, so a later layer replaces the whole
+	// list rather than appending to it. Appending would make the effective order
+	// depend on file order in a way the reader cannot see from one file.
+	if len(override.BeforeStart) > 0 {
+		base.BeforeStart = append([]Prerequisite(nil), override.BeforeStart...)
 	}
 	if len(override.DependsOn) > 0 {
 		if mergeDependencies {
@@ -264,6 +288,153 @@ func mergeService(base, override Service, mergeDependencies bool) Service {
 	if override.DisableDotenv {
 		base.DisableDotenv = true
 	}
+	base.Actions = mergeActions(base.Actions, override.Actions)
+	return base
+}
+
+func mergeLifecycle(base, override LifecycleConfig) LifecycleConfig {
+	base.Start = mergeActionPointer(base.Start, override.Start)
+	base.Stop = mergeActionPointer(base.Stop, override.Stop)
+	base.Logs = mergeActionPointer(base.Logs, override.Logs)
+	if override.Status != nil {
+		if base.Status == nil {
+			status := *override.Status
+			base.Status = &status
+		} else {
+			status := mergeLifecycleStatus(*base.Status, *override.Status)
+			base.Status = &status
+		}
+	}
+	return base
+}
+
+func mergeActionPointer(base, override *Action) *Action {
+	if override == nil {
+		return base
+	}
+	if base == nil {
+		value := *override
+		return &value
+	}
+	value := mergeAction(*base, *override)
+	return &value
+}
+
+func mergeLifecycleStatus(base, override LifecycleStatusConfig) LifecycleStatusConfig {
+	base.CheckConfig = mergeCheckConfig(base.CheckConfig, override.CheckConfig)
+	if override.StoppedInterval != 0 {
+		base.StoppedInterval = override.StoppedInterval
+	}
+	if len(override.RunningExitCodes) > 0 {
+		base.RunningExitCodes = append([]int(nil), override.RunningExitCodes...)
+	}
+	if len(override.StoppedExitCodes) > 0 {
+		base.StoppedExitCodes = append([]int(nil), override.StoppedExitCodes...)
+	}
+	return base
+}
+
+func mergeCheckConfig(base, override CheckConfig) CheckConfig {
+	if override.Type != "" {
+		base.Type = override.Type
+	}
+	if override.URL != "" {
+		base.URL = override.URL
+	}
+	if override.Port != 0 {
+		base.Port = override.Port
+	}
+	if override.PortFrom != "" {
+		base.PortFrom = override.PortFrom
+	}
+	if override.DetectedPortIndex != nil {
+		value := *override.DetectedPortIndex
+		base.DetectedPortIndex = &value
+	}
+	if override.Command != "" {
+		base.Command = override.Command
+	}
+	if len(override.Headers) > 0 {
+		base.Headers = mergeStringMap(base.Headers, override.Headers)
+	}
+	if override.StatusCode != 0 {
+		base.StatusCode = override.StatusCode
+	}
+	if override.InitialDelay != 0 {
+		base.InitialDelay = override.InitialDelay
+	}
+	if override.Interval != 0 {
+		base.Interval = override.Interval
+	}
+	if override.Timeout != 0 {
+		base.Timeout = override.Timeout
+	}
+	if override.FailureThreshold != 0 {
+		base.FailureThreshold = override.FailureThreshold
+	}
+	return base
+}
+
+func mergeActionGroup(base, override ActionGroup) ActionGroup {
+	if override.Description != "" {
+		base.Description = override.Description
+	}
+	if override.Dir != "" {
+		base.Dir = override.Dir
+	}
+	if override.Shell != "" {
+		base.Shell = override.Shell
+	}
+	base.Env = mergeStringMap(base.Env, override.Env)
+	if len(override.EnvFiles) > 0 {
+		base.EnvFiles = append([]string(nil), override.EnvFiles...)
+	}
+	base.Actions = mergeActions(base.Actions, override.Actions)
+	return base
+}
+
+func mergeActions(base, override map[string]Action) map[string]Action {
+	if base == nil && len(override) > 0 {
+		base = make(map[string]Action, len(override))
+	}
+	for name, incoming := range override {
+		if current, exists := base[name]; exists {
+			base[name] = mergeAction(current, incoming)
+		} else {
+			base[name] = incoming
+		}
+	}
+	return base
+}
+
+func mergeAction(base, override Action) Action {
+	if override.Command != "" {
+		base.Command = override.Command
+	}
+	if override.Description != "" {
+		base.Description = override.Description
+	}
+	if override.Dir != "" {
+		base.Dir = override.Dir
+	}
+	if override.Shell != "" {
+		base.Shell = override.Shell
+	}
+	base.Env = mergeStringMap(base.Env, override.Env)
+	if len(override.EnvFiles) > 0 {
+		base.EnvFiles = append([]string(nil), override.EnvFiles...)
+	}
+	if override.Timeout != 0 {
+		base.Timeout = override.Timeout
+	}
+	if override.Confirm != nil {
+		value := *override.Confirm
+		base.Confirm = &value
+	}
+	if override.Interactive != nil {
+		value := *override.Interactive
+		base.Interactive = &value
+	}
 	return base
 }
 
@@ -287,6 +458,19 @@ func loadNative(data []byte) (*Config, error) {
 	}
 	cfg.Source = SourceKranz
 	return &cfg, nil
+}
+
+func normalizeServiceStartSyntax(cfg *Config) error {
+	for name, service := range cfg.Services {
+		if service.Command != "" && service.Lifecycle.Start != nil {
+			return fmt.Errorf("service %q: command conflicts with lifecycle.start", name)
+		}
+		if service.Command != "" {
+			service.Lifecycle.Start = &Action{Command: service.Command}
+		}
+		cfg.Services[name] = service
+	}
+	return nil
 }
 
 func detectFormat(data []byte) (SourceFormat, error) {
@@ -378,6 +562,9 @@ func applyDefaults(cfg *Config) error {
 		if svc.Shell == "" {
 			svc.Shell = defShell
 		}
+		if svc.Supervision == "" {
+			svc.Supervision = SupervisionProcess
+		}
 		if cfg.Source == SourceProcessCompose {
 			if svc.Availability.Restart != "" && svc.Availability.Backoff == 0 {
 				svc.Availability.Backoff = time.Second
@@ -426,11 +613,119 @@ func applyDefaults(cfg *Config) error {
 			applyCheckDefaults(svc.HealthCheck.Readiness)
 			applyCheckDefaults(svc.HealthCheck.Liveness)
 		}
+		if svc.Lifecycle.Status != nil {
+			applyCheckDefaults(&svc.Lifecycle.Status.CheckConfig)
+			if len(svc.Lifecycle.Status.RunningExitCodes) == 0 {
+				svc.Lifecycle.Status.RunningExitCodes = []int{0}
+			}
+			// StoppedExitCodes stays empty when unset. An empty set means "every
+			// other exit code is stopped"; materializing a default here would
+			// silently turn an ordinary probe into a three-way probe and route its
+			// real exit codes to unknown.
+			if svc.Lifecycle.Status.StoppedInterval == 0 {
+				svc.Lifecycle.Status.StoppedInterval = DefaultStoppedStatusInterval
+			}
+		}
+		for role, action := range map[string]**Action{
+			"start": &svc.Lifecycle.Start,
+			"stop":  &svc.Lifecycle.Stop,
+			"logs":  &svc.Lifecycle.Logs,
+		} {
+			if *action == nil {
+				continue
+			}
+			normalized, err := normalizeAction(cfg, svc.Dir, svc.Shell, svc.Env, **action)
+			if err != nil {
+				return fmt.Errorf("service %q lifecycle.%s env files: %w", name, role, err)
+			}
+			*action = &normalized
+		}
+		if svc.Lifecycle.Start != nil {
+			svc.Command = svc.Lifecycle.Start.Command
+		}
+		for actionName, action := range svc.Actions {
+			normalized, err := normalizeAction(cfg, svc.Dir, svc.Shell, svc.Env, action)
+			if err != nil {
+				return fmt.Errorf("service %q action %q env files: %w", name, actionName, err)
+			}
+			svc.Actions[actionName] = normalized
+		}
 
 		// Map iteration returns a copy, so store the normalized service explicitly.
 		cfg.Services[name] = svc
 	}
+	for groupName, group := range cfg.ActionGroups {
+		if group.Dir == "" {
+			group.Dir = defDir
+		}
+		if group.Shell == "" {
+			group.Shell = defShell
+		}
+		groupFiles := append(append([]string(nil), cfg.Defaults.EnvFiles...), group.EnvFiles...)
+		fileEnv, err := loadEnvFiles(group.Dir, groupFiles)
+		if err != nil {
+			return fmt.Errorf("action group %q env files: %w", groupName, err)
+		}
+		group.Env = mergeStringMap(mergeStringMap(cfg.Defaults.Env, fileEnv), group.Env)
+		for _, path := range resolvedEnvFiles(group.Dir, groupFiles) {
+			cfg.WatchPaths = appendUniqueString(cfg.WatchPaths, path)
+		}
+		for key, value := range group.Env {
+			group.Env[key] = os.ExpandEnv(value)
+		}
+		for actionName, action := range group.Actions {
+			normalized, err := normalizeAction(cfg, group.Dir, group.Shell, group.Env, action)
+			if err != nil {
+				return fmt.Errorf("action group %q action %q env files: %w", groupName, actionName, err)
+			}
+			group.Actions[actionName] = normalized
+		}
+		cfg.ActionGroups[groupName] = group
+	}
 	return nil
+}
+
+func normalizeAction(cfg *Config, ownerDir, ownerShell string, ownerEnv map[string]string, action Action) (Action, error) {
+	if action.Dir == "" {
+		action.Dir = ownerDir
+	}
+	if action.Shell == "" {
+		action.Shell = ownerShell
+	}
+	fileEnv, err := loadEnvFiles(action.Dir, action.EnvFiles)
+	if err != nil {
+		return Action{}, err
+	}
+	action.Env = mergeStringMap(mergeStringMap(ownerEnv, fileEnv), action.Env)
+	for _, path := range resolvedEnvFiles(action.Dir, action.EnvFiles) {
+		cfg.WatchPaths = appendUniqueString(cfg.WatchPaths, path)
+	}
+	for key, value := range action.Env {
+		action.Env[key] = os.ExpandEnv(value)
+	}
+	return action, nil
+}
+
+func loadEnvFiles(baseDir string, files []string) (map[string]string, error) {
+	result := make(map[string]string)
+	for _, path := range resolvedEnvFiles(baseDir, files) {
+		values, err := readDotEnv(path)
+		if err != nil {
+			return nil, err
+		}
+		result = mergeStringMap(result, values)
+	}
+	return result, nil
+}
+
+func resolvedEnvFiles(baseDir string, files []string) []string {
+	resolved := append([]string(nil), files...)
+	for index, path := range resolved {
+		if !filepath.IsAbs(path) {
+			resolved[index] = filepath.Clean(filepath.Join(baseDir, path))
+		}
+	}
+	return resolved
 }
 
 func loadServiceEnvFiles(cfg *Config, svc Service) (map[string]string, error) {
@@ -513,13 +808,13 @@ func applyCheckDefaults(c *CheckConfig) {
 		return
 	}
 	if c.Interval == 0 {
-		c.Interval = 5 * time.Second
+		c.Interval = DefaultCheckInterval
 	}
 	if c.Timeout == 0 {
-		c.Timeout = 2 * time.Second
+		c.Timeout = DefaultCheckTimeout
 	}
 	if c.FailureThreshold == 0 {
-		c.FailureThreshold = 3
+		c.FailureThreshold = DefaultCheckFailureThreshold
 	}
 }
 

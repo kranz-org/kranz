@@ -35,6 +35,12 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleConfirmRestartKeys(msg)
 	case ModeConfirmClearLogs:
 		return m.handleConfirmClearLogsKeys(msg)
+	case ModeConfirmAction:
+		return m.handleConfirmActionKeys(msg)
+	case ModeConfirmServiceStart:
+		return m.handleConfirmServiceStartKeys(msg)
+	case ModeConfirmServiceStop:
+		return m.handleConfirmServiceStopKeys(msg)
 	case ModeConfirmThemeSave:
 		return m.handleConfirmThemeSaveKeys(msg)
 	case ModePortConflict:
@@ -52,6 +58,15 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) handleNormalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if key.Matches(msg, m.keys.Reload) {
 		return m, tea.Batch(m.reloadConfig(true), m.probeTerminalBackground(true))
+	}
+	if key.Matches(msg, m.keys.Open) && m.panelFocus == panelServices {
+		if m.listMode == listTags {
+			m.toggleFocusedTagExpansion()
+			return m, nil
+		}
+		if command, handled := m.openFocusedListItem(); handled {
+			return m, command
+		}
 	}
 	if m.handleNavigationKey(msg) {
 		return m, nil
@@ -118,11 +133,6 @@ func (m *Model) handleNavigationKey(msg tea.KeyMsg) bool {
 		}
 		m.toggleListMode()
 		return true
-	case key.Matches(msg, m.keys.Open):
-		if m.panelFocus == panelServices && m.listMode == listTags {
-			return m.toggleFocusedTagExpansion()
-		}
-		return false
 	default:
 		return false
 	}

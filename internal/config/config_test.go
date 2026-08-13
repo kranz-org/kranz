@@ -54,6 +54,136 @@ func TestLoadInvalidFile(t *testing.T) {
 	}
 }
 
+func TestCommandNormalizesToLifecycleStartBeforeLayerMerge(t *testing.T) {
+	directory := t.TempDir()
+	basePath := filepath.Join(directory, "kranz.yaml")
+	overridePath := filepath.Join(directory, "kranz.local.yaml")
+	base := "project: Lifecycle\nservices:\n  app:\n    command: npm run dev\n"
+	override := "project: Lifecycle\nservices:\n  app:\n    lifecycle:\n      start:\n        timeout: 30s\n"
+	if err := os.WriteFile(basePath, []byte(base), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(overridePath, []byte(override), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadFiles([]string{basePath, overridePath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := cfg.Services["app"]
+	if service.Lifecycle.Start == nil || service.Lifecycle.Start.Command != "npm run dev" || service.Lifecycle.Start.Timeout != 30*time.Second {
+		t.Fatalf("normalized lifecycle start = %#v", service.Lifecycle.Start)
+	}
+	if service.Command != service.Lifecycle.Start.Command {
+		t.Fatalf("compatibility command = %q, start = %#v", service.Command, service.Lifecycle.Start)
+	}
+}
+
+func TestNativeServiceRejectsCommandAndLifecycleStartInSameFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "kranz.yaml")
+	data := "project: Conflict\nservices:\n  app:\n    command: npm run dev\n    lifecycle:\n      start:\n        command: npm run debug\n"
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Load(path)
+	if err == nil || !strings.Contains(err.Error(), path) || !strings.Contains(err.Error(), "command conflicts with lifecycle.start") {
+		t.Fatalf("conflict error = %v", err)
+	}
+}
+
+func TestLoadDetachedLifecycleDefaultsAndValidation(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "kranz.yaml")
+	data := `project: Detached
+services:
+  stack:
+    supervision: detached
+    lifecycle:
+      start:
+        command: docker compose up -d
+        timeout: 2m
+      stop:
+        command: docker compose down
+      status:
+        type: command
+        command: docker compose ps -q
+        interval: 5s
+        running_exit_codes: [0]
+        stopped_exit_codes: [3]
+`
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := cfg.Services["stack"]
+	if !service.IsDetached() || service.StopOnExitEnabled() || service.PortDiscoveryEnabled() {
+		t.Fatalf("detached defaults = %#v", service)
+	}
+	if service.Lifecycle.Status == nil || service.Lifecycle.Status.StoppedInterval != 30*time.Second {
+		t.Fatalf("status defaults = %#v", service.Lifecycle.Status)
+	}
+	if service.Lifecycle.Start.Dir == "" || service.Lifecycle.Stop.Shell == "" {
+		t.Fatalf("lifecycle context was not inherited: %#v", service.Lifecycle)
+	}
+}
+
+func TestLoadLifecyclePlayground(t *testing.T) {
+	cfg, err := Load("../../examples/lifecycle/kranz.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Services) != 5 || !cfg.Services["remote-stack"].IsDetached() || cfg.Services["observed-resource"].Lifecycle.Status == nil {
+		t.Fatalf("lifecycle playground was not loaded as expected: %#v", cfg.Services)
+	}
+	if start := cfg.Services["guarded-worker"].StartAction(); start == nil || !start.ConfirmationRequired() {
+		t.Fatalf("guarded worker start = %#v", start)
+	}
+}
+
+// TestLoadAnnotatedReferenceConfiguration keeps the documented reference file
+// honest: docs/reference/kranz-yaml.md includes this exact file, so a field
+// that stops loading or validating fails the build instead of misleading a
+// reader.
+func TestLoadAnnotatedReferenceConfiguration(t *testing.T) {
+	cfg, err := Load("../../examples/reference/kranz.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Validate(cfg); err != nil {
+		t.Fatal(err)
+	}
+	api := cfg.Services["api"]
+	if len(api.BeforeStart) != 2 || len(api.Actions) != 3 {
+		t.Fatalf("annotated api service = %#v", api)
+	}
+	if stack := cfg.Services["remote-stack"]; !stack.IsDetached() || stack.StopOnExitEnabled() {
+		t.Fatalf("annotated detached service = %#v", stack)
+	}
+}
+
+func TestLoadAllCanonicalExamples(t *testing.T) {
+	paths := []string{
+		"../../examples/native/kranz.yaml",
+		"../../examples/lifecycle/kranz.yaml",
+		"../../examples/full-stack/kranz.yaml",
+		"../../examples/full-stack/process-compose.yaml",
+		"../../examples/process-compose/process-compose.yaml",
+		"../../examples/procfile/Procfile",
+		"../../examples/runtime-ports/kranz.yaml",
+		"../../examples/prerequisites/kranz.yaml",
+		"../../examples/moonflight/kranz.yaml",
+	}
+	for _, path := range paths {
+		t.Run(filepath.Base(filepath.Dir(path))+"/"+filepath.Base(path), func(t *testing.T) {
+			if _, err := Load(path); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func TestValidateUIBackgroundSource(t *testing.T) {
 	base := &Config{Project: "Appearance", Services: map[string]Service{"app": {Command: "exit 0"}}}
 	for _, source := range []string{"", "terminal", "theme"} {
@@ -866,5 +996,435 @@ func TestValidateRejectsIncompatibleOrInvalidReadyLog(t *testing.T) {
 		if err := Validate(cfg); err == nil {
 			t.Fatalf("invalid ready_log_line config was accepted: %#v", serviceConfig)
 		}
+	}
+}
+
+func TestLoadNormalizesServiceActionsAndActionGroups(t *testing.T) {
+	directory := t.TempDir()
+	serviceDir := filepath.Join(directory, "service")
+	actionDir := filepath.Join(directory, "action")
+	groupDir := filepath.Join(directory, "infra")
+	for _, path := range []string{serviceDir, actionDir, groupDir} {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files := map[string]string{
+		filepath.Join(serviceDir, "service.env"): "SERVICE_FILE=yes\nSHARED=service-file\n",
+		filepath.Join(actionDir, "action.env"):   "ACTION_FILE=yes\nSHARED=action-file\n",
+		filepath.Join(groupDir, "group.env"):     "GROUP_FILE=yes\nSHARED=group-file\n",
+	}
+	for path, content := range files {
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	configPath := filepath.Join(directory, "kranz.yaml")
+	data := `
+project: Actions
+defaults:
+  shell: /bin/zsh
+  env:
+    GLOBAL: inherited
+services:
+  app:
+    command: run-app
+    dir: ` + serviceDir + `
+    env_files: [service.env]
+    env:
+      SERVICE_ONLY: yes
+    actions:
+      build-launcher:
+        command: npm run build:launcher
+        description: Build launcher
+        timeout: 45s
+        confirm: true
+      migrate:
+        command: npm run migrate
+        dir: ` + actionDir + `
+        env_files: [action.env]
+        env:
+          SHARED: action-explicit
+action_groups:
+  remote-infra:
+    description: Remote stack
+    dir: ` + groupDir + `
+    env_files: [group.env]
+    actions:
+      up:
+        command: ssh host docker-compose up -d
+      console:
+        command: ssh -t host shell
+        interactive: true
+`
+	if err := os.WriteFile(configPath, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	build := cfg.Services["app"].Actions["build-launcher"]
+	if build.Dir != serviceDir || build.Shell != "/bin/zsh" || build.Timeout != 45*time.Second || !build.ConfirmationRequired() {
+		t.Fatalf("normalized service action = %#v", build)
+	}
+	if build.Env["GLOBAL"] != "inherited" || build.Env["SERVICE_FILE"] != "yes" || build.Env["SERVICE_ONLY"] != "yes" {
+		t.Fatalf("inherited service action env = %v", build.Env)
+	}
+	migrate := cfg.Services["app"].Actions["migrate"]
+	if migrate.Env["ACTION_FILE"] != "yes" || migrate.Env["SHARED"] != "action-explicit" {
+		t.Fatalf("action env precedence = %v", migrate.Env)
+	}
+	group := cfg.ActionGroups["remote-infra"]
+	up := group.Actions["up"]
+	if group.Dir != groupDir || up.Dir != groupDir || up.Shell != "/bin/zsh" {
+		t.Fatalf("normalized action group = group %#v action %#v", group, up)
+	}
+	if up.Env["GLOBAL"] != "inherited" || up.Env["GROUP_FILE"] != "yes" || up.Env["SHARED"] != "group-file" {
+		t.Fatalf("inherited action group env = %v", up.Env)
+	}
+	if !group.Actions["console"].InteractiveEnabled() {
+		t.Fatal("interactive flag was not preserved")
+	}
+	for path := range files {
+		if !containsString(cfg.WatchPaths, path) {
+			t.Fatalf("action env file %s missing from watch paths %v", path, cfg.WatchPaths)
+		}
+	}
+}
+
+func TestLoadFilesMergesActionsByOwnerAndName(t *testing.T) {
+	directory := t.TempDir()
+	basePath := filepath.Join(directory, "kranz.yaml")
+	overridePath := filepath.Join(directory, "kranz.local.yaml")
+	base := `
+project: Layered Actions
+services:
+  app:
+    command: run
+    actions:
+      migrate:
+        command: migrate
+        description: Base description
+        timeout: 10s
+        confirm: true
+action_groups:
+  infra:
+    dir: ./infra
+    actions:
+      up:
+        command: up
+`
+	override := `
+project: Layered Actions
+services:
+  app:
+    actions:
+      migrate:
+        description: Local description
+        confirm: false
+      seed:
+        command: seed
+action_groups:
+  infra:
+    shell: /bin/zsh
+    actions:
+      up:
+        timeout: 30s
+      down:
+        command: down
+`
+	for path, content := range map[string]string{basePath: base, overridePath: override} {
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cfg, err := LoadFiles([]string{basePath, overridePath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	migrate := cfg.Services["app"].Actions["migrate"]
+	if migrate.Command != "migrate" || migrate.Description != "Local description" || migrate.Timeout != 10*time.Second || migrate.ConfirmationRequired() || migrate.Confirm == nil {
+		t.Fatalf("merged service action = %#v", migrate)
+	}
+	if cfg.Services["app"].Actions["seed"].Command != "seed" {
+		t.Fatalf("new service action missing: %#v", cfg.Services["app"].Actions)
+	}
+	group := cfg.ActionGroups["infra"]
+	if group.Dir != "./infra" || group.Shell != "/bin/zsh" || group.Actions["up"].Timeout != 30*time.Second || group.Actions["down"].Command != "down" {
+		t.Fatalf("merged action group = %#v", group)
+	}
+}
+
+func TestValidateActionsAndActionOnlyProjects(t *testing.T) {
+	valid := &Config{
+		Project: "Operations",
+		ActionGroups: map[string]ActionGroup{
+			"database": {Actions: map[string]Action{"migrate": {Command: "migrate"}}},
+		},
+	}
+	if err := Validate(valid); err != nil {
+		t.Fatalf("action-only project was rejected: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		config  *Config
+		wantErr string
+	}{
+		{
+			name:    "empty project",
+			config:  &Config{Project: "Empty"},
+			wantErr: "service or action group",
+		},
+		{
+			name:    "empty group",
+			config:  &Config{Project: "Empty group", ActionGroups: map[string]ActionGroup{"infra": {}}},
+			wantErr: "must contain at least one action",
+		},
+		{
+			name: "missing command",
+			config: &Config{Project: "Missing", Services: map[string]Service{"app": {
+				Command: "run", Actions: map[string]Action{"broken": {}},
+			}}},
+			wantErr: "field 'command' is required",
+		},
+		{
+			name: "negative timeout",
+			config: &Config{Project: "Timeout", ActionGroups: map[string]ActionGroup{"ops": {
+				Actions: map[string]Action{"broken": {Command: "run", Timeout: -time.Second}},
+			}}},
+			wantErr: "timeout cannot be negative",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := Validate(test.config)
+			if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("validation error = %v, want substring %q", err, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestNativeConfigRejectsUnknownActionFields(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "kranz.yaml")
+	data := `
+project: Unknown Action Field
+action_groups:
+  ops:
+    actions:
+      deploy:
+        command: deploy
+        title: Deploy
+`
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "field title not found") {
+		t.Fatalf("unknown action field error = %v", err)
+	}
+}
+
+func TestActionIDsAndResolutionAreDeterministicAndUnambiguous(t *testing.T) {
+	cfg := &Config{
+		Project: "Action IDs",
+		Services: map[string]Service{
+			"web": {Command: "run", Actions: map[string]Action{
+				"test":           {Command: "web-test"},
+				"build:launcher": {Command: "build"},
+			}},
+		},
+		ActionGroups: map[string]ActionGroup{
+			"ops": {Actions: map[string]Action{
+				"test": {Command: "ops-test"},
+			}},
+		},
+	}
+	want := []ActionID{
+		{OwnerKind: ActionOwnerService, Owner: "web", Name: "build:launcher"},
+		{OwnerKind: ActionOwnerService, Owner: "web", Name: "test"},
+		{OwnerKind: ActionOwnerGroup, Owner: "ops", Name: "test"},
+	}
+	got := cfg.ActionIDs()
+	if len(got) != len(want) {
+		t.Fatalf("action ids = %#v", got)
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("action id %d = %#v, want %#v", index, got[index], want[index])
+		}
+		action, exists := cfg.ResolveAction(got[index])
+		if !exists || action.Command == "" {
+			t.Fatalf("resolve %#v = %#v, %v", got[index], action, exists)
+		}
+	}
+	serviceTest, _ := cfg.ResolveAction(want[1])
+	groupTest, _ := cfg.ResolveAction(want[2])
+	if serviceTest.Command != "web-test" || groupTest.Command != "ops-test" {
+		t.Fatalf("same-name actions collided: service %#v group %#v", serviceTest, groupTest)
+	}
+	if _, exists := cfg.ResolveAction(ActionID{OwnerKind: "unknown", Owner: "ops", Name: "test"}); exists {
+		t.Fatal("unknown owner kind resolved")
+	}
+}
+
+func boolPointer(value bool) *bool { return &value }
+
+func TestLoadPrerequisitesResolveScopeAndRunPolicy(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "kranz.yaml")
+	data := `project: Prerequisites
+action_groups:
+  infra:
+    actions:
+      up:
+        command: docker compose up -d
+services:
+  api:
+    command: npm run dev
+    actions:
+      migrate:
+        command: npm run migrate
+    before_start:
+      - action: migrate
+      - group: infra
+        action: up
+        run: always
+  web:
+    command: npm run dev
+    before_start:
+      - service: api
+        action: migrate
+`
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	api := cfg.Services["api"]
+	if len(api.BeforeStart) != 2 {
+		t.Fatalf("api before_start = %#v", api.BeforeStart)
+	}
+	// An unqualified reference resolves against the declaring service.
+	if id := api.BeforeStart[0].ActionID("api"); id.OwnerKind != ActionOwnerService || id.Owner != "api" || id.Name != "migrate" {
+		t.Fatalf("own action reference = %#v", id)
+	}
+	if api.BeforeStart[0].RunPolicy() != PrerequisiteOnce {
+		t.Fatalf("default run policy = %q, want once", api.BeforeStart[0].RunPolicy())
+	}
+	if id := api.BeforeStart[1].ActionID("api"); id.OwnerKind != ActionOwnerGroup || id.Owner != "infra" {
+		t.Fatalf("group reference = %#v", id)
+	}
+	if api.BeforeStart[1].RunPolicy() != PrerequisiteAlways {
+		t.Fatalf("explicit run policy = %q, want always", api.BeforeStart[1].RunPolicy())
+	}
+	web := cfg.Services["web"]
+	if id := web.BeforeStart[0].ActionID("web"); id.Owner != "api" || id.Name != "migrate" {
+		t.Fatalf("cross-service reference = %#v", id)
+	}
+}
+
+func TestValidateRejectsUnusablePrerequisites(t *testing.T) {
+	base := func(prerequisite Prerequisite) *Config {
+		return &Config{
+			Project: "Prerequisites",
+			Services: map[string]Service{
+				"api": {
+					Command: "npm run dev",
+					Actions: map[string]Action{
+						"migrate":  {Command: "npm run migrate"},
+						"console":  {Command: "npm run console", Interactive: boolPointer(true)},
+						"deployed": {Command: "true"},
+					},
+					BeforeStart: []Prerequisite{prerequisite},
+				},
+			},
+		}
+	}
+	cases := []struct {
+		name         string
+		prerequisite Prerequisite
+		want         string
+	}{
+		{"unknown action", Prerequisite{Action: "missing"}, "was not found"},
+		{"unknown group", Prerequisite{Group: "nope", Action: "up"}, "was not found"},
+		{"missing action name", Prerequisite{Service: "api"}, "field 'action' is required"},
+		{"both scopes", Prerequisite{Service: "api", Group: "infra", Action: "migrate"}, "not both"},
+		{"unknown run policy", Prerequisite{Action: "migrate", Run: "sometimes"}, "run must be once or always"},
+		{"interactive action", Prerequisite{Action: "console"}, "interactive"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := Validate(base(tc.prerequisite))
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("Validate() error = %v, want it to mention %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestValidateAcceptsInteractiveActionsButNotInLifecycle(t *testing.T) {
+	cfg := &Config{
+		Project: "Interactive",
+		Services: map[string]Service{
+			"api": {
+				Command: "npm run dev",
+				Actions: map[string]Action{"console": {Command: "npm run console", Interactive: boolPointer(true)}},
+			},
+		},
+	}
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("interactive action was rejected: %v", err)
+	}
+	// A lifecycle command runs unattended, so it can never take the terminal.
+	cfg.Services["api"] = Service{
+		Supervision: SupervisionDetached,
+		Lifecycle: LifecycleConfig{
+			Start: &Action{Command: "docker compose up -d", Interactive: boolPointer(true)},
+		},
+	}
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "interactive execution is not supported") {
+		t.Fatalf("interactive lifecycle start error = %v", err)
+	}
+}
+
+func TestMergeReplacesPrerequisiteSequence(t *testing.T) {
+	directory := t.TempDir()
+	base := filepath.Join(directory, "kranz.yaml")
+	override := filepath.Join(directory, "kranz.local.yaml")
+	baseData := `project: Prerequisites
+services:
+  api:
+    command: npm run dev
+    actions:
+      migrate:
+        command: npm run migrate
+      seed:
+        command: npm run seed
+    before_start:
+      - action: migrate
+`
+	overrideData := `services:
+  api:
+    before_start:
+      - action: seed
+`
+	if err := os.WriteFile(base, []byte(baseData), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(override, []byte(overrideData), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadFiles([]string{base, override})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prerequisites := cfg.Services["api"].BeforeStart
+	if len(prerequisites) != 1 || prerequisites[0].Action != "seed" {
+		t.Fatalf("merged before_start = %#v, want the override sequence only", prerequisites)
 	}
 }

@@ -1,0 +1,88 @@
+# Prerequisites playground: work that must finish before a service starts.
+#
+# Everything here is safe. The "migration" only prints messages, and both
+# services are local HTTP servers on high ports.
+#
+#   cd examples/prerequisites
+#   kranz
+#
+# Select every service with `a`, press `s`, and watch the order in the logs:
+# the shared migration runs exactly once, then both services start.
+project: Prerequisites Playground
+version: "1.0"
+
+defaults:
+  shell: /bin/sh
+
+action_groups:
+  # A project-level group owns work that belongs to no single service.
+  environment:
+    description: Shared local environment preparation.
+    actions:
+      check-tools:
+        description: Verify the example's only external dependency.
+        command: python3 --version
+
+services:
+  catalog-api:
+    description: Starts only after the shared migration succeeds.
+    command: python3 -u ../scripts/http_service.py
+    env: {SERVICE_NAME: catalog-api, PORT: "18891"}
+    ports: [18891]
+    tags: [backend]
+    healthcheck:
+      readiness: {type: http, url: http://127.0.0.1:18891/health/ready, interval: 1s, timeout: 1s}
+    actions:
+      migrate:
+        description: Apply the example schema migration.
+        command: /bin/sh ../scripts/migrate.sh
+        timeout: 30s
+      migrate-interactive:
+        # An interactive action takes over the terminal until it exits, so it
+        # can ask a question and read the answer. Kranz suspends its interface
+        # and resumes when the command finishes, recording the exit code.
+        description: Apply migrations after answering a confirmation prompt.
+        command: /bin/sh ../scripts/interactive_migrate.sh
+        interactive: true
+    before_start:
+      # `run: always` re-checks the environment before every start and restart,
+      # because it is cheap and its result can change between starts.
+      - group: environment
+        action: check-tools
+        run: always
+      # `run: once` is the default: the migration is applied one time per Kranz
+      # session, and restarting the service does not apply it again.
+      - action: migrate
+
+  reporting-worker:
+    description: Waits for the same migration, which is not run twice.
+    command: python3 -u ../scripts/worker.py
+    env: {WORKER_NAME: reporting-worker, API_URL: "http://127.0.0.1:18891", INTERVAL: "3"}
+    tags: [workers]
+    depends_on: [catalog-api]
+    dependency_conditions:
+      catalog-api: {condition: process_healthy}
+    before_start:
+      # Referencing another service's action keeps one definition of the
+      # migration. Whichever service reaches it first runs it; the other waits
+      # for that same run instead of starting a second one.
+      - service: catalog-api
+        action: migrate
+
+  # Prerequisites are a gate, not a suggestion. To see a blocked start, change
+  # the command below to `exit 1`, reload with Ctrl+L, and start this service:
+  # it stays stopped and the failure is reported in its logs.
+  gated-demo:
+    description: Demonstrates what a failing prerequisite does.
+    command: python3 -u ../scripts/http_service.py
+    env: {SERVICE_NAME: gated-demo, PORT: "18892"}
+    ports: [18892]
+    tags: [demo]
+    disabled: true
+    actions:
+      preflight:
+        description: Edit this command to `exit 1` to see a blocked start.
+        command: echo "preflight passed"
+    before_start:
+      - action: preflight
+        run: always

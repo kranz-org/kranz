@@ -49,6 +49,79 @@ func (m *Model) renderServiceDetails(svc *service.Service, width, height int) st
 	return renderTitledPanel(m.panelStyle(panelDetails), m.panelTitleStyle(panelDetails), contentWidth, contentHeight, title, visible)
 }
 
+func (m *Model) renderActionDetails(width, height int) string {
+	contentWidth := max(1, width-2)
+	contentHeight := max(1, height-2)
+	id, action, state, exists := m.focusedActionDefinition()
+	if !exists {
+		return renderTitledPanel(m.panelStyle(panelDetails), m.panelTitleStyle(panelDetails), contentWidth, contentHeight, "[2] ACTION", []string{"", "No action selected"})
+	}
+	lines := m.actionDetailLines(id, action, state, contentWidth)
+	return renderDetailViewport(m, "[2] ACTION", lines, contentWidth, contentHeight)
+}
+
+func (m *Model) actionDetailLines(id config.ActionID, action config.Action, state service.ActionResult, contentWidth int) []string {
+	lines := []string{actionStatusIndicator(state.Status) + " " + ServiceNameStyle.Render(id.Name) + "  " + ContextBarStyle.Render(state.Status.String())}
+	owner := "service " + id.Owner
+	if id.OwnerKind == config.ActionOwnerGroup {
+		owner = "group " + id.Owner
+	}
+	lines = append(lines, detailFieldLines("OWNER", owner, contentWidth)...)
+	if action.Description != "" {
+		lines = append(lines, detailFieldLines("ABOUT", action.Description, contentWidth)...)
+	}
+	lines = append(lines, detailFieldLines("DIRECTORY", displayServiceDirectory(action.Dir, m.workingDirectory), contentWidth)...)
+	if action.Timeout > 0 {
+		lines = append(lines, detailFieldLines("TIMEOUT", action.Timeout.String(), contentWidth)...)
+	}
+	mode := "captured"
+	if action.InteractiveEnabled() {
+		mode = "interactive terminal handoff"
+	}
+	if action.ConfirmationRequired() {
+		mode += " · confirmation required"
+	}
+	lines = append(lines, detailFieldLines("MODE", mode, contentWidth)...)
+	if !state.StartedAt.IsZero() {
+		lines = append(lines, detailFieldLines("LAST RUN", state.StartedAt.Local().Format("15:04:05"), contentWidth)...)
+		if state.Status != service.ActionRunning {
+			lines = append(lines, detailFieldLines("RESULT", fmt.Sprintf("exit %d · %s", state.ExitCode, state.Duration.Round(time.Millisecond)), contentWidth)...)
+		}
+	}
+	lines = append(lines, detailFieldLines("COMMAND", action.Command, contentWidth)...)
+	return lines
+}
+
+func (m *Model) renderActionGroupDetails(group string, width, height int) string {
+	contentWidth := max(1, width-2)
+	contentHeight := max(1, height-2)
+	configured, exists := m.cfg.ActionGroups[group]
+	if !exists {
+		return renderTitledPanel(m.panelStyle(panelDetails), m.panelTitleStyle(panelDetails), contentWidth, contentHeight, "[2] ACTION GROUP", []string{"", "No action group selected"})
+	}
+	lines := []string{ServiceNameStyle.Render(group)}
+	if configured.Description != "" {
+		lines = append(lines, detailFieldLines("ABOUT", configured.Description, contentWidth)...)
+	}
+	lines = append(lines, detailFieldLines("ACTIONS", strconv.Itoa(len(configured.Actions)), contentWidth)...)
+	lines = append(lines, detailFieldLines("DIRECTORY", displayServiceDirectory(configured.Dir, m.workingDirectory), contentWidth)...)
+	return renderDetailViewport(m, "[2] ACTION GROUP", lines, contentWidth, contentHeight)
+}
+
+func renderDetailViewport(m *Model, title string, lines []string, contentWidth, contentHeight int) string {
+	maxOffset := max(0, len(lines)-contentHeight)
+	offset := min(m.detailOffset, maxOffset)
+	end := min(len(lines), offset+contentHeight)
+	if maxOffset > 0 {
+		title += ContextBarStyle.Render(fmt.Sprintf(" │ %d–%d/%d · ↑/↓", offset+1, end, len(lines)))
+	}
+	visible := append([]string(nil), lines[offset:end]...)
+	for index := range visible {
+		visible[index] = ansi.Truncate(visible[index], contentWidth, "…")
+	}
+	return renderTitledPanel(m.panelStyle(panelDetails), m.panelTitleStyle(panelDetails), contentWidth, contentHeight, title, visible)
+}
+
 func (m *Model) renderTagDetails(tag string, width, height int) string {
 	contentWidth := max(1, width-2)
 	contentHeight := max(1, height-2)
@@ -167,12 +240,38 @@ func (m *Model) serviceDetailLines(svc *service.Service, contentWidth int) []str
 	if svc.Config.Description != "" {
 		lines = append(lines, detailFieldLines("ABOUT", svc.Config.Description, contentWidth)...)
 	}
+	supervision := string(svc.Config.SupervisionMode())
+	if svc.Config.IsDetached() {
+		if svc.Config.Lifecycle.Status != nil {
+			supervision += " · observed"
+		} else {
+			supervision += " · assumed"
+		}
+	}
+	lines = append(lines, detailFieldLines("SUPERVISION", supervision, contentWidth)...)
+	if svc.Config.IsDetached() {
+		capabilities := make([]string, 0, 4)
+		if svc.Config.Lifecycle.Start != nil {
+			capabilities = append(capabilities, "start")
+		}
+		if svc.Config.Lifecycle.Stop != nil {
+			capabilities = append(capabilities, "stop")
+		}
+		if svc.Config.Lifecycle.Status != nil {
+			capabilities = append(capabilities, "status")
+		}
+		if svc.Config.Lifecycle.Logs != nil {
+			capabilities = append(capabilities, "logs")
+		}
+		lines = append(lines, detailFieldLines("LIFECYCLE", strings.Join(capabilities, ", "), contentWidth)...)
+	}
 	if len(svc.Config.Tags) == 0 {
 		lines = append(lines, detailFieldLines("TAGS", "—", contentWidth)...)
 	} else {
 		lines = append(lines, detailListItemsLines("TAGS", svc.Config.Tags, ", ", contentWidth)...)
 	}
 	lines = append(lines, dependencyDetailLines(svc, contentWidth)...)
+	lines = append(lines, prerequisiteDetailLines(svc, contentWidth)...)
 	lines = append(lines, m.renderPortDetailLines(svc, contentWidth)...)
 	detectedPorts := svc.DetectedPorts()
 	serviceActive := svc.Status() != config.StatusStopped
@@ -194,6 +293,32 @@ func (m *Model) serviceDetailLines(svc *service.Service, contentWidth int) []str
 		lines = append(lines, detailFieldLines("SUCCESS", "0, "+strings.Join(codes, ", "), contentWidth)...)
 	}
 	lines = append(lines, detailFieldLines("COMMAND", svc.Config.Command, contentWidth)...)
+	return lines
+}
+
+// prerequisiteDetailLines renders before_start so the reason a service runs
+// extra work before starting is visible without opening the configuration.
+func prerequisiteDetailLines(svc *service.Service, contentWidth int) []string {
+	if len(svc.Config.BeforeStart) == 0 {
+		return nil
+	}
+	parts := make([]string, 0, len(svc.Config.BeforeStart))
+	for _, prerequisite := range svc.Config.BeforeStart {
+		id := prerequisite.ActionID(svc.Name)
+		part := id.Name
+		if id.Owner != svc.Name {
+			part = id.Owner + " · " + id.Name
+		}
+		parts = append(parts, part+" · "+string(prerequisite.RunPolicy()))
+	}
+	combined := strings.Join(parts, "; ")
+	if lipgloss.Width("BEFORE START "+combined) <= contentWidth {
+		return detailFieldLines("BEFORE START", combined, contentWidth)
+	}
+	lines := []string{DetailLabelStyle.Render("BEFORE START")}
+	for _, part := range parts {
+		lines = append(lines, ContextBarStyle.Render("  ↳ ")+detailValue(part))
+	}
 	return lines
 }
 
@@ -347,7 +472,14 @@ func (m *Model) scrollDetails(direction int) {
 	viewportHeight := max(1, detailHeight-2)
 	contentWidth := max(1, m.dashboardLeftWidth()-2)
 	lineCount := 0
-	if m.listMode == listTags {
+	if m.listMode == listServices && m.focusedAction != nil {
+		id, action, state, exists := m.focusedActionDefinition()
+		if exists {
+			lineCount = len(m.actionDetailLines(id, action, state, contentWidth))
+		}
+	} else if m.listMode == listServices && m.focusedActionGroup != "" {
+		lineCount = 4
+	} else if m.listMode == listTags {
 		if svc := m.focusedTagService(); svc != nil {
 			lineCount = len(m.serviceDetailLines(svc, contentWidth))
 		} else {

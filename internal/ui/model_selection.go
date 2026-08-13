@@ -26,6 +26,8 @@ func (m *Model) moveFocus(next int) {
 		current.ResetNewLogCount()
 	}
 	m.focused = next
+	m.focusedAction = nil
+	m.focusedActionGroup = ""
 	m.detailOffset = 0
 	m.logOffset = 0
 	m.logAnchor = 0
@@ -72,33 +74,43 @@ func (m *Model) movePanelCursor(direction int) {
 			}
 			return
 		}
-		next := m.focused + direction
-		if next >= 0 && next < len(m.services) {
-			m.moveFocus(next)
-		}
+		m.moveServiceListCursor(direction)
 	}
 }
 
+// toggleAllSelection selects or clears every service that batch operations may
+// touch. Services marked disabled are deliberately skipped: they stay visible
+// and can still be selected and started one by one, which is what "manual start
+// only" means.
 func (m *Model) toggleAllSelection() {
-	allSelected := len(m.allServices) > 0 && len(m.selected) == len(m.allServices)
+	selectable := make([]string, 0, len(m.allServices))
+	for _, svc := range m.allServices {
+		if !svc.Config.Disabled {
+			selectable = append(selectable, svc.Name)
+		}
+	}
+	allSelected := len(selectable) > 0 && len(m.selected) == len(selectable)
 	if allSelected {
-		for _, svc := range m.allServices {
-			if !m.selected[svc.Name] {
+		for _, name := range selectable {
+			if !m.selected[name] {
 				allSelected = false
 				break
 			}
 		}
 	}
 	m.selectedTags = nil
-	m.selected = make(map[string]bool, len(m.allServices))
+	m.selected = make(map[string]bool, len(selectable))
 	if !allSelected {
-		for _, svc := range m.allServices {
-			m.selected[svc.Name] = true
+		for _, name := range selectable {
+			m.selected[name] = true
 		}
 	}
 }
 
 func (m *Model) togglePinnedLog() {
+	if m.focusedAction != nil || m.focusedActionGroup != "" {
+		return
+	}
 	if m.listMode == listTags && m.focusedTagService() == nil {
 		return
 	}
@@ -124,6 +136,8 @@ func (m *Model) togglePinnedLog() {
 func (m *Model) toggleListMode() {
 	if m.listMode == listServices {
 		m.listMode = listTags
+		m.focusedAction = nil
+		m.focusedActionGroup = ""
 	} else {
 		m.listMode = listServices
 	}
@@ -160,6 +174,9 @@ func (m *Model) toggleCurrentSelection() {
 			m.selectedTags = toggleTag(m.selectedTags, row.Tag)
 			m.syncSelectedServicesFromTags()
 		}
+		return
+	}
+	if m.focusedAction != nil || m.focusedActionGroup != "" {
 		return
 	}
 	m.toggleFocusedSelection()

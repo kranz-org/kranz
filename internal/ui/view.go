@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/kranz-org/kranz/internal/config"
+	"github.com/kranz-org/kranz/internal/service"
 )
 
 const (
@@ -40,6 +41,12 @@ func (m *Model) View() string {
 		content = m.renderConfirmRestartView()
 	case ModeConfirmClearLogs:
 		content = m.renderConfirmClearLogsView()
+	case ModeConfirmAction:
+		content = m.renderConfirmActionView()
+	case ModeConfirmServiceStart:
+		content = m.renderConfirmServiceStartView()
+	case ModeConfirmServiceStop:
+		content = m.renderConfirmServiceStopView()
 	case ModeConfirmThemeSave:
 		content = m.renderConfirmThemeSaveView()
 	case ModeThemes:
@@ -198,9 +205,11 @@ type actionButton struct {
 }
 
 func (m *Model) actionButtons() []actionButton {
+	actionFocused := m.listMode == listServices && m.focusedAction != nil
 	targets := m.selectedTargetNames()
 	allActive := len(targets) > 0
 	allRunning := len(targets) > 0
+	canToggle := len(targets) > 0
 	for _, name := range targets {
 		svc, ok := m.manager.GetService(name)
 		if !ok || !serviceStartPlanned(svc) {
@@ -208,6 +217,9 @@ func (m *Model) actionButtons() []actionButton {
 		}
 		if !ok || svc.Status() == config.StatusStopped {
 			allRunning = false
+		}
+		if !ok || (serviceStartPlanned(svc) && !svc.CanStop()) || (!serviceStartPlanned(svc) && !svc.CanStart()) {
+			canToggle = false
 		}
 	}
 	toggleStyle := PrimaryButtonStyle
@@ -227,7 +239,16 @@ func (m *Model) actionButtons() []actionButton {
 	case operationStart, operationStartSet:
 		interruptibleStart = m.operationCancel != nil && allActive
 	}
-	if len(targets) == 0 || (m.operation != "" && !interruptibleStart) {
+	if actionFocused {
+		toggleStyle = PrimaryButtonStyle
+		toggleLabel = "▶ Run action: s"
+		compactToggle = "Run: s"
+		if state, exists := m.manager.ActionState(*m.focusedAction); exists && state.Status == service.ActionRunning {
+			toggleStyle = DangerButtonStyle
+			toggleLabel = "■ Stop action: s"
+			compactToggle = "Stop: s"
+		}
+	} else if !canToggle || (m.operation != "" && !interruptibleStart) {
 		toggleStyle = DisabledButtonStyle
 	}
 	if m.width < 100 {
@@ -363,6 +384,9 @@ const (
 	visualStarting
 	visualRunning
 	visualUnhealthy
+	visualExternal
+	visualChecking
+	visualUnknown
 )
 
 func sortedStringSet(values map[string]bool) []string {

@@ -48,9 +48,9 @@ func helpEntries() []helpEntry {
 		{"↑/↓ j/k", "Navigate or scroll focused panel"},
 		{"←/→", "Cycle Services/Tags while the list panel is focused"},
 		{"t", "Toggle Services/Tags from any panel"},
-		{"Enter", "In Tags: expand or collapse services below the focused tag"},
+		{"Enter", "Expand or collapse service actions, action groups, or a tag"},
 		{"Space", "Select/unselect service or tag"},
-		{"s", "Start stopped or stop running targets"},
+		{"s", "Start/stop service targets or run the focused action"},
 		{"Shift+S", "Start or stop only targets, ignoring dependency expansion"},
 		{"a", "Select/clear all services"},
 		{"A", "Stop all services"},
@@ -237,13 +237,75 @@ func (m *Model) renderNotificationsView() string {
 
 // renderConfirmQuitView explains the process cleanup performed on exit.
 func (m *Model) renderConfirmQuitView() string {
+	managed, detachedStop, detachedKeep := m.quitLifecyclePlan()
+	body := make([]string, 0, 10)
+	if len(managed) == 0 {
+		body = append(body, "No managed processes will be stopped.")
+	} else {
+		body = appendQuitServiceNames(body, "Managed processes will stop and release their ports:", managed)
+	}
+	if len(detachedStop) > 0 {
+		body = append(body, "")
+		body = appendQuitServiceNames(body, "Detached stop commands will run:", detachedStop)
+	}
+	if len(detachedKeep) > 0 {
+		body = append(body, "")
+		body = appendQuitRetainedResources(body, detachedKeep)
+	}
+	if m.operation != "" {
+		body = append(body, "", "The current operation will be cancelled.")
+	}
+	action := "[Enter/y] Stop managed services and quit"
+	if len(managed) == 0 && len(detachedStop) == 0 && len(detachedKeep) > 0 {
+		action = "[Enter/y] Leave detached resources running and quit"
+	} else if len(detachedKeep) > 0 {
+		action = "[Enter/y] Apply this plan and quit"
+	}
 	content := renderConfirmationModal(
 		"Quit Kranz?",
-		[]string{"All child processes will be stopped and", "their listening ports will be released."},
-		"[Enter/y] Stop everything and quit",
+		body,
+		action,
 		"[Esc/n]   Stay here",
 	)
 	return m.placeOverlay(content)
+}
+
+func (m *Model) quitLifecyclePlan() (managed, detachedStop, detachedKeep []string) {
+	for _, svc := range m.manager.Services() {
+		status := svc.Status()
+		active := status == config.StatusRunning || status == config.StatusUnhealthy ||
+			status == config.StatusStarting || status == config.StatusStopping || svc.DesiredRunning()
+		if !active {
+			continue
+		}
+		if !svc.Config.IsDetached() {
+			managed = append(managed, svc.Name)
+		} else if svc.Config.StopOnExitEnabled() {
+			detachedStop = append(detachedStop, svc.Name)
+		} else {
+			detachedKeep = append(detachedKeep, svc.Name)
+		}
+	}
+	return managed, detachedStop, detachedKeep
+}
+
+func appendQuitServiceNames(lines []string, heading string, names []string) []string {
+	lines = append(lines, heading)
+	wrapped := strings.Split(ansi.Wordwrap(strings.Join(names, ", "), 58, ",/"), "\n")
+	for _, line := range wrapped {
+		lines = append(lines, "  "+line)
+	}
+	return lines
+}
+
+func appendQuitRetainedResources(lines []string, names []string) []string {
+	heading := StartingBadgeStyle.Render("⚠ WILL REMAIN RUNNING AFTER KRANZ EXITS")
+	lines = append(lines, heading)
+	wrapped := strings.Split(ansi.Wordwrap(strings.Join(names, ", "), 58, ",/"), "\n")
+	for _, line := range wrapped {
+		lines = append(lines, "  "+ServiceNameStyle.Render(line))
+	}
+	return lines
 }
 
 // renderPortConflictView renders verified ownership details for occupied ports.
@@ -280,9 +342,13 @@ func (m *Model) renderPortConflictView() string {
 
 // renderConfirmRestartView lists dependent services affected by a restart.
 func (m *Model) renderConfirmRestartView() string {
+	body := []string{"Running services will be stopped and started again."}
+	if m.confirmAction != "" {
+		body = append(body, fmt.Sprintf("Also restarts: %s", m.confirmAction))
+	}
 	content := renderConfirmationModal(
-		fmt.Sprintf("Restart %q", m.confirmTarget),
-		[]string{fmt.Sprintf("Also restarts: %s", m.confirmAction)},
+		fmt.Sprintf("Restart %q?", m.confirmTarget),
+		body,
 		"[Enter/y] Continue  [Esc/n] Cancel",
 	)
 	return m.placeOverlay(content)
@@ -299,6 +365,137 @@ func (m *Model) renderConfirmClearLogsView() string {
 		"[Enter] Clear  [Esc] Cancel",
 	)
 	return m.placeOverlay(content)
+}
+
+func (m *Model) renderConfirmActionView() string {
+	if m.pendingAction == nil {
+		return m.placeOverlay(renderConfirmationModal(
+			"Run action?",
+			[]string{"The selected action is no longer available."},
+			"[Esc/n] Cancel",
+		))
+	}
+	id := *m.pendingAction
+	if m.pendingActionStop {
+		content := renderConfirmationModal(
+			fmt.Sprintf("Stop action %q?", id.Name),
+			[]string{fmt.Sprintf("Owner: %s", id.Owner), "The running action will be cancelled."},
+			"[Enter/y] Stop  [Esc/n] Cancel",
+		)
+		return m.placeOverlay(content)
+	}
+	action, exists := m.cfg.ResolveAction(id)
+	if !exists {
+		return m.placeOverlay(renderConfirmationModal(
+			fmt.Sprintf("Run action %q?", id.Name),
+			[]string{"The action is no longer configured."},
+			"[Esc/n] Cancel",
+		))
+	}
+	body := m.renderActionStartConfirmationBody(id, action)
+	prompt := "[Enter/y] Run  [Esc/n] Cancel"
+	if action.InteractiveEnabled() {
+		prompt = "[Enter/y] Hand over the terminal  [Esc/n] Cancel"
+	}
+	content := renderConfirmationModal(
+		fmt.Sprintf("Run action %q?", id.Name),
+		body,
+		prompt,
+	)
+	return m.placeOverlay(content)
+}
+
+func (m *Model) renderActionStartConfirmationBody(id config.ActionID, action config.Action) []string {
+	notice := "⚠ CONFIRM BEFORE RUNNING"
+	if action.InteractiveEnabled() {
+		notice = "⚠ KRANZ WILL LEAVE THE SCREEN"
+	}
+	body := []string{
+		StartingBadgeStyle.Render(notice),
+		DetailLabelStyle.Render("OWNER  ") + LogSystemStyle.Render(id.Owner),
+	}
+	if action.InteractiveEnabled() {
+		body = append(body,
+			"",
+			ServiceStartingStyle.Render("This action takes over your terminal so you can answer it."),
+			ServiceStartingStyle.Render("Kranz returns as soon as the command exits."),
+		)
+	}
+	if action.Description != "" {
+		body = append(body, ServiceNameStyle.Render(action.Description))
+	}
+	body = append(body, "", DetailLabelStyle.Render("COMMAND"))
+	commandWidth := max(20, min(58, m.width-20))
+	for _, line := range wrapDetailValue(action.Command, commandWidth) {
+		body = append(body, "  "+LogSystemStyle.Render(line))
+	}
+	return body
+}
+
+func (m *Model) renderConfirmServiceStopView() string {
+	verb := "Stop"
+	if m.pendingStopForce {
+		verb = "Force stop"
+	}
+	body := []string{"Running services will be stopped."}
+	for _, name := range m.pendingStopNames {
+		if svc, ok := m.manager.GetService(name); ok && svc.Config.IsDetached() {
+			body = append(body, "Configured detached lifecycle stop commands will be executed.")
+			break
+		}
+	}
+	content := renderConfirmationModal(
+		fmt.Sprintf("%s %s?", verb, m.pendingStopTarget),
+		body,
+		"[Enter/y] Stop  [Esc/n] Cancel",
+	)
+	return m.placeOverlay(content)
+}
+
+func (m *Model) renderConfirmServiceStartView() string {
+	verb := "Start"
+	if m.pendingStartForce {
+		verb = "Force start"
+	}
+	body := m.renderServiceStartConfirmationBody()
+	content := renderConfirmationModal(
+		fmt.Sprintf("%s %s?", verb, m.pendingStartTarget),
+		body,
+		"[Enter/y] Start  [Esc/n] Cancel",
+	)
+	return m.placeOverlay(content)
+}
+
+func (m *Model) renderServiceStartConfirmationBody() []string {
+	names := m.startConfirmationServiceNames(m.pendingStartNames, !m.pendingStartForce)
+	body := []string{StartingBadgeStyle.Render("⚠ CONFIRM BEFORE STARTING")}
+	if len(names) == 0 {
+		return append(body, "The lifecycle start command requires confirmation.")
+	}
+
+	commandWidth := max(20, min(58, m.width-20))
+	for index, name := range names {
+		if index > 0 {
+			body = append(body, "")
+		}
+		svc, ok := m.manager.GetService(name)
+		if !ok {
+			continue
+		}
+		start := svc.Config.StartAction()
+		if start == nil {
+			continue
+		}
+		body = append(body, DetailLabelStyle.Render("SERVICE  ")+ServiceNameStyle.Render(name))
+		if start.Description != "" {
+			body = append(body, start.Description)
+		}
+		body = append(body, DetailLabelStyle.Render("COMMAND"))
+		for _, line := range wrapDetailValue(start.Command, commandWidth) {
+			body = append(body, "  "+LogSystemStyle.Render(line))
+		}
+	}
+	return body
 }
 
 func (m *Model) renderConfirmThemeSaveView() string {

@@ -18,6 +18,29 @@ CI runs the same two gates. `make lint` downloads the golangci-lint version pinn
 
 For TUI changes, test both light and dark terminal profiles, narrow terminals down to 64×14, keyboard input, and clickable controls. Add regression tests for lifecycle, persistence, or rendering bugs.
 
+## Documentation
+
+The documentation site is VitePress. `npm run docs:dev` serves it locally,
+`npm run docs:build` is the CI gate, and `npm run docs:check-links` validates
+every relative link.
+
+Terminal recordings are generated, not captured by hand. Each one has a tape in
+`docs/assets/tapes/`, so a recording can be reproduced after the interface
+changes:
+
+```bash
+make build
+vhs docs/assets/tapes/prerequisites.tape
+```
+
+Tapes assume they are run from the repository root with a fresh binary in
+`./bin`. Keep them short and keep the terminal size consistent with the
+existing tapes so the site's frames match.
+
+`examples/reference/kranz.yaml` is included verbatim by the annotated
+configuration page and is loaded and validated by a test. Update it when the
+schema changes rather than editing the rendered documentation.
+
 ## Pull requests
 
 - Create a dedicated branch for every change, including small fixes and

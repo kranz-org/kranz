@@ -1,0 +1,25 @@
+version: "0.5"
+name: Northstar Process Compose
+
+processes:
+  migrate:
+    command: /bin/sh ../scripts/migrate.sh
+    namespace: setup
+
+  api:
+    command: python3 -u ../scripts/http_service.py
+    environment: {SERVICE_NAME: process-compose-api, PORT: "18901"}
+    namespace: backend
+    depends_on:
+      migrate: {condition: process_completed_successfully}
+    readiness_probe:
+      http_get: {host: 127.0.0.1, scheme: http, path: /health/ready, port: 18901}
+      period_seconds: 1
+      timeout_seconds: 1
+
+  worker:
+    command: python3 -u ../scripts/worker.py
+    environment: {WORKER_NAME: process-compose-worker, API_URL: http://127.0.0.1:18901, INTERVAL: "3"}
+    namespace: workers
+    depends_on:
+      api: {condition: process_healthy}

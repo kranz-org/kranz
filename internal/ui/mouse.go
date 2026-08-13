@@ -217,8 +217,9 @@ func (m *Model) handleServiceRowClick(row, listHeight, column int) {
 	if index < start || index >= end {
 		return
 	}
-	m.moveFocus(index)
-	if column >= checkboxMinColumn && column <= checkboxMaxColumn {
+	rows := m.serviceListRows()
+	m.focusServiceListRow(index)
+	if index < len(rows) && rows[index].Kind == actionRowService && column >= checkboxMinColumn && column <= checkboxMaxColumn {
 		m.toggleFocusedSelection()
 	}
 }
@@ -288,9 +289,10 @@ func (m *Model) handleOverlayMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 	case ModeConfirmRestart:
 		if renderedTextHit(rendered, msg.X, msg.Y, "[Enter/y] Continue") {
-			return m.beginRestart(m.confirmTarget)
+			return m.confirmRestart()
 		}
 		if renderedTextHit(rendered, msg.X, msg.Y, "[Esc/n] Cancel") {
+			m.confirmRestartAll = false
 			m.mode = ModeNormal
 		}
 	case ModeConfirmClearLogs:
@@ -301,6 +303,27 @@ func (m *Model) handleOverlayMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			m.clearTarget = ""
 			m.clearPinned = false
 			m.mode = ModeNormal
+		}
+	case ModeConfirmAction:
+		if renderedTextHit(rendered, msg.X, msg.Y, "[Enter/y] Run") || renderedTextHit(rendered, msg.X, msg.Y, "[Enter/y] Stop") {
+			return m, m.confirmPendingAction()
+		}
+		if renderedTextHit(rendered, msg.X, msg.Y, "[Esc/n] Cancel") {
+			m.cancelPendingAction()
+		}
+	case ModeConfirmServiceStart:
+		if renderedTextHit(rendered, msg.X, msg.Y, "[Enter/y] Start") {
+			return m.confirmServiceStart()
+		}
+		if renderedTextHit(rendered, msg.X, msg.Y, "[Esc/n] Cancel") {
+			m.cancelServiceStartConfirmation()
+		}
+	case ModeConfirmServiceStop:
+		if renderedTextHit(rendered, msg.X, msg.Y, "[Enter/y] Stop") {
+			return m.confirmServiceStop()
+		}
+		if renderedTextHit(rendered, msg.X, msg.Y, "[Esc/n] Cancel") {
+			m.cancelServiceStopConfirmation()
 		}
 	case ModeConfirmThemeSave:
 		if renderedTextHit(rendered, msg.X, msg.Y, "[Enter/y] Save") {

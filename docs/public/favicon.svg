@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="102 102 1050 1050" role="img" aria-labelledby="title desc">
+  <title id="title">Kranz</title>
+  <desc id="desc">The Kranz hub mark, drawn for small sizes.</desc>
+  <defs>
+    <linearGradient id="hub" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#F1F5F9"/>
+      <stop offset="1" stop-color="#D8E0EA"/>
+    </linearGradient>
+  </defs>
+  <!-- At sixteen pixels the six service nodes and their connectors turn to
+       mush, so the favicon keeps only the hub the header mark is built around. -->
+  <rect x="102" y="102" width="1050" height="1050" rx="230" fill="#0B0F15"/>
+  <g transform="translate(627 610) scale(2.55) translate(-627 -610)">
+    <path d="M627 464 L755 538 L755 681 L627 756 L499 681 L499 538 Z" fill="url(#hub)"/>
+    <path d="M582 554 V676 M582 616 H616 M616 616 L679 557 M616 616 L679 675" fill="none" stroke="#0B0F15" stroke-width="14" stroke-linecap="square" stroke-linejoin="miter"/>
+  </g>
+</svg>

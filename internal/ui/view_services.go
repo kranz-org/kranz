@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -35,14 +36,18 @@ func (m *Model) renderServiceColumn(width, height int) string {
 	listHeight, detailHeight := m.serviceColumnLayout(height)
 	serviceList := m.renderServicePanel(width, listHeight)
 	if listHeight == collapsedPanelHeight {
-		title := "[1] SERVICES"
+		title := "[1] " + m.servicePanelLabel()
 		if m.listMode == listTags {
 			title = "[1] TAGS"
 		}
 		serviceList = renderCollapsedPanel(title, width)
 	}
 	details := m.renderServiceDetails(m.FocusedService(), width, detailHeight)
-	if m.listMode == listTags {
+	if m.listMode == listServices && m.focusedAction != nil {
+		details = m.renderActionDetails(width, detailHeight)
+	} else if m.listMode == listServices && m.focusedActionGroup != "" {
+		details = m.renderActionGroupDetails(m.focusedActionGroup, width, detailHeight)
+	} else if m.listMode == listTags {
 		if svc := m.focusedTagService(); svc != nil {
 			details = m.renderServiceDetails(svc, width, detailHeight)
 		} else {
@@ -55,6 +60,20 @@ func (m *Model) renderServiceColumn(width, height int) string {
 	return lipgloss.JoinVertical(lipgloss.Left, serviceList, details)
 }
 
+func (m *Model) servicePanelLabel() string {
+	hasServices := m.cfg != nil && len(m.cfg.Services) > 0
+	hasActionGroups := m.cfg != nil && len(m.cfg.ActionGroups) > 0
+
+	switch {
+	case hasServices && hasActionGroups:
+		return "SERVICES/ACTIONS"
+	case hasActionGroups:
+		return "ACTIONS"
+	default:
+		return "SERVICES"
+	}
+}
+
 func (m *Model) serviceColumnLayout(height int) (listHeight, detailHeight int) {
 	if height <= compactDashboardHeight-dashboardHeaderRows-dashboardFooterRows {
 		if m.panelFocus == panelDetails {
@@ -63,7 +82,7 @@ func (m *Model) serviceColumnLayout(height int) (listHeight, detailHeight int) {
 		return max(collapsedPanelHeight, height-collapsedPanelHeight), collapsedPanelHeight
 	}
 
-	itemCount := len(m.services)
+	itemCount := len(m.serviceListRows())
 	if m.listMode == listTags {
 		itemCount = len(m.tagRows())
 	}
@@ -90,22 +109,23 @@ func (m *Model) renderServicePanel(width, height int) string {
 	}
 	contentWidth := max(1, width-2)
 	contentHeight := max(1, height-2)
-	if len(m.services) == 0 {
-		return renderTitledPanel(m.panelStyle(panelServices), m.panelTitleStyle(panelServices), contentWidth, contentHeight, "[1] SERVICES", []string{"", "No services"})
+	rows := m.serviceListRows()
+	panelTitle := "[1] " + m.servicePanelLabel()
+	if len(rows) == 0 {
+		return renderTitledPanel(m.panelStyle(panelServices), m.panelTitleStyle(panelServices), contentWidth, contentHeight, panelTitle, []string{"", "No services or actions"})
 	}
 
-	meta := fmt.Sprintf("%d · 1 → Tags", len(m.services))
+	meta := fmt.Sprintf("%d · 1→Tags · %d actions · Enter open · s run", len(m.services), len(m.cfg.ActionIDs()))
 	if len(m.selected) > 0 {
 		meta += fmt.Sprintf(" · SELECTED %d", len(m.selected))
 	} else if len(m.selectedTags) > 0 {
 		meta += fmt.Sprintf(" · TAGS %d", len(m.selectedTags))
 	}
-	title := "[1] SERVICES" + ContextBarStyle.Render(" │ "+meta)
+	title := panelTitle + ContextBarStyle.Render(" │ "+meta)
 	lines := make([]string, 0, contentHeight)
 	start, end := m.visibleServiceRange(height)
-	for i := start; i < end; i++ {
-		svc := m.services[i]
-		line := m.renderServiceLine(i, svc, contentWidth)
+	for index := start; index < end; index++ {
+		line := m.renderServiceListRow(index, rows[index], contentWidth)
 		lines = append(lines, line)
 	}
 	for index := range lines {
@@ -116,15 +136,105 @@ func (m *Model) renderServicePanel(width, height int) string {
 }
 
 func (m *Model) visibleServiceRange(height int) (start, end int) {
+	rows := m.serviceListRows()
 	available := max(1, height-2) // the title shares the top border row
-	if len(m.services) <= available {
-		return 0, len(m.services)
+	if len(rows) <= available {
+		return 0, len(rows)
 	}
-	start = max(0, m.focused-available/2)
-	if start+available > len(m.services) {
-		start = max(0, len(m.services)-available)
+	cursor := max(0, m.focusedServiceListRow())
+	start = max(0, cursor-available/2)
+	if start+available > len(rows) {
+		start = max(0, len(rows)-available)
 	}
-	return start, min(len(m.services), start+available)
+	return start, min(len(rows), start+available)
+}
+
+func (m *Model) renderServiceListRow(index int, row actionListRow, width int) string {
+	focused := index == m.focusedServiceListRow()
+	switch row.Kind {
+	case actionRowService:
+		return m.renderServiceOwnerLine(row.Service, width, focused)
+	case actionRowGroup:
+		disclosure := "▸"
+		if m.expandedActionOwner[actionOwnerKey(config.ActionOwnerGroup, row.Group)] {
+			disclosure = "▾"
+		}
+		line := "   " + ContextBarStyle.Render(disclosure) + "  " + ServiceNameStyle.Render(row.Group)
+		return renderListLine(line, width, focused)
+	case actionRowAction:
+		state, _ := m.manager.ActionState(row.Action)
+		status := actionStatusIndicator(state.Status) + " " + row.Action.Name
+		if state.Status != service.ActionReady {
+			status += ContextBarStyle.Render("  " + state.Status.String())
+		}
+		if state.Duration > 0 && state.Status != service.ActionRunning {
+			status += ContextBarStyle.Render(" · " + state.Duration.Round(time.Millisecond).String())
+		}
+		return renderListLine("      "+status, width, focused)
+	default:
+		return ""
+	}
+}
+
+func (m *Model) renderServiceOwnerLine(svc *service.Service, width int, focused bool) string {
+	disclosure := " "
+	if len(svc.Config.Actions) > 0 {
+		disclosure = "▸"
+		if m.expandedActionOwner[actionOwnerKey(config.ActionOwnerService, svc.Name)] {
+			disclosure = "▾"
+		}
+	}
+	visualState := m.serviceVisualState(svc)
+	selection := selectionIndicator(m.selected[svc.Name])
+	line := "  " + selection + " " + serviceStatusIndicator(visualState) + " " + ServiceNameStyle.Render(svc.Name)
+	if visualState == visualQueued {
+		line += StartingBadgeStyle.Render("  queued")
+	}
+	if !focused && svc.NewLogCount() > 0 {
+		line += NewLogIndicatorStyle.Render(fmt.Sprintf(" +%d", svc.NewLogCount()))
+	}
+	if disclosure != " " {
+		line += ContextBarStyle.Render(" " + disclosure)
+	}
+	return renderListLine(line, width, focused)
+}
+
+func renderListLine(line string, width int, focused bool) string {
+	marker := "  "
+	if focused {
+		marker = HelpKeyStyle.Render("› ")
+	}
+	line = marker + strings.TrimPrefix(line, "  ")
+	line = ansi.Truncate(line, width, "…")
+	if lipgloss.Width(line) < width {
+		line += strings.Repeat(" ", width-lipgloss.Width(line))
+	}
+	if focused {
+		return renderSelectedLine(line)
+	}
+	return line
+}
+
+func selectionIndicator(selected bool) string {
+	if selected {
+		return RunningBadgeStyle.Render("[✓]")
+	}
+	return ContextBarStyle.Render("[ ]")
+}
+
+func actionStatusIndicator(status service.ActionStatus) string {
+	switch status {
+	case service.ActionRunning:
+		return StartingBadgeStyle.Render("◐")
+	case service.ActionSucceeded:
+		return RunningBadgeStyle.Render("✓")
+	case service.ActionFailed, service.ActionTimedOut:
+		return FailedBadgeStyle.Render("×")
+	case service.ActionCancelled:
+		return StartingBadgeStyle.Render("■")
+	default:
+		return ContextBarStyle.Render("○")
+	}
 }
 
 func (m *Model) renderTagPanel(width, height int) string {
@@ -150,11 +260,11 @@ func (m *Model) renderTagPanel(width, height int) string {
 			if index == m.tagCursor {
 				marker = HelpKeyStyle.Render("› ")
 			}
-			check := "[ ]"
+			check := selectionIndicator(false)
 			var line string
 			if row.Service == nil {
 				if containsTagStr(m.selectedTags, row.Tag) {
-					check = RunningBadgeStyle.Render("[✓]")
+					check = selectionIndicator(true)
 				}
 				disclosure := "▸"
 				if m.expandedTags[row.Tag] {
@@ -164,7 +274,7 @@ func (m *Model) renderTagPanel(width, height int) string {
 				line = fmt.Sprintf("%s%s %s %s (%d)", marker, check, disclosure, row.Tag, count)
 			} else {
 				if m.selected[row.Service.Name] {
-					check = RunningBadgeStyle.Render("[✓]")
+					check = selectionIndicator(true)
 				}
 				visualState := m.serviceVisualState(row.Service)
 				line = fmt.Sprintf("%s  %s %s %s", marker, check, serviceStatusIndicator(visualState), row.Service.Name)
@@ -200,38 +310,7 @@ func (m *Model) visibleTagRange(height int) (start, end int) {
 
 // renderServiceLine renders selection, health state, name, and unread log count.
 func (m *Model) renderServiceLine(index int, svc *service.Service, width int) string {
-	focusMarker := "  "
-	if index == m.focused {
-		focusMarker = HelpKeyStyle.Render("› ")
-	}
-
-	visualState := m.serviceVisualState(svc)
-	selection := "[ ]"
-	if m.selected[svc.Name] {
-		selection = RunningBadgeStyle.Render("[✓]")
-	}
-	line := focusMarker + selection + " " + serviceStatusIndicator(visualState) + " " + ServiceNameStyle.Render(svc.Name)
-	if visualState == visualQueued {
-		line += StartingBadgeStyle.Render("  queued")
-	}
-
-	// Unread counts disappear as soon as the service receives focus.
-	newIndicator := ""
-	if index != m.focused && svc.NewLogCount() > 0 {
-		count := svc.NewLogCount()
-		newIndicator = NewLogIndicatorStyle.Render(fmt.Sprintf(" +%d", count))
-	}
-
-	line += newIndicator
-	line = ansi.Truncate(line, width, "…")
-	if lipgloss.Width(line) < width {
-		line += strings.Repeat(" ", width-lipgloss.Width(line))
-	}
-
-	if index == m.focused {
-		return renderSelectedLine(line)
-	}
-	return line
+	return m.renderServiceOwnerLine(svc, width, index == m.focused && m.focusedAction == nil && m.focusedActionGroup == "")
 }
 
 func serviceStatusIndicator(state serviceVisualState) string {
@@ -244,6 +323,12 @@ func serviceStatusIndicator(state serviceVisualState) string {
 		return StartingBadgeStyle.Render("●")
 	case visualUnhealthy:
 		return FailedBadgeStyle.Render("●")
+	case visualExternal:
+		return ContextBarStyle.Render("○")
+	case visualChecking:
+		return StartingBadgeStyle.Render("○")
+	case visualUnknown:
+		return ContextBarStyle.Render("?")
 	default:
 		return StoppedBadgeStyle.Render("●")
 	}
@@ -262,6 +347,12 @@ func serviceStatusLabel(status config.ServiceStatus, state serviceVisualState) s
 		return "Queued"
 	case visualUnhealthy:
 		return "Unhealthy"
+	case visualExternal:
+		return "External"
+	case visualChecking:
+		return "Checking"
+	case visualUnknown:
+		return "Unknown"
 	default:
 		return "Stopped"
 	}
@@ -269,6 +360,16 @@ func serviceStatusLabel(status config.ServiceStatus, state serviceVisualState) s
 
 func (m *Model) serviceVisualState(svc *service.Service) serviceVisualState {
 	switch svc.Status() {
+	case config.StatusUnknown:
+		if svc.Config.IsDetached() {
+			if svc.Config.Lifecycle.Status == nil {
+				return visualExternal
+			}
+			if !svc.LifecycleStatusObserved() {
+				return visualChecking
+			}
+		}
+		return visualUnknown
 	case config.StatusStopped:
 		if svc.DesiredRunning() {
 			return visualQueued

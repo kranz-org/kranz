@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// Validate checks project metadata, commands, dependencies, ports, and probes.
+// Validate checks project metadata, commands, actions, dependencies, ports, and probes.
 func Validate(cfg *Config) error {
 	if cfg.Project == "" {
 		return fmt.Errorf("field 'project' is required")
@@ -23,8 +23,8 @@ func Validate(cfg *Config) error {
 		return fmt.Errorf("ui.color_mode must be auto, dark, or light, got %q", cfg.UI.ColorMode)
 	}
 
-	if len(cfg.Services) == 0 {
-		return fmt.Errorf("section 'services' must contain at least one service")
+	if len(cfg.Services) == 0 && len(cfg.ActionGroups) == 0 {
+		return fmt.Errorf("configuration must contain at least one service or action group")
 	}
 
 	svcNames := make(map[string]bool)
@@ -33,8 +33,14 @@ func Validate(cfg *Config) error {
 	}
 
 	for name, svc := range cfg.Services {
-		if svc.Command == "" {
-			return fmt.Errorf("service %q: field 'command' is required", name)
+		if err := validateServiceLifecycle(name, svc); err != nil {
+			return err
+		}
+		if err := validateActions(fmt.Sprintf("service %q", name), svc.Actions); err != nil {
+			return err
+		}
+		if err := validatePrerequisites(cfg, name, svc); err != nil {
+			return err
 		}
 
 		// Validate references before cycle detection to produce actionable errors.
@@ -97,12 +103,141 @@ func Validate(cfg *Config) error {
 			}
 		}
 	}
+	for name, group := range cfg.ActionGroups {
+		if strings.TrimSpace(name) == "" {
+			return fmt.Errorf("action group name cannot be empty")
+		}
+		if len(group.Actions) == 0 {
+			return fmt.Errorf("action group %q must contain at least one action", name)
+		}
+		if err := validateActions(fmt.Sprintf("action group %q", name), group.Actions); err != nil {
+			return err
+		}
+	}
 
 	// Cycles would make lifecycle ordering impossible.
 	if err := detectCycles(cfg); err != nil {
 		return err
 	}
 
+	return nil
+}
+
+func validateServiceLifecycle(name string, svc Service) error {
+	mode := svc.SupervisionMode()
+	if mode != SupervisionProcess && mode != SupervisionDetached {
+		return fmt.Errorf("service %q: supervision must be process or detached, got %q", name, svc.Supervision)
+	}
+	start := svc.StartAction()
+	if mode == SupervisionProcess && (start == nil || strings.TrimSpace(start.Command) == "") {
+		return fmt.Errorf("service %q: command or lifecycle.start is required for process supervision", name)
+	}
+	if mode == SupervisionDetached && start == nil && svc.Lifecycle.Stop == nil && svc.Lifecycle.Status == nil {
+		return fmt.Errorf("service %q: detached supervision requires lifecycle.start, lifecycle.stop, or lifecycle.status", name)
+	}
+	for role, action := range map[string]*Action{"start": start, "stop": svc.Lifecycle.Stop, "logs": svc.Lifecycle.Logs} {
+		if action == nil {
+			continue
+		}
+		if strings.TrimSpace(action.Command) == "" {
+			return fmt.Errorf("service %q lifecycle.%s: field 'command' is required", name, role)
+		}
+		if action.Timeout < 0 {
+			return fmt.Errorf("service %q lifecycle.%s: timeout cannot be negative", name, role)
+		}
+		if action.InteractiveEnabled() {
+			return fmt.Errorf("service %q lifecycle.%s: interactive execution is not supported", name, role)
+		}
+	}
+	if mode == SupervisionProcess {
+		if svc.Lifecycle.Stop != nil || svc.Lifecycle.Status != nil || svc.Lifecycle.Logs != nil {
+			return fmt.Errorf("service %q: lifecycle.stop, status, and logs require detached supervision", name)
+		}
+		if svc.StopOnExit != nil && !*svc.StopOnExit {
+			return fmt.Errorf("service %q: stop_on_exit: false requires detached supervision", name)
+		}
+		return nil
+	}
+	if svc.DetectPorts != nil && *svc.DetectPorts {
+		return fmt.Errorf("service %q: detect_ports: true is not supported with detached supervision", name)
+	}
+	if svc.Availability.Restart != "" && svc.Availability.Restart != "no" {
+		return fmt.Errorf("service %q: availability.restart is not supported with detached supervision", name)
+	}
+	if svc.Lifecycle.Status != nil {
+		status := svc.Lifecycle.Status
+		if err := validateCheckConfig(name, "lifecycle.status", &status.CheckConfig, false); err != nil {
+			return err
+		}
+		if status.Type != CheckCommand {
+			return fmt.Errorf("service %q: lifecycle.status currently supports only type command", name)
+		}
+		if status.StoppedInterval < 0 {
+			return fmt.Errorf("service %q: lifecycle.status stopped_interval cannot be negative", name)
+		}
+		if err := validateStatusExitCodes(name, status); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateStatusExitCodes(name string, status *LifecycleStatusConfig) error {
+	seen := make(map[int]string)
+	for kind, codes := range map[string][]int{"running": status.RunningExitCodes, "stopped": status.StoppedExitCodes} {
+		for _, code := range codes {
+			if code < 0 || code > 255 {
+				return fmt.Errorf("service %q: lifecycle.status %s exit code %d is outside 0..255", name, kind, code)
+			}
+			if previous, exists := seen[code]; exists {
+				return fmt.Errorf("service %q: lifecycle.status exit code %d is both %s and %s", name, code, previous, kind)
+			}
+			seen[code] = kind
+		}
+	}
+	return nil
+}
+
+func validatePrerequisites(cfg *Config, name string, svc Service) error {
+	for index, prerequisite := range svc.BeforeStart {
+		position := fmt.Sprintf("service %q before_start[%d]", name, index)
+		if prerequisite.Service != "" && prerequisite.Group != "" {
+			return fmt.Errorf("%s: set either service or group, not both", position)
+		}
+		if strings.TrimSpace(prerequisite.Action) == "" {
+			return fmt.Errorf("%s: field 'action' is required", position)
+		}
+		switch prerequisite.RunPolicy() {
+		case PrerequisiteOnce, PrerequisiteAlways:
+		default:
+			return fmt.Errorf("%s: run must be once or always, got %q", position, prerequisite.Run)
+		}
+		id := prerequisite.ActionID(name)
+		action, exists := cfg.ResolveAction(id)
+		if !exists {
+			return fmt.Errorf("%s: %s was not found", position, prerequisite.String(name))
+		}
+		// A prerequisite runs unattended while a start is already in flight, so
+		// it cannot be one of the actions that takes over the terminal.
+		if action.InteractiveEnabled() {
+			return fmt.Errorf("%s: %s is interactive and cannot be a prerequisite", position, prerequisite.String(name))
+		}
+	}
+	return nil
+}
+
+func validateActions(owner string, actions map[string]Action) error {
+	for name, action := range actions {
+		if strings.TrimSpace(name) == "" {
+			return fmt.Errorf("%s: action name cannot be empty", owner)
+		}
+		if strings.TrimSpace(action.Command) == "" {
+			return fmt.Errorf("%s action %q: field 'command' is required", owner, name)
+		}
+		if action.Timeout < 0 {
+			return fmt.Errorf("%s action %q: timeout cannot be negative", owner, name)
+		}
+	}
 	return nil
 }
 

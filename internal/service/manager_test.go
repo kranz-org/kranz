@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/kranz-org/kranz/internal/config"
+	"github.com/kranz-org/kranz/internal/health"
 )
 
 func TestDependencyGatedStartExposesAndClearsQueuedIntent(t *testing.T) {
@@ -53,6 +54,321 @@ func TestDependencyGatedStartExposesAndClearsQueuedIntent(t *testing.T) {
 	if api.DesiredRunning() {
 		t.Fatal("canceled service remained queued")
 	}
+}
+
+func TestDetachedLifecycleRunsStartAndStopDefinitions(t *testing.T) {
+	directory := t.TempDir()
+	marker := filepath.Join(directory, "running")
+	serviceConfig := config.Service{
+		Supervision: config.SupervisionDetached,
+		Lifecycle: config.LifecycleConfig{
+			Start: &config.Action{Command: "touch " + marker, Dir: directory, Shell: "/bin/sh"},
+			Stop:  &config.Action{Command: "rm " + marker, Dir: directory, Shell: "/bin/sh"},
+		},
+	}
+	manager := NewManager(&config.Config{Project: "Detached", Services: map[string]config.Service{"stack": serviceConfig}})
+	defer manager.Shutdown()
+	service, _ := manager.GetService("stack")
+	if service.Status() != config.StatusUnknown {
+		t.Fatalf("initial detached status = %s", service.Status())
+	}
+	if err := manager.StartService("stack"); err != nil {
+		t.Fatal(err)
+	}
+	if service.Status() != config.StatusRunning || service.PID() != 0 {
+		t.Fatalf("started detached state = %#v", service.GetState())
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("start marker: %v", err)
+	}
+	if err := manager.StopService("stack"); err != nil {
+		t.Fatal(err)
+	}
+	if service.Status() != config.StatusStopped {
+		t.Fatalf("stopped detached state = %#v", service.GetState())
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("stop marker still exists: %v", err)
+	}
+}
+
+func TestCancelDetachedStartLeavesUnknownAndAllowsCleanup(t *testing.T) {
+	directory := t.TempDir()
+	started := filepath.Join(directory, "start-began")
+	finished := filepath.Join(directory, "start-finished")
+	cleaned := filepath.Join(directory, "cleaned")
+	manager := NewManager(&config.Config{Project: "Detached", Services: map[string]config.Service{
+		"stack": {
+			Supervision: config.SupervisionDetached,
+			Lifecycle: config.LifecycleConfig{
+				Start: &config.Action{
+					Command: "touch start-began; sleep 30; touch start-finished",
+					Dir:     directory, Shell: "/bin/sh",
+				},
+				Stop: &config.Action{Command: "touch cleaned", Dir: directory, Shell: "/bin/sh"},
+			},
+		},
+	}})
+	defer manager.Shutdown()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	startResult := make(chan error, 1)
+	go func() { startResult <- manager.StartServicesContext(ctx, []string{"stack"}) }()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if _, err := os.Stat(started); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("detached start command did not begin")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	cancel()
+	if err := manager.StopService("stack"); err != nil {
+		t.Fatalf("cleanup after canceled start: %v", err)
+	}
+	if err := <-startResult; !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled start error = %v, want context cancellation", err)
+	}
+	if _, err := os.Stat(cleaned); err != nil {
+		t.Fatalf("stop command did not clean partial external state: %v", err)
+	}
+	if _, err := os.Stat(finished); !os.IsNotExist(err) {
+		t.Fatalf("canceled start command reached completion: %v", err)
+	}
+	service, _ := manager.GetService("stack")
+	if service.Status() != config.StatusStopped {
+		t.Fatalf("status after cleanup = %s, want stopped", service.Status())
+	}
+}
+
+func TestDetachedStartAttachesToAlreadyRunningObservedResource(t *testing.T) {
+	directory := t.TempDir()
+	running := filepath.Join(directory, "running")
+	startInvoked := filepath.Join(directory, "start-invoked")
+	if err := os.WriteFile(running, []byte("yes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manager := NewManager(&config.Config{Project: "Detached", Services: map[string]config.Service{
+		"stack": {
+			Supervision: config.SupervisionDetached,
+			Lifecycle: config.LifecycleConfig{
+				Start: &config.Action{Command: "touch " + startInvoked, Dir: directory, Shell: "/bin/sh"},
+				Stop:  &config.Action{Command: "true", Dir: directory, Shell: "/bin/sh"},
+				Status: &config.LifecycleStatusConfig{
+					CheckConfig: config.CheckConfig{
+						Type: config.CheckCommand, Command: "test -f " + running,
+						Interval: time.Hour, Timeout: time.Second,
+					},
+					StoppedInterval: time.Hour, RunningExitCodes: []int{0}, StoppedExitCodes: []int{1},
+				},
+			},
+		},
+	}})
+	defer manager.Shutdown()
+
+	if err := manager.StartService("stack"); err != nil {
+		t.Fatal(err)
+	}
+	service, _ := manager.GetService("stack")
+	if service.Status() != config.StatusRunning {
+		t.Fatalf("attached status = %s, want running", service.Status())
+	}
+	if !service.LifecycleStatusObserved() {
+		t.Fatal("status probe was not recorded")
+	}
+	if _, err := os.Stat(startInvoked); !os.IsNotExist(err) {
+		t.Fatalf("start command ran for an already running resource: %v", err)
+	}
+}
+
+func TestLifecycleResultHidesSuccessfulProgressButKeepsFailureOutput(t *testing.T) {
+	manager := NewManager(&config.Config{Project: "Lifecycle", Services: map[string]config.Service{}})
+	defer manager.Shutdown()
+	service := NewService("stack", config.Service{}, 100)
+
+	manager.appendLifecycleResult(service, "start", ActionResult{
+		Status: ActionSucceeded, ExitCode: 0,
+		Stdout: []string{"created"}, Stderr: []string{"Container api Running"},
+	})
+	logs := strings.Join(service.Logs.Lines(), "\n")
+	if strings.Contains(logs, "created") || strings.Contains(logs, "Container api Running") {
+		t.Fatalf("successful lifecycle progress leaked into service logs:\n%s", logs)
+	}
+	if !strings.Contains(logs, "Lifecycle start succeeded") {
+		t.Fatalf("successful lifecycle boundary missing:\n%s", logs)
+	}
+
+	manager.appendLifecycleResult(service, "stop", ActionResult{
+		Status: ActionFailed, ExitCode: 1, Stderr: []string{"permission denied"},
+	})
+	logs = strings.Join(service.Logs.Lines(), "\n")
+	if !strings.Contains(logs, "[stderr] permission denied") {
+		t.Fatalf("failed lifecycle diagnostics missing:\n%s", logs)
+	}
+}
+
+func TestShutdownLeavesDetachedServiceRunningByDefault(t *testing.T) {
+	directory := t.TempDir()
+	marker := filepath.Join(directory, "running")
+	serviceConfig := config.Service{
+		Supervision: config.SupervisionDetached,
+		Lifecycle: config.LifecycleConfig{
+			Start: &config.Action{Command: "touch " + marker, Dir: directory, Shell: "/bin/sh"},
+			Stop:  &config.Action{Command: "rm " + marker, Dir: directory, Shell: "/bin/sh"},
+		},
+	}
+	manager := NewManager(&config.Config{Project: "Detached", Services: map[string]config.Service{"stack": serviceConfig}})
+	if err := manager.StartService("stack"); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Shutdown(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("detached resource was stopped on exit: %v", err)
+	}
+}
+
+func TestShutdownDoesNotStopDetachedDependencyExcludedByStopOnExit(t *testing.T) {
+	directory := t.TempDir()
+	marker := filepath.Join(directory, "running")
+	manager := NewManager(&config.Config{Project: "Detached", Services: map[string]config.Service{
+		"stack": {
+			Supervision: config.SupervisionDetached,
+			Lifecycle: config.LifecycleConfig{
+				Start: &config.Action{Command: "touch " + marker, Dir: directory, Shell: "/bin/sh"},
+				Stop:  &config.Action{Command: "rm " + marker, Dir: directory, Shell: "/bin/sh"},
+			},
+		},
+		"api": {Command: "sleep 60", DependsOn: []string{"stack"}},
+	}})
+	if err := manager.StartAll(); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Shutdown(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("detached dependency was stopped on exit: %v", err)
+	}
+}
+
+func TestDetachedStatusReconcilesExternalState(t *testing.T) {
+	directory := t.TempDir()
+	marker := filepath.Join(directory, "running")
+	serviceConfig := config.Service{
+		Supervision: config.SupervisionDetached,
+		Lifecycle: config.LifecycleConfig{Status: &config.LifecycleStatusConfig{
+			CheckConfig:      config.CheckConfig{Type: config.CheckCommand, Command: "test -f " + marker, Interval: 10 * time.Millisecond, Timeout: time.Second, FailureThreshold: 1},
+			StoppedInterval:  10 * time.Millisecond,
+			RunningExitCodes: []int{0}, StoppedExitCodes: []int{1},
+		}},
+	}
+	manager := NewManager(&config.Config{Project: "Observed", Services: map[string]config.Service{"stack": serviceConfig}})
+	defer manager.Shutdown()
+	service, _ := manager.GetService("stack")
+	waitForServiceStatus(t, service, config.StatusStopped)
+	if err := os.WriteFile(marker, []byte("yes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	waitForServiceStatus(t, service, config.StatusRunning)
+	if err := os.Remove(marker); err != nil {
+		t.Fatal(err)
+	}
+	waitForServiceStatus(t, service, config.StatusStopped)
+}
+
+func TestDetachedProcessHealthyWaitsForReadinessNotStatus(t *testing.T) {
+	directory := t.TempDir()
+	running := filepath.Join(directory, "running")
+	ready := filepath.Join(directory, "ready")
+	apiStarted := filepath.Join(directory, "api-started")
+	if err := os.WriteFile(running, []byte("yes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manager := NewManager(&config.Config{Project: "Dependencies", Services: map[string]config.Service{
+		"stack": {
+			Supervision: config.SupervisionDetached,
+			Lifecycle: config.LifecycleConfig{Status: &config.LifecycleStatusConfig{
+				CheckConfig:     config.CheckConfig{Type: config.CheckCommand, Command: "test -f " + running, Interval: 10 * time.Millisecond, Timeout: time.Second},
+				StoppedInterval: 10 * time.Millisecond, RunningExitCodes: []int{0}, StoppedExitCodes: []int{1},
+			}},
+			HealthCheck: &config.HealthCheckConfig{Readiness: &config.CheckConfig{Type: config.CheckCommand, Command: "test -f " + ready, Interval: 10 * time.Millisecond, Timeout: time.Second}},
+		},
+		"api": {
+			Command: "touch " + apiStarted + "; sleep 10", Dir: directory, Shell: "/bin/sh", DependsOn: []string{"stack"},
+			DependencyConditions: map[string]config.DependencyConfig{"stack": {Condition: config.DependencyHealthy}},
+		},
+	}})
+	checker := health.NewChecker()
+	manager.SetHealthChecker(checker)
+	defer manager.Shutdown()
+	result := make(chan error, 1)
+	go func() { result <- manager.StartServices([]string{"api"}) }()
+	stack, _ := manager.GetService("stack")
+	waitForServiceStatus(t, stack, config.StatusRunning)
+	time.Sleep(50 * time.Millisecond)
+	if _, err := os.Stat(apiStarted); !os.IsNotExist(err) {
+		t.Fatalf("api started before readiness: %v", err)
+	}
+	if err := os.WriteFile(ready, []byte("yes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("api did not start after detached readiness")
+	}
+}
+
+func TestDetachedLogFollowerStreamsAndStopsSeparately(t *testing.T) {
+	directory := t.TempDir()
+	serviceConfig := config.Service{
+		Supervision: config.SupervisionDetached,
+		Lifecycle: config.LifecycleConfig{
+			Start: &config.Action{Command: "exit 0", Dir: directory, Shell: "/bin/sh"},
+			Stop:  &config.Action{Command: "exit 0", Dir: directory, Shell: "/bin/sh"},
+			Logs:  &config.Action{Command: "printf 'remote log\\n'; sleep 10", Dir: directory, Shell: "/bin/sh"},
+		},
+	}
+	manager := NewManager(&config.Config{Project: "Logs", Services: map[string]config.Service{"stack": serviceConfig}})
+	defer manager.Shutdown()
+	if err := manager.StartService("stack"); err != nil {
+		t.Fatal(err)
+	}
+	service, _ := manager.GetService("stack")
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && !strings.Contains(strings.Join(service.Logs.Lines(), ""), "remote log") {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !strings.Contains(strings.Join(service.Logs.Lines(), ""), "remote log") {
+		t.Fatalf("detached logs were not streamed: %v", service.Logs.Lines())
+	}
+	if err := manager.StopService("stack"); err != nil {
+		t.Fatal(err)
+	}
+	if service.Status() != config.StatusStopped {
+		t.Fatalf("status after stop = %s", service.Status())
+	}
+}
+
+func waitForServiceStatus(t *testing.T, service *Service, expected config.ServiceStatus) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if service.Status() == expected {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("service status = %s, want %s", service.Status(), expected)
 }
 
 func TestForceStartServicesSkipsDependencyClosure(t *testing.T) {
@@ -312,6 +628,84 @@ func TestApplyConfigPreservesUnchangedProcessesAndReconcilesChanges(t *testing.T
 	}
 	if strings.Join(result.Restarted, ",") != "changed" {
 		t.Fatalf("reload result = %#v", result)
+	}
+}
+
+func TestApplyConfigDoesNotRestartServiceForActionOnlyChanges(t *testing.T) {
+	manager := NewManager(&config.Config{Project: "Test", Services: map[string]config.Service{
+		"api": {Command: "sleep 60", Actions: map[string]config.Action{
+			"migrate": {Command: "migrate-v1"},
+		}},
+	}})
+	defer manager.Shutdown()
+	if err := manager.StartService("api"); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := manager.GetService("api")
+	pid := before.PID()
+
+	result, err := manager.ApplyConfig(&config.Config{Project: "Test", Services: map[string]config.Service{
+		"api": {Command: "sleep 60", Actions: map[string]config.Action{
+			"migrate": {Command: "migrate-v2"},
+		}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, _ := manager.GetService("api")
+	if after != before || after.PID() != pid {
+		t.Fatalf("action-only reload restarted service: before PID %d after PID %d", pid, after.PID())
+	}
+	if len(result.Updated) != 0 || len(result.Restarted) != 0 {
+		t.Fatalf("action-only reload result = %#v", result)
+	}
+	if got := manager.cfg.Services["api"].Actions["migrate"].Command; got != "migrate-v2" {
+		t.Fatalf("manager action config = %q", got)
+	}
+}
+
+func TestApplyConfigUpdatesDetachedDefinitionWithoutCyclingResource(t *testing.T) {
+	directory := t.TempDir()
+	marker := filepath.Join(directory, "running")
+	start := &config.Action{Command: "touch " + marker, Dir: directory, Shell: "/bin/sh"}
+	manager := NewManager(&config.Config{Project: "Detached", Services: map[string]config.Service{
+		"stack": {Supervision: config.SupervisionDetached, Lifecycle: config.LifecycleConfig{Start: start, Stop: &config.Action{Command: "rm " + marker}}},
+	}})
+	defer manager.Shutdown()
+	if err := manager.StartService("stack"); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := manager.GetService("stack")
+	result, err := manager.ApplyConfig(&config.Config{Project: "Detached", Services: map[string]config.Service{
+		"stack": {Supervision: config.SupervisionDetached, Lifecycle: config.LifecycleConfig{Start: start, Stop: &config.Action{Command: "printf stopped"}}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, _ := manager.GetService("stack")
+	if after == before || after.Status() != config.StatusRunning || len(result.Restarted) != 0 {
+		t.Fatalf("detached reload state = %s, result = %#v", after.Status(), result)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("detached resource was cycled during reload: %v", err)
+	}
+}
+
+func TestApplyConfigCanRemoveObserveOnlyDetachedService(t *testing.T) {
+	manager := NewManager(&config.Config{Project: "Observed", Services: map[string]config.Service{
+		"stack": {Supervision: config.SupervisionDetached, Lifecycle: config.LifecycleConfig{Status: &config.LifecycleStatusConfig{
+			CheckConfig: config.CheckConfig{Type: config.CheckCommand, Command: "exit 0", Interval: time.Hour, Timeout: time.Second},
+		}}},
+	}})
+	defer manager.Shutdown()
+	result, err := manager.ApplyConfig(&config.Config{Project: "Observed", Services: map[string]config.Service{
+		"placeholder": {Command: "exit 0"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := manager.GetService("stack"); exists || len(result.Removed) != 1 || result.Removed[0] != "stack" {
+		t.Fatalf("observe-only removal result = %#v", result)
 	}
 }
 

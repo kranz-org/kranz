@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -27,6 +28,21 @@ func TestProcessManagerReapsNaturalExitExactlyOnce(t *testing.T) {
 	}
 	if err := pm.Stop(); err != nil {
 		t.Fatalf("Stop() after natural exit error = %v", err)
+	}
+}
+
+func TestProcessManagerWaitIncludesShortLivedOutput(t *testing.T) {
+	for iteration := 0; iteration < 50; iteration++ {
+		pm := NewProcessManager(32)
+		if _, err := pm.Start(context.Background(), "printf ready", ".", nil, "sh"); err != nil {
+			t.Fatalf("Start() iteration %d error = %v", iteration, err)
+		}
+		if err := pm.Wait(); err != nil {
+			t.Fatalf("Wait() iteration %d error = %v", iteration, err)
+		}
+		if output := strings.Join(pm.Stdout().Lines(), ""); output != "ready" {
+			t.Fatalf("stdout iteration %d = %q, want ready", iteration, output)
+		}
 	}
 }
 

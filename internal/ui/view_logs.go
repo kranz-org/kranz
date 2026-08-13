@@ -17,6 +17,12 @@ import (
 func (m *Model) renderLogColumn(width, height int) string {
 	pinned := m.PinnedService()
 	if pinned == nil {
+		if m.focusedAction != nil {
+			return m.renderActionLogPanel(width, height)
+		}
+		if m.focusedActionGroup != "" {
+			return m.renderActionGroupLogPanel(width, height)
+		}
 		return m.renderLogPanel(m.FocusedService(), width, height)
 	}
 	topHeight, bottomHeight := m.logColumnLayout(height)
@@ -26,6 +32,11 @@ func (m *Model) renderLogColumn(width, height int) string {
 	}
 	focused := m.FocusedService()
 	bottom := m.renderLogPanel(focused, width, bottomHeight)
+	if m.focusedAction != nil {
+		bottom = m.renderActionLogPanel(width, bottomHeight)
+	} else if m.focusedActionGroup != "" {
+		bottom = m.renderActionGroupLogPanel(width, bottomHeight)
+	}
 	if bottomHeight == collapsedPanelHeight {
 		title := "[3] LOGS"
 		if focused != nil {
@@ -34,6 +45,90 @@ func (m *Model) renderLogColumn(width, height int) string {
 		bottom = renderCollapsedPanel(title, width)
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, top, bottom)
+}
+
+func (m *Model) renderActionGroupLogPanel(width, height int) string {
+	contentWidth := max(1, width-2)
+	contentHeight := max(1, height-2)
+	title := "[3] ACTION OUTPUT" + ContextBarStyle.Render(" │ group "+m.focusedActionGroup)
+	return renderTitledPanel(m.panelStyle(panelLogs), m.panelTitleStyle(panelLogs), contentWidth, contentHeight, title, []string{"", ContextBarStyle.Render("Expand the group and select an action")})
+}
+
+func (m *Model) renderActionLogPanel(width, height int) string {
+	contentWidth := max(1, width-2)
+	contentHeight := max(1, height-2)
+	id, action, state, exists := m.focusedActionDefinition()
+	if !exists {
+		return renderTitledPanel(m.panelStyle(panelLogs), m.panelTitleStyle(panelLogs), contentWidth, contentHeight, "[3] ACTION OUTPUT", []string{"", "Select an action"})
+	}
+	title := "[3] ACTION OUTPUT" + ContextBarStyle.Render(" │ ") + actionStatusIndicator(state.Status) + " " + ServiceNameStyle.Render(id.Name) + ContextBarStyle.Render(" · "+state.Status.String())
+	if state.Status == service.ActionRunning {
+		title += StartingBadgeStyle.Render(" RUNNING")
+	}
+	outputLines := actionOutputLines(state)
+	lines := outputLines
+	if state.Status != service.ActionReady {
+		lines = append(appendSafeActionOutput(nil, action.Command, "$ "), lines...)
+	}
+	if state.Status == service.ActionRunning && len(outputLines) == 0 {
+		lines = append(lines, "Running · press s to stop")
+	}
+	if len(lines) == 0 {
+		return renderTitledPanel(m.panelStyle(panelLogs), m.panelTitleStyle(panelLogs), contentWidth, contentHeight, title, []string{"", ContextBarStyle.Render("Press s to run this action")})
+	}
+	rows := make([]string, 0, len(lines))
+	for _, line := range lines {
+		styled := styleLogLine(line)
+		visual := []string{ansi.Truncate(styled, contentWidth, "…")}
+		if m.wrapLogs {
+			visual = strings.Split(ansi.Hardwrap(styled, contentWidth, true), "\n")
+		}
+		rows = append(rows, visual...)
+	}
+	maxStart := max(0, len(rows)-contentHeight)
+	start := maxStart
+	if !m.followMode {
+		start = max(0, maxStart-m.logOffset)
+	}
+	end := min(len(rows), start+contentHeight)
+	if maxStart > 0 {
+		title += ContextBarStyle.Render(fmt.Sprintf("  %d–%d/%d  ↑/↓", start+1, end, len(rows)))
+	}
+	return renderTitledPanel(m.panelStyle(panelLogs), m.panelTitleStyle(panelLogs), contentWidth, contentHeight, title, rows[start:end])
+}
+
+func actionOutputLines(state service.ActionResult) []string {
+	lines := make([]string, 0, len(state.Stdout)+len(state.Stderr))
+	for _, line := range state.Stdout {
+		lines = appendSafeActionOutput(lines, line, "")
+	}
+	for _, line := range state.Stderr {
+		lines = appendSafeActionOutput(lines, line, "[stderr] ")
+	}
+	return lines
+}
+
+func appendSafeActionOutput(lines []string, output, prefix string) []string {
+	if output == "" {
+		return lines
+	}
+	output = ansi.Strip(output)
+	output = strings.ReplaceAll(output, "\r\n", "\n")
+	output = strings.ReplaceAll(output, "\r", "\n")
+	parts := strings.Split(output, "\n")
+	if len(parts) > 0 && parts[len(parts)-1] == "" {
+		parts = parts[:len(parts)-1]
+	}
+	for _, part := range parts {
+		part = strings.Map(func(character rune) rune {
+			if character == '\t' || (character >= ' ' && character != '\x7f') {
+				return character
+			}
+			return -1
+		}, part)
+		lines = append(lines, prefix+part)
+	}
+	return lines
 }
 
 func (m *Model) logColumnLayout(height int) (pinnedHeight, currentHeight int) {
@@ -175,7 +270,7 @@ func (m *Model) scrollLogs(direction int) {
 		displayLineCount = m.displayedPinnedLogLineCount()
 		offset, anchor, follow = m.pinnedOffset, m.pinnedAnchor, m.pinnedFollow
 	}
-	if svc == nil {
+	if svc == nil && m.focusedAction == nil {
 		if pinned {
 			m.pinnedOffset = 0
 		} else {
@@ -235,6 +330,9 @@ func (m *Model) displayedPinnedLogLineCount() int {
 }
 
 func (m *Model) displayedLogLineCount() int {
+	if _, _, state, exists := m.focusedActionDefinition(); exists {
+		return visualLogRowCount(actionOutputLines(state), m.currentLogContentWidth(), m.wrapLogs)
+	}
 	svc := m.FocusedService()
 	if svc == nil {
 		return 0

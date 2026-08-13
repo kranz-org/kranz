@@ -1,0 +1,159 @@
+# MoonFlight: the showcase project used for the documentation recordings.
+#
+# It is a complete, safe imitation of a small product: shared infrastructure
+# that outlives the session, a migration other services wait for, two APIs
+# behind an edge gateway, a web front end on a port chosen at runtime, and two
+# workers. Nothing leaves localhost, and the "infrastructure" is marker files
+# under .kranz-demo.
+#
+#   cd examples/moonflight
+#   kranz
+project: MoonFlight
+version: "1.0"
+
+defaults:
+  dir: .
+  shell: /bin/sh
+
+action_groups:
+  # Project-level operations that belong to no single service.
+  toolbox:
+    description: Everyday project operations
+    actions:
+      status:
+        description: Show what the example is currently running.
+        command: >-
+          echo "APIs on 18921-18923, web port chosen at runtime";
+          ls .kranz-demo 2>/dev/null || echo "no infrastructure markers"
+      reset:
+        description: Remove every marker this example created.
+        command: rm -rf .kranz-demo
+        confirm: true
+
+services:
+  # An external resource Kranz does not own: the start command finishes while
+  # the thing it started keeps running. Quitting Kranz leaves it alone.
+  shared-infra:
+    description: Postgres and Redis for the whole team, started once per day.
+    supervision: detached
+    stop_on_exit: false
+    detect_ports: false
+    tags: [infra]
+    ports: [5432, 6379]
+    lifecycle:
+      start:
+        command: mkdir -p .kranz-demo && touch .kranz-demo/infra.running
+        timeout: 30s
+      stop:
+        command: rm -f .kranz-demo/infra.running
+        timeout: 30s
+      status:
+        # Exit 0 means running; anything else means stopped. That is all most
+        # probes need.
+        type: command
+        command: test -f .kranz-demo/infra.running
+        interval: 2s
+        stopped_interval: 5s
+
+  migrate:
+    description: Applies the schema every API depends on, then exits.
+    command: /bin/sh ../scripts/migrate.sh
+    tags: [setup]
+    depends_on: [shared-infra]
+    dependency_conditions:
+      shared-infra: {condition: process_started}
+
+  catalog-api:
+    description: Product catalogue and search.
+    command: python3 -u ../scripts/moonflight_service.py
+    env:
+      SERVICE_NAME: catalog-api
+      PORT: "18921"
+      ROUTES: /api/catalog,/api/products/featured,/api/search
+    ports: [18921]
+    tags: [backend, core]
+    depends_on: [migrate]
+    dependency_conditions:
+      migrate: {condition: process_completed_successfully}
+    healthcheck:
+      readiness: {type: http, url: "http://127.0.0.1:18921/health/ready", interval: 1s, timeout: 1s}
+      liveness: {type: tcp, port: 18921, initial_delay: 5s, interval: 10s}
+    availability: {restart: on_failure, backoff: 2s, max_restarts: 3}
+    actions:
+      reindex:
+        description: Rebuild the search index.
+        command: echo "reindexing catalogue"; sleep 2; echo "index rebuilt"
+        timeout: 1m
+
+  billing-api:
+    description: Payment authorization and invoice status.
+    command: python3 -u ../scripts/moonflight_service.py
+    env:
+      SERVICE_NAME: billing-api
+      PORT: "18922"
+      ROUTES: /api/invoices,/api/payments
+    ports: [18922]
+    tags: [backend, core]
+    depends_on: [migrate]
+    dependency_conditions:
+      migrate: {condition: process_completed_successfully}
+    healthcheck:
+      readiness: {type: http, url: "http://127.0.0.1:18922/health/ready", interval: 1s, timeout: 1s}
+    availability: {restart: on_failure, backoff: 2s, max_restarts: 3}
+
+  gateway:
+    description: Public edge service that routes to the internal APIs.
+    command: python3 -u ../scripts/moonflight_service.py
+    env:
+      SERVICE_NAME: gateway
+      PORT: "18923"
+      ROUTES: /api/home,/api/catalog,/api/products/featured,/api/account
+      BOOT_DELAY: "1"
+    ports: [18923]
+    tags: [edge, core]
+    depends_on: [catalog-api, billing-api]
+    dependency_conditions:
+      catalog-api: {condition: process_healthy}
+      billing-api: {condition: process_healthy}
+    healthcheck:
+      readiness: {type: http, url: "http://127.0.0.1:18923/health/ready", interval: 1s, timeout: 1s}
+
+  moonflight-web:
+    description: Front end on whatever port the dev server picks.
+    command: python3 -u -m http.server 0 --bind 127.0.0.1
+    tags: [frontend]
+    depends_on: [gateway]
+    dependency_conditions:
+      gateway: {condition: process_healthy}
+    # No declared port: Details learns the real listener from the process.
+    detect_ports: true
+    healthcheck:
+      readiness: {type: tcp, interval: 1s, timeout: 1s}
+    actions:
+      build-assets:
+        description: Compile the front-end bundle.
+        command: echo "building assets"; sleep 2; echo "bundle written"
+        timeout: 2m
+    before_start:
+      # The bundle has to exist before the dev server serves it, and building it
+      # once per session is enough.
+      - action: build-assets
+
+  orders-worker:
+    description: Consumes the order queue through the gateway.
+    command: python3 -u ../scripts/worker.py
+    env: {WORKER_NAME: orders-worker, API_URL: "http://127.0.0.1:18923", INTERVAL: "3"}
+    tags: [workers]
+    depends_on: [gateway]
+    dependency_conditions:
+      gateway: {condition: process_healthy}
+    availability: {restart: on_failure, backoff: 2s, max_restarts: 3}
+
+  reconciliation-worker:
+    description: Reconciles payments against orders every few seconds.
+    command: python3 -u ../scripts/worker.py
+    env: {WORKER_NAME: reconciliation-worker, API_URL: "http://127.0.0.1:18922", INTERVAL: "4"}
+    tags: [workers]
+    depends_on: [billing-api]
+    dependency_conditions:
+      billing-api: {condition: process_healthy}

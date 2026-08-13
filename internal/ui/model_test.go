@@ -409,6 +409,67 @@ func TestServiceColumnShowsUpToTwentyItems(t *testing.T) {
 	}
 }
 
+func TestServicePanelLabelReflectsConfiguredContent(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  *config.Config
+		want string
+	}{
+		{
+			name: "services only",
+			cfg: &config.Config{Services: map[string]config.Service{
+				"app": {Command: "exit 0"},
+			}},
+			want: "SERVICES",
+		},
+		{
+			name: "actions only",
+			cfg: &config.Config{ActionGroups: map[string]config.ActionGroup{
+				"tools": {Actions: map[string]config.Action{
+					"lint": {Command: "exit 0"},
+				}},
+			}},
+			want: "ACTIONS",
+		},
+		{
+			name: "service actions remain part of services",
+			cfg: &config.Config{Services: map[string]config.Service{
+				"app": {
+					Command: "exit 0",
+					Actions: map[string]config.Action{
+						"lint": {Command: "exit 0"},
+					},
+				},
+			}},
+			want: "SERVICES",
+		},
+		{
+			name: "services and action groups",
+			cfg: &config.Config{
+				Services: map[string]config.Service{
+					"app": {Command: "exit 0"},
+				},
+				ActionGroups: map[string]config.ActionGroup{
+					"tools": {Actions: map[string]config.Action{
+						"lint": {Command: "exit 0"},
+					}},
+				},
+			},
+			want: "SERVICES/ACTIONS",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			model := NewModel(test.cfg, "test")
+			defer model.Shutdown()
+			if got := model.servicePanelLabel(); got != test.want {
+				t.Fatalf("service panel label = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestCompactDashboardCollapsesInactivePanels(t *testing.T) {
 	model := newTestModel()
 	defer model.Shutdown()
@@ -472,7 +533,7 @@ func TestServiceAndDetailsTitlesSeparateMetadata(t *testing.T) {
 	defer model.Shutdown()
 
 	services := ansi.Strip(model.renderServicePanel(48, 8))
-	if !strings.Contains(services, "[1] SERVICES │ 2 · 1 → Tags") {
+	if !strings.Contains(services, "[1] SERVICES │ 2 · 1→Tags") {
 		t.Fatalf("service title does not separate metadata:\n%s", services)
 	}
 
@@ -587,6 +648,87 @@ func TestConfirmationModalAlignsTitleBodyAndActions(t *testing.T) {
 	}
 	if columns[0] != columns[1] || columns[1] != columns[2] {
 		t.Fatalf("confirmation title, body, and actions use different left insets %v:\n%s", columns, modal)
+	}
+}
+
+func TestQuitConfirmationDescribesManagedAndDetachedExitPlan(t *testing.T) {
+	stopOnExit := true
+	model := NewModel(&config.Config{Project: "Exit plan", Services: map[string]config.Service{
+		"api": {Command: "true"},
+		"remote-kept": {
+			Supervision: config.SupervisionDetached,
+			Lifecycle:   config.LifecycleConfig{Stop: &config.Action{Command: "true"}},
+		},
+		"remote-stopped": {
+			Supervision: config.SupervisionDetached,
+			StopOnExit:  &stopOnExit,
+			Lifecycle:   config.LifecycleConfig{Stop: &config.Action{Command: "true"}},
+		},
+	}}, "test")
+	defer model.Shutdown()
+	model.width, model.height, model.ready = 100, 40, true
+	for _, name := range []string{"api", "remote-kept", "remote-stopped"} {
+		svc, _ := model.manager.GetService(name)
+		svc.SetStatus(config.StatusRunning)
+	}
+
+	plain := ansi.Strip(model.renderConfirmQuitView())
+	for _, expected := range []string{
+		"Managed processes will stop and release their ports:",
+		"api",
+		"Detached stop commands will run:",
+		"remote-stopped",
+		"⚠ WILL REMAIN RUNNING AFTER KRANZ EXITS",
+		"remote-kept",
+		"[Enter/y] Apply this plan and quit",
+	} {
+		if !strings.Contains(plain, expected) {
+			t.Errorf("quit confirmation does not contain %q:\n%s", expected, plain)
+		}
+	}
+	if strings.Contains(plain, "Stop everything") {
+		t.Fatalf("quit confirmation still promises to stop everything:\n%s", plain)
+	}
+}
+
+func TestQuitConfirmationCanLeaveOnlyDetachedResourcesRunning(t *testing.T) {
+	model := NewModel(&config.Config{Project: "Exit plan", Services: map[string]config.Service{
+		"mk-backend-stack": {
+			Supervision: config.SupervisionDetached,
+			Lifecycle:   config.LifecycleConfig{Stop: &config.Action{Command: "true"}},
+		},
+	}}, "test")
+	defer model.Shutdown()
+	model.width, model.height, model.ready = 100, 40, true
+	svc, _ := model.manager.GetService("mk-backend-stack")
+	svc.SetStatus(config.StatusRunning)
+
+	plain := ansi.Strip(model.renderConfirmQuitView())
+	for _, expected := range []string{
+		"No managed processes will be stopped.",
+		"⚠ WILL REMAIN RUNNING AFTER KRANZ EXITS",
+		"mk-backend-stack",
+		"[Enter/y] Leave detached resources running and quit",
+	} {
+		if !strings.Contains(plain, expected) {
+			t.Errorf("quit confirmation does not contain %q:\n%s", expected, plain)
+		}
+	}
+}
+
+func TestQuitConfirmationEmphasizesRetainedDetachedResources(t *testing.T) {
+	model := NewModel(&config.Config{Project: "Exit plan"}, "test")
+	defer model.Shutdown()
+
+	lines := appendQuitRetainedResources(nil, []string{"mk-backend-stack"})
+	if len(lines) != 2 {
+		t.Fatalf("retained resource block has %d lines, want 2", len(lines))
+	}
+	if lines[0] != StartingBadgeStyle.Render("⚠ WILL REMAIN RUNNING AFTER KRANZ EXITS") {
+		t.Fatalf("retained resource heading is not warning-emphasized: %q", lines[0])
+	}
+	if lines[1] != "  "+ServiceNameStyle.Render("mk-backend-stack") {
+		t.Fatalf("retained resource name is not bold: %q", lines[1])
 	}
 }
 
@@ -919,4 +1061,21 @@ func clickRenderedText(t *testing.T, model *Model, label string) tea.Cmd {
 	}
 	t.Fatalf("visible control %q not found:\n%s", label, ansi.Strip(model.View()))
 	return nil
+}
+
+func TestSelectAllSkipsDisabledServices(t *testing.T) {
+	model := NewModel(&config.Config{Project: "Batch", Services: map[string]config.Service{
+		"api":  {Command: "sleep 60", Dir: ".", Shell: "sh"},
+		"web":  {Command: "sleep 60", Dir: ".", Shell: "sh"},
+		"demo": {Command: "sleep 60", Dir: ".", Shell: "sh", Disabled: true},
+	}}, "test")
+	model.toggleAllSelection()
+	if len(model.selected) != 2 || model.selected["demo"] {
+		t.Fatalf("select all = %#v, want only the enabled services", model.selected)
+	}
+	// Selecting all twice clears the selection rather than latching it on.
+	model.toggleAllSelection()
+	if len(model.selected) != 0 {
+		t.Fatalf("second select all = %#v, want an empty selection", model.selected)
+	}
 }

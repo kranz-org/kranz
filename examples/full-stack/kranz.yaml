@@ -1,0 +1,59 @@
+project: Northstar Full Stack
+version: "1.0"
+
+defaults:
+  shell: /bin/sh
+
+services:
+  migrate:
+    description: Safe one-shot schema simulation; it only prints messages.
+    command: /bin/sh ../scripts/migrate.sh
+    tags: [setup]
+
+  catalog-api:
+    description: Local HTTP API gated by migration completion.
+    command: python3 -u ../scripts/http_service.py
+    env: {SERVICE_NAME: catalog-api, PORT: "18881"}
+    ports: [18881]
+    tags: [backend, core]
+    depends_on: [migrate]
+    dependency_conditions:
+      migrate: {condition: process_completed_successfully}
+    healthcheck:
+      readiness: {type: http, url: http://127.0.0.1:18881/health/ready, interval: 1s, timeout: 1s}
+      liveness: {type: tcp, port: 18881, interval: 3s, timeout: 1s}
+
+  billing-api:
+    description: A second independent local API.
+    command: python3 -u ../scripts/http_service.py
+    env: {SERVICE_NAME: billing-api, PORT: "18882"}
+    ports: [18882]
+    tags: [backend, core]
+    depends_on: [migrate]
+    dependency_conditions:
+      migrate: {condition: process_completed_successfully}
+    healthcheck:
+      readiness: {type: http, url: http://127.0.0.1:18882/health/ready, interval: 1s, timeout: 1s}
+
+  gateway:
+    description: Starts only after both APIs are healthy.
+    command: python3 -u ../scripts/http_service.py
+    env: {SERVICE_NAME: gateway, PORT: "18883"}
+    ports: [18883]
+    tags: [edge, core]
+    depends_on: [catalog-api, billing-api]
+    dependency_conditions:
+      catalog-api: {condition: process_healthy}
+      billing-api: {condition: process_healthy}
+    healthcheck:
+      readiness: {type: http, url: http://127.0.0.1:18883/health/ready, interval: 1s, timeout: 1s}
+
+  orders-worker:
+    description: Polls the gateway after it becomes healthy.
+    command: python3 -u ../scripts/worker.py
+    env: {WORKER_NAME: orders-worker, API_URL: http://127.0.0.1:18883, INTERVAL: "3"}
+    tags: [workers]
+    depends_on: [gateway]
+    dependency_conditions:
+      gateway: {condition: process_healthy}
+    availability: {restart: on_failure, backoff: 2s, max_restarts: 3}

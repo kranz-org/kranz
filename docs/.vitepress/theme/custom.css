@@ -1,0 +1,101 @@
+:root {
+  --vp-c-brand-1: #168ec5;
+  --vp-c-brand-2: #0f7eb2;
+  --vp-c-brand-3: #0a6c9c;
+  --vp-c-brand-soft: rgba(56, 189, 248, 0.14);
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: linear-gradient(120deg, #38bdf8 20%, #4ade80 85%);
+  --vp-home-hero-image-background-image: none;
+  --vp-home-hero-image-filter: none;
+}
+
+.dark {
+  --vp-c-bg: #080c12;
+  --vp-c-bg-alt: #0d131b;
+  --vp-c-bg-soft: #111923;
+  --vp-c-brand-1: #38bdf8;
+  --vp-c-brand-2: #67cdf7;
+  --vp-c-brand-3: #8fdbfa;
+}
+
+.VPHero .VPImage {
+  border-radius: 0;
+  box-shadow: none;
+  background: none;
+  filter: none;
+}
+
+.demo-frame {
+  margin: 32px 0;
+  /* No padding here on purpose. Each recording carries its own terminal-style
+     padding inside the image, so it scales with the frame instead of staying a
+     fixed number of pixels that looks generous on a wide screen and wasteful on
+     a narrow one. */
+  overflow: hidden;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 12px;
+  background: #07111b;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.14);
+}
+
+/* Markdown wraps the image in a paragraph whose vertical margin would
+   otherwise add 16px above and below inside an otherwise even frame. */
+.demo-frame p {
+  margin: 0;
+}
+
+/* The home page recording is an illustration, not a workspace: cap it so it
+   does not dominate the fold on a wide screen. */
+.demo-frame--hero {
+  max-width: 820px;
+  margin-inline: auto;
+}
+
+.demo-frame img {
+  display: block;
+  width: 100%;
+  margin: 0;
+}
+
+.vp-doc img[src*="/diagrams/"] {
+  width: 100%;
+  margin: 24px 0;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 12px;
+  background: var(--vp-c-bg-soft);
+}
+
+.example-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 24px 0;
+}
+
+.example-card {
+  display: block;
+  padding: 20px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 12px;
+  color: var(--vp-c-text-1) !important;
+  text-decoration: none !important;
+  background: var(--vp-c-bg-soft);
+  transition: border-color 0.2s, transform 0.2s;
+}
+
+.example-card:hover {
+  border-color: var(--vp-c-brand-1);
+  transform: translateY(-2px);
+}
+
+.example-card strong {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--vp-c-brand-1);
+}
+
+@media (max-width: 640px) {
+  .example-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="102 102 1050 1050" role="img" aria-labelledby="title desc">
+  <title id="title">Kranz service network mark</title><desc id="desc">Light-theme Kranz logo with a central hub connected to six service nodes.</desc>
+  <defs>
+    <linearGradient id="cyan" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0EA5E9"/><stop offset="1" stop-color="#0284C7"/></linearGradient>
+    <linearGradient id="ink" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#1E293B"/><stop offset="1" stop-color="#0F172A"/></linearGradient>
+    <linearGradient id="green" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#22C55E"/><stop offset="1" stop-color="#16A34A"/></linearGradient>
+  </defs>
+  <g fill="none" stroke-width="11" stroke-linecap="round">
+    <path d="M343 376 L547 256" stroke="#64748B" stroke-dasharray="18 36.669"/><path d="M707 256 L906 374" stroke="#0EA5E9" stroke-dasharray="18 35.339"/><path d="M981 501 V709" stroke="#94A3B8" stroke-dasharray="18 29.5"/><path d="M890 867 L709 975" stroke="#64748B" stroke-dasharray="18 30.193"/><path d="M546 978 L350 861" stroke="#0EA5E9" stroke-dasharray="18 34.566"/><path d="M273 501 V709" stroke="#22C55E" stroke-dasharray="18 29.5"/>
+    <path d="M627 316 V434" stroke="#64748B" stroke-dasharray="18 32"/><path d="M778 525 L884 464" stroke="#0EA5E9" stroke-dasharray="18 34.149"/><path d="M778 696 L910 773" stroke="#94A3B8" stroke-dasharray="18 49.408"/><path d="M627 784 V902" stroke="#22C55E" stroke-dasharray="18 32"/><path d="M476 696 L371 758" stroke="#64748B" stroke-dasharray="18 33.969"/><path d="M476 525 L371 464" stroke="#0EA5E9" stroke-dasharray="18 33.969"/>
+  </g>
+  <circle cx="627" cy="229" r="61" fill="url(#cyan)"/><path d="M274 350 Q282 350 288 361 L339 451 Q344 460 338 467 Q334 472 325 472 H224 Q214 472 210 464 Q207 458 212 449 L263 360 Q267 350 274 350Z" fill="url(#ink)"/><rect x="928" y="369" width="98" height="100" rx="12" fill="url(#green)"/><rect x="224" y="748" width="105" height="106" rx="13" fill="url(#cyan)"/><path d="M981 737 Q989 737 994 747 L1043 834 Q1047 842 1042 849 Q1038 854 1029 854 H932 Q922 854 918 847 Q915 841 920 832 L969 747 Q974 737 981 737Z" fill="url(#ink)"/><circle cx="627" cy="991" r="61" fill="url(#green)"/>
+  <path d="M627 464 L755 538 L755 681 L627 756 L499 681 L499 538 Z" fill="url(#ink)"/><path d="M582 554 V676 M582 616 H616 M616 616 L679 557 M616 616 L679 675" fill="none" stroke="#F8FAFC" stroke-width="14" stroke-linecap="square" stroke-linejoin="miter"/>
+</svg>
