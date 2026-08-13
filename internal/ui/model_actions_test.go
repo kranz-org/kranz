@@ -357,13 +357,18 @@ func TestConfiguredActionConfirmationCanCancelOrRun(t *testing.T) {
 		t.Fatalf("confirmed action state = %#v", state)
 	}
 
+	// An interactive action returns a terminal-handoff command instead of
+	// running in the background. The command is not executed here: it would take
+	// over the test's terminal.
 	model.focusServiceListRow(2)
-	if command, handled := model.toggleFocusedAction(); !handled || command != nil {
+	command, handled := model.toggleFocusedAction()
+	if !handled || command == nil {
 		t.Fatalf("interactive action = handled %v, command %v", handled, command)
 	}
-	state, _ = model.manager.ActionState(config.ActionID{OwnerKind: config.ActionOwnerService, Owner: "app", Name: "interactive"})
-	if state.Status != service.ActionReady {
-		t.Fatalf("interactive action state = %#v", state)
+	interactiveID := config.ActionID{OwnerKind: config.ActionOwnerService, Owner: "app", Name: "interactive"}
+	state, _ = model.manager.ActionState(interactiveID)
+	if state.Status != service.ActionRunning {
+		t.Fatalf("interactive action state = %#v, want running while the terminal is handed over", state)
 	}
 }
 

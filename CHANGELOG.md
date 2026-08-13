@@ -23,8 +23,13 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
   is loaded and validated by a test, a complete field-by-field configuration
   reference, and new CLI, appearance, troubleshooting, and Process Compose
   compatibility pages.
+- Interactive actions: `interactive: true` hands the real terminal to a command
+  that has to be answered, such as a migration that confirms before it writes,
+  and records its exit code and duration when it finishes. Lifecycle commands
+  and prerequisites cannot be interactive, because both run unattended.
 - Reproducible terminal recordings generated from tapes in
-  `docs/assets/tapes/`.
+  `docs/assets/tapes/`, including the site hero and the Procfile quickstart,
+  which were previously captured by hand.
 
 ### Changed
 
@@ -59,6 +64,10 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ### Fixed
 
+- Quitting Kranz while an action holds the terminal no longer blocks shutdown
+  forever waiting for a command only the user can finish.
+- Documentation recordings sit in an evenly padded frame instead of gaining
+  vertical-only spacing from the surrounding paragraph.
 - `disabled` services are now actually excluded from select-all and start-all
   batch operations instead of only displaying a badge that claimed they were.
 - An out-of-range service status is no longer rendered as the deliberate

@@ -87,7 +87,7 @@ services:
         timeout: 5m
       console:
         command: npm run console
-        interactive: true   # Temporarily hands over the terminal.
+        interactive: true   # Hands the terminal over until the command exits.
 
     # Work that must succeed before this service starts. Each entry points at
     # an action that also stays runnable on its own.

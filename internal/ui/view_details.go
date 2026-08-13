@@ -75,9 +75,6 @@ func (m *Model) actionDetailLines(id config.ActionID, action config.Action, stat
 		lines = append(lines, detailFieldLines("TIMEOUT", action.Timeout.String(), contentWidth)...)
 	}
 	mode := "captured"
-	if action.InteractiveEnabled() {
-		mode = "interactive terminal handoff"
-	}
 	if action.ConfirmationRequired() {
 		mode += " · confirmation required"
 	}

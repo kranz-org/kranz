@@ -185,6 +185,23 @@ func (m *Model) toggleFocusedAction() (tea.Cmd, bool) {
 	return m.runAction(id, action), true
 }
 
+// runInteractiveAction hands the terminal to an action that has to be answered,
+// such as a migration that asks before it writes. Kranz suspends its interface,
+// the command owns the terminal until it exits, and the outcome is recorded
+// like any other action.
+func (m *Model) runInteractiveAction(id config.ActionID) tea.Cmd {
+	command, finish, err := m.manager.PrepareInteractiveAction(id)
+	if err != nil {
+		m.addNotification("action", id.Name+": "+err.Error(), config.LogError)
+		return nil
+	}
+	m.addNotification("action", "Handing the terminal to "+id.Name, config.LogInfo)
+	return tea.ExecProcess(command, func(execErr error) tea.Msg {
+		result := finish(execErr)
+		return actionResultMsg{id: id, result: result, err: execErr}
+	})
+}
+
 func (m *Model) beginActionConfirmation(id config.ActionID, stop bool) {
 	pending := id
 	m.pendingAction = &pending
@@ -194,8 +211,7 @@ func (m *Model) beginActionConfirmation(id config.ActionID, stop bool) {
 
 func (m *Model) runAction(id config.ActionID, action config.Action) tea.Cmd {
 	if action.InteractiveEnabled() {
-		m.addNotification("action", id.Name+" requires terminal handoff", config.LogWarn)
-		return nil
+		return m.runInteractiveAction(id)
 	}
 	m.addNotification("action", "Running "+id.Name, config.LogInfo)
 	return func() tea.Msg {

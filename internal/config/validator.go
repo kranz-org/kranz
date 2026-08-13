@@ -217,8 +217,8 @@ func validatePrerequisites(cfg *Config, name string, svc Service) error {
 		if !exists {
 			return fmt.Errorf("%s: %s was not found", position, prerequisite.String(name))
 		}
-		// A prerequisite runs unattended while the service start is already in
-		// flight, so it cannot own the terminal.
+		// A prerequisite runs unattended while a start is already in flight, so
+		// it cannot be one of the actions that takes over the terminal.
 		if action.InteractiveEnabled() {
 			return fmt.Errorf("%s: %s is interactive and cannot be a prerequisite", position, prerequisite.String(name))
 		}

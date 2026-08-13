@@ -1366,6 +1366,31 @@ func TestValidateRejectsUnusablePrerequisites(t *testing.T) {
 	}
 }
 
+func TestValidateAcceptsInteractiveActionsButNotInLifecycle(t *testing.T) {
+	cfg := &Config{
+		Project: "Interactive",
+		Services: map[string]Service{
+			"api": {
+				Command: "npm run dev",
+				Actions: map[string]Action{"console": {Command: "npm run console", Interactive: boolPointer(true)}},
+			},
+		},
+	}
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("interactive action was rejected: %v", err)
+	}
+	// A lifecycle command runs unattended, so it can never take the terminal.
+	cfg.Services["api"] = Service{
+		Supervision: SupervisionDetached,
+		Lifecycle: LifecycleConfig{
+			Start: &Action{Command: "docker compose up -d", Interactive: boolPointer(true)},
+		},
+	}
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "interactive execution is not supported") {
+		t.Fatalf("interactive lifecycle start error = %v", err)
+	}
+}
+
 func TestMergeReplacesPrerequisiteSequence(t *testing.T) {
 	directory := t.TempDir()
 	base := filepath.Join(directory, "kranz.yaml")

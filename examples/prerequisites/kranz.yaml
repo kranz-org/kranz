@@ -37,6 +37,13 @@ services:
         description: Apply the example schema migration.
         command: /bin/sh ../scripts/migrate.sh
         timeout: 30s
+      migrate-interactive:
+        # An interactive action takes over the terminal until it exits, so it
+        # can ask a question and read the answer. Kranz suspends its interface
+        # and resumes when the command finishes, recording the exit code.
+        description: Apply migrations after answering a confirmation prompt.
+        command: /bin/sh ../scripts/interactive_migrate.sh
+        interactive: true
     before_start:
       # `run: always` re-checks the environment before every start and restart,
       # because it is cheap and its result can change between starts.

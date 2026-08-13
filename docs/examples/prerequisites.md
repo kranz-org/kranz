@@ -104,6 +104,31 @@ Change the command back, reload, and start it again. Because that prerequisite
 uses `run: always`, it is retried on every attempt; a failed `once`
 prerequisite is retried too, since only success is remembered.
 
+## Try an action that asks a question
+
+`catalog-api` also owns `migrate-interactive`, which is what a real migration
+usually looks like: it lists what it would apply and waits for an answer.
+
+Expand `catalog-api` with `Enter`, focus `migrate-interactive`, and press `s`.
+Kranz steps aside and gives the command your terminal:
+
+```text
+Pending migrations:
+  - 20260801_add_orders_table
+  - 20260812_backfill_customer_ids
+
+Apply these migrations? [y/N]
+```
+
+Answer `y` and it applies them (this example writes nothing) and exits `0`;
+answer anything else and it exits `1`. Either way Kranz comes back and records
+the outcome — succeeded or failed, with the exit code and duration — in the
+action's Details.
+
+That is the difference between the two flags: `confirm: true` makes *Kranz* ask
+before launching a command, while `interactive: true` lets the *command* ask you
+anything it wants once it is running.
+
 ## Compare with dependency conditions
 
 The [native example](./native) gates `api` on a `migrate` **service** using

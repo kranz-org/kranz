@@ -99,6 +99,10 @@ type activeAction struct {
 	cancel  context.CancelFunc
 	done    chan struct{}
 	process *ProcessManager
+	// interactive marks a run whose process owns the user's terminal. Kranz
+	// cannot wait for it during shutdown: only the caller that handed the
+	// terminal over can observe the command finishing.
+	interactive bool
 }
 
 // ActionRunner executes normalized non-interactive actions and retains their
@@ -350,6 +354,9 @@ func (r *ActionRunner) Shutdown() {
 		run.cancel()
 	}
 	for _, run := range active {
+		if run.interactive {
+			continue
+		}
 		<-run.done
 	}
 }
@@ -367,6 +374,9 @@ func (r *ActionRunner) CancelActive() {
 		run.cancel()
 	}
 	for _, run := range active {
+		if run.interactive {
+			continue
+		}
 		<-run.done
 	}
 }

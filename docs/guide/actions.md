@@ -101,6 +101,32 @@ a running action always asks for confirmation regardless of its start setting.
 `timeout` covers the whole process group; cancellation sends a graceful signal
 and escalates when necessary.
 
-Interactive actions temporarily hand the terminal to their command when
-`interactive: true`. Interactive execution is not supported for lifecycle
-start/stop/log commands.
+## Actions that ask a question
+
+Some commands have to be answered: a migration that confirms before it writes,
+a REPL, a scaffolding wizard. `interactive: true` hands the real terminal to
+the command:
+
+```yaml
+actions:
+  migrate:
+    command: npm run db:migrate
+    interactive: true
+```
+
+Kranz suspends its interface, the command owns the terminal until it exits, and
+Kranz resumes and records the result — running, succeeded or failed, with the
+exit code and duration — exactly like a captured action. Because the output
+went to your terminal rather than into a buffer, the action's log pane says so
+instead of showing an empty capture.
+
+Two limits follow from what handoff means:
+
+- lifecycle `start`, `stop`, and `logs` commands cannot be interactive; they run
+  unattended, sometimes while Kranz is shutting down;
+- an interactive action cannot be a [prerequisite](#running-an-action-before-a-service-starts),
+  because prerequisites run while a start is already in flight.
+
+Use `confirm: true` for the different case where *Kranz* should ask before
+running a command. `confirm` guards the launch; `interactive` gives the command
+the terminal once it is running.
