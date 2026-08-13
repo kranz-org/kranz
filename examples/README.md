@@ -62,7 +62,7 @@ disabled on purpose: edit its `preflight` action to `exit 1`, reload with
 
 The same example carries `migrate-interactive`, an action that takes over the
 terminal to ask whether it should apply its migrations. Expand `catalog-api`,
-select it, and press `s`.
+focus `migrate-interactive`, and press `s`.
 
 ## Detached lifecycle playground
 
