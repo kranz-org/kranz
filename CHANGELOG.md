@@ -4,6 +4,8 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-13
+
 ### Added
 
 - Detached service supervision with optional lifecycle start, stop, status,
