@@ -4,6 +4,12 @@ Kranz adapts to the terminal you already use. By default it reads your
 terminal's background color and derives a readable palette from it, so it looks
 native in both light and dark profiles without configuration.
 
+<div class="demo-frame">
+
+![The theme picker previewing themes live before anything is saved](../assets/appearance.gif)
+
+</div>
+
 Press `Ctrl+T` to open the live picker.
 
 ## Two places settings can live

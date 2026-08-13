@@ -20,7 +20,9 @@ BOOT_DELAY = float(os.environ.get("BOOT_DELAY", "0"))
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path in {"/health/ready", "/health/live"}:
+        # Health endpoints, the status endpoint workers poll, and every route
+        # this service claims to map.
+        if self.path in {"/health/ready", "/health/live", "/api/status"} or self.path in ROUTES:
             body = (json.dumps({"status": "ok", "service": SERVICE_NAME}) + "\n").encode()
             self.send_response(200)
             self.send_header("content-type", "application/json")

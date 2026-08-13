@@ -23,7 +23,7 @@ action_groups:
       status:
         description: Show what the example is currently running.
         command: >-
-          echo "services on 18921-18924, web port chosen at runtime";
+          echo "APIs on 18921-18923, web port chosen at runtime";
           ls .kranz-demo 2>/dev/null || echo "no infrastructure markers"
       reset:
         description: Remove every marker this example created.

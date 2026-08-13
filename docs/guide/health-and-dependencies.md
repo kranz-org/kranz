@@ -2,6 +2,12 @@
 
 ## Readiness and liveness
 
+<div class="demo-frame">
+
+![Starting one service pulls in its dependencies and waits for each gate](../assets/dependencies.gif)
+
+</div>
+
 Each probe declares its own type: `http`, `tcp`, or `command`.
 
 ```yaml

@@ -2,6 +2,12 @@
 
 ## Logs
 
+<div class="demo-frame">
+
+![Filtering a service log with a regular expression](../assets/log-search.gif)
+
+</div>
+
 Kranz captures stdout and stderr for process services and actions. Detached
 services can provide `lifecycle.logs.command`, usually a following command such
 as `docker compose logs -f`. Its process is managed independently from the
