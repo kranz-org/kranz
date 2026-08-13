@@ -1,5 +1,6 @@
 # Regenerate with: vhs docs/assets/tapes/runtime-ports.tape
-# Run from the repository root with a built binary in ./bin.
+# Run from the repository root with a release-stamped binary in ./bin:
+#   make build VERSION=v0.7.0
 Output docs/assets/runtime-ports.gif
 
 Set Shell "bash"

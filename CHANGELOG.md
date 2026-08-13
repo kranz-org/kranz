@@ -27,6 +27,10 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
   that has to be answered, such as a migration that confirms before it writes,
   and records its exit code and duration when it finishes. Lifecycle commands
   and prerequisites cannot be interactive, because both run unattended.
+- A MoonFlight showcase example: shared detached infrastructure, a migration
+  other services wait to finish, two APIs behind an edge gateway, a front end
+  on a runtime-discovered port with a prerequisite, two workers, and a project
+  action group. It is the project shown in the documentation recordings.
 - Reproducible terminal recordings generated from tapes in
   `docs/assets/tapes/`, including the site hero and the Procfile quickstart,
   which were previously captured by hand.

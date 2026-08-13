@@ -173,6 +173,7 @@ func TestLoadAllCanonicalExamples(t *testing.T) {
 		"../../examples/procfile/Procfile",
 		"../../examples/runtime-ports/kranz.yaml",
 		"../../examples/prerequisites/kranz.yaml",
+		"../../examples/moonflight/kranz.yaml",
 	}
 	for _, path := range paths {
 		t.Run(filepath.Base(filepath.Dir(path))+"/"+filepath.Base(path), func(t *testing.T) {

@@ -31,9 +31,9 @@ features:
     details: Start with a Procfile, a supported Process Compose file, or native Kranz YAML when you need the full model.
 ---
 
-<div class="demo-frame">
+<div class="demo-frame demo-frame--hero">
 
-![Kranz terminal interface](./assets/kranz-demo.gif)
+![Kranz starting the MoonFlight project: shared infrastructure, a migration, two APIs behind a gateway, a web front end, and two workers](./assets/kranz-demo.gif)
 
 </div>
 
@@ -60,6 +60,7 @@ Start with [What is Kranz?](./guide/what-is-kranz), then follow the
 
 | You already have | Start here |
 | --- | --- |
+| A whole product and want to see everything at once | [MoonFlight showcase](./examples/moonflight) |
 | A few shell commands | [Procfile quickstart](./examples/procfile) |
 | Services with dependencies and health checks | [Native YAML example](./examples/native) |
 | A `process-compose.yaml` | [Process Compose example](./examples/process-compose) |

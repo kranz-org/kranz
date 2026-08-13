@@ -44,6 +44,13 @@
   margin: 0;
 }
 
+/* The home page recording is an illustration, not a workspace: cap it so it
+   does not dominate the fold on a wide screen. */
+.demo-frame--hero {
+  max-width: 820px;
+  margin-inline: auto;
+}
+
 .demo-frame img {
   display: block;
   width: 100%;

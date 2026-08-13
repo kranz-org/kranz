@@ -54,6 +54,7 @@ export default defineConfig({
         text: 'Runnable examples',
         items: [
           { text: 'Choose an example', link: '/examples' },
+          { text: 'MoonFlight showcase', link: '/examples/moonflight' },
           { text: 'Procfile quickstart', link: '/examples/procfile' },
           { text: 'Native YAML', link: '/examples/native' },
           { text: 'Detached lifecycle', link: '/examples/lifecycle' },

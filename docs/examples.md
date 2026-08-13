@@ -8,6 +8,7 @@ their own directory.
 Start from the repository root after building or installing Kranz.
 
 <div class="example-grid">
+  <a class="example-card" href="./examples/moonflight"><strong>MoonFlight showcase</strong>The whole model in one project: infrastructure, migration, APIs, gateway, workers.</a>
   <a class="example-card" href="./examples/procfile"><strong>Procfile quickstart</strong>Three commands, no YAML. Learn the interface and environment loading.</a>
   <a class="example-card" href="./examples/native"><strong>Native YAML</strong>Dependencies, a one-shot setup, readiness, and runtime ports.</a>
   <a class="example-card" href="./examples/lifecycle"><strong>Detached lifecycle</strong>Start, stop, observe, and reconnect external resources safely.</a>
@@ -21,6 +22,7 @@ Start from the repository root after building or installing Kranz.
 
 | If you want to learn… | Use |
 | --- | --- |
+| How everything fits together in one project | [MoonFlight](./examples/moonflight) |
 | The keyboard and basic service lifecycle | [Procfile](./examples/procfile) |
 | How a real `kranz.yaml` is structured | [Native YAML](./examples/native) |
 | Docker/SSH-style resources that survive Kranz | [Detached lifecycle](./examples/lifecycle) |

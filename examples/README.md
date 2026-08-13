@@ -9,6 +9,20 @@ use Docker, SSH, credentials, external hosts, or destructive system commands.
 They only open documented localhost ports; the lifecycle playground additionally
 creates ignored marker files inside its own directory.
 
+## MoonFlight: the whole model in one project
+
+```bash
+cd examples/moonflight
+kranz
+```
+
+The showcase project used for the documentation recordings: a detached resource
+that outlives the session, a migration other services wait to finish, two APIs
+behind an edge gateway, a front end on a port chosen at runtime with a
+`before_start` prerequisite, two workers, and a project action group. It only
+opens localhost ports 18921-18923 and writes marker files under
+`examples/moonflight/.kranz-demo`.
+
 ## Procfile: zero configuration
 
 ```bash
