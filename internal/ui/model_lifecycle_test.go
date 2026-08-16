@@ -504,6 +504,69 @@ func TestMouseCanForceStartFocusedService(t *testing.T) {
 	}
 }
 
+func TestMouseClickChangesServiceStartedByFooterAction(t *testing.T) {
+	model := NewModel(&config.Config{Project: "Test", Services: map[string]config.Service{
+		"api":    {Command: "sleep 60", Dir: ".", Shell: "sh"},
+		"worker": {Command: "sleep 60", Dir: ".", Shell: "sh"},
+	}}, "test")
+	defer model.Shutdown()
+	model.width, model.height, model.ready = 80, 24, true
+	model.selected["api"] = true
+
+	clickRenderedText(t, model, "worker")
+	command := clickRenderedText(t, model, "Start: s")
+	if command == nil {
+		t.Fatal("start button did not schedule the operation")
+	}
+	_, _ = model.Update(command().(operationResultMsg))
+
+	api, _ := model.manager.GetService("api")
+	worker, _ := model.manager.GetService("worker")
+	if api.Status() != config.StatusStopped || worker.Status() != config.StatusRunning {
+		t.Fatalf("after clicking worker, statuses api=%s worker=%s", api.Status(), worker.Status())
+	}
+}
+
+func TestMouseCheckboxKeepsExplicitMultiSelection(t *testing.T) {
+	model := NewModel(&config.Config{Project: "Test", Services: map[string]config.Service{
+		"api":    {Command: "true"},
+		"worker": {Command: "true"},
+	}}, "test")
+	defer model.Shutdown()
+	model.width, model.height, model.ready = 80, 24, true
+	model.selected["api"] = true
+
+	clickRenderedText(t, model, "[ ]")
+	if !model.selected["api"] || !model.selected["worker"] || len(model.selected) != 2 {
+		t.Fatalf("checkbox selection = %#v, want api and worker", model.selected)
+	}
+}
+
+func TestMouseClickInTagGroupChangesServiceStartedByFooterAction(t *testing.T) {
+	model := NewModel(&config.Config{Project: "Test", Services: map[string]config.Service{
+		"api":    {Command: "sleep 60", Dir: ".", Shell: "sh", Tags: []string{"backend"}},
+		"worker": {Command: "sleep 60", Dir: ".", Shell: "sh", Tags: []string{"backend"}},
+	}}, "test")
+	defer model.Shutdown()
+	model.width, model.height, model.ready = 80, 24, true
+	model.listMode = listTags
+	model.expandedTags["backend"] = true
+	model.selected["api"] = true
+
+	clickRenderedText(t, model, "worker")
+	command := clickRenderedText(t, model, "Start: s")
+	if command == nil {
+		t.Fatal("start button did not schedule the operation")
+	}
+	_, _ = model.Update(command().(operationResultMsg))
+
+	api, _ := model.manager.GetService("api")
+	worker, _ := model.manager.GetService("worker")
+	if api.Status() != config.StatusStopped || worker.Status() != config.StatusRunning {
+		t.Fatalf("after clicking grouped worker, statuses api=%s worker=%s", api.Status(), worker.Status())
+	}
+}
+
 func TestDetailsShowLifecycleConfiguration(t *testing.T) {
 	model := NewModel(&config.Config{Project: "Test", Services: map[string]config.Service{
 		"db": {Command: "sleep 60", ReadyLogLine: "READY"},

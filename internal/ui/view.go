@@ -206,6 +206,7 @@ type actionButton struct {
 
 func (m *Model) actionButtons() []actionButton {
 	actionFocused := m.listMode == listServices && m.focusedAction != nil
+	actionGroupFocused := m.listMode == listServices && m.focusedActionGroup != ""
 	targets := m.selectedTargetNames()
 	allActive := len(targets) > 0
 	allRunning := len(targets) > 0
@@ -259,6 +260,19 @@ func (m *Model) actionButtons() []actionButton {
 		if len(m.allServices) > 0 && len(m.selected) == len(m.allServices) {
 			allLabel = "Clear: a"
 		}
+		if actionFocused {
+			return []actionButton{
+				{action: "toggle", rendered: compact(toggleStyle, compactToggle)},
+				{action: "all", rendered: compact(SecondaryButtonStyle, allLabel)},
+				{action: "quit", rendered: compact(DangerButtonStyle, "Quit: q")},
+			}
+		}
+		if actionGroupFocused {
+			return []actionButton{
+				{action: "all", rendered: compact(SecondaryButtonStyle, allLabel)},
+				{action: "quit", rendered: compact(DangerButtonStyle, "Quit: q")},
+			}
+		}
 		return []actionButton{
 			{action: "toggle", rendered: compact(toggleStyle, compactToggle)},
 			{action: "force", rendered: compact(WarningButtonStyle, "Force: S")},
@@ -271,6 +285,19 @@ func (m *Model) actionButtons() []actionButton {
 	allLabel := "Select all: a"
 	if len(m.allServices) > 0 && len(m.selected) == len(m.allServices) {
 		allLabel = "Clear all: a"
+	}
+	if actionFocused {
+		return []actionButton{
+			{action: "toggle", rendered: toggleStyle.Render(toggleLabel)},
+			{action: "all", rendered: SecondaryButtonStyle.Render(allLabel)},
+			{action: "quit", rendered: DangerButtonStyle.Render("Quit: q")},
+		}
+	}
+	if actionGroupFocused {
+		return []actionButton{
+			{action: "all", rendered: SecondaryButtonStyle.Render(allLabel)},
+			{action: "quit", rendered: DangerButtonStyle.Render("Quit: q")},
+		}
 	}
 	return []actionButton{
 		{action: "toggle", rendered: toggleStyle.Render(toggleLabel)},

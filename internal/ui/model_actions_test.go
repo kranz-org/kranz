@@ -127,6 +127,108 @@ func TestEnterExpandsOwnerAndSRunsFocusedAction(t *testing.T) {
 	}
 }
 
+func TestMouseClickFocusesActionForFooterRun(t *testing.T) {
+	model := NewModel(&config.Config{Project: "Actions", Services: map[string]config.Service{
+		"docs": {Command: "sleep 60"},
+	}, ActionGroups: map[string]config.ActionGroup{
+		"analytics": {Actions: map[string]config.Action{
+			"stats": {Command: "true"},
+		}},
+	}}, "test")
+	defer model.Shutdown()
+	model.width, model.height, model.ready = 100, 30, true
+	model.expandedActionOwner[actionOwnerKey(config.ActionOwnerGroup, "analytics")] = true
+
+	found := false
+	for y, line := range strings.Split(ansi.Strip(model.View()), "\n") {
+		if index := strings.Index(line, "stats"); index >= 0 {
+			x := lipgloss.Width(line[:index])
+			_, _ = model.handleMouseMsg(tea.MouseMsg{
+				X: x, Y: y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
+			})
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("stats action not found:\n%s", ansi.Strip(model.View()))
+	}
+	if model.focusedAction == nil || model.focusedAction.Owner != "analytics" || model.focusedAction.Name != "stats" {
+		t.Fatalf("click focused action %#v", model.focusedAction)
+	}
+	buttons := model.actionButtons()
+	if len(buttons) != 3 || !strings.Contains(ansi.Strip(buttons[0].rendered), "Run action: s") {
+		t.Fatalf("clicked action controls = %#v", buttons)
+	}
+	for _, button := range buttons {
+		if button.action == "force" || button.action == "select" || button.action == "restart" {
+			t.Fatalf("service-only action %q shown for focused action", button.action)
+		}
+	}
+	for _, action := range []string{"force", "select", "restart"} {
+		_, blocked := model.triggerAction(action)
+		if blocked != nil {
+			t.Fatalf("%s scheduled a service command for focused action", action)
+		}
+	}
+	if status := model.FocusedService().Status(); status != config.StatusStopped {
+		t.Fatalf("service changed before action run: %s", status)
+	}
+	_, command := model.triggerAction("toggle")
+	if command == nil {
+		t.Fatal("clicked action footer did not schedule the action")
+	}
+	_, _ = model.Update(command())
+	state, _ := model.manager.ActionState(*model.focusedAction)
+	if state.Status != service.ActionSucceeded {
+		t.Fatalf("clicked action status = %#v", state)
+	}
+	if status := model.FocusedService().Status(); status != config.StatusStopped {
+		t.Fatalf("action footer changed service status to %s", status)
+	}
+}
+
+func TestActionGroupFooterCannotOperatePreviouslyFocusedService(t *testing.T) {
+	model := NewModel(&config.Config{Project: "Actions", Services: map[string]config.Service{
+		"docs": {Command: "sleep 60"},
+	}, ActionGroups: map[string]config.ActionGroup{
+		"analytics": {Actions: map[string]config.Action{"stats": {Command: "true"}}},
+	}}, "test")
+	defer model.Shutdown()
+	model.width, model.height, model.ready = 120, 30, true
+
+	rows := model.serviceListRows()
+	groupIndex := -1
+	for index, row := range rows {
+		if row.Kind == actionRowGroup && row.Group == "analytics" {
+			groupIndex = index
+			break
+		}
+	}
+	if groupIndex < 0 {
+		t.Fatalf("analytics group not found in rows: %#v", rows)
+	}
+	model.focusServiceListRow(groupIndex)
+
+	buttons := model.actionButtons()
+	if len(buttons) != 2 || buttons[0].action != "all" || buttons[1].action != "quit" {
+		t.Fatalf("focused group controls = %#v", buttons)
+	}
+	selectedBefore := len(model.selected)
+	for _, action := range []string{"toggle", "force", "select", "restart"} {
+		_, command := model.triggerAction(action)
+		if command != nil {
+			t.Fatalf("%s scheduled a service command for focused group", action)
+		}
+	}
+	if status := model.FocusedService().Status(); status != config.StatusStopped {
+		t.Fatalf("focused group changed service status to %s", status)
+	}
+	if len(model.selected) != selectedBefore {
+		t.Fatalf("focused group changed service selection: %d -> %d", selectedBefore, len(model.selected))
+	}
+}
+
 func TestServiceActionsExpandNavigateRunAndRenderOutput(t *testing.T) {
 	model := NewModel(&config.Config{Project: "Actions", Services: map[string]config.Service{
 		"app": {Command: "sleep 10", Actions: map[string]config.Action{
@@ -197,6 +299,99 @@ func TestServiceActionsExpandNavigateRunAndRenderOutput(t *testing.T) {
 		if !strings.Contains(output, expected) {
 			t.Fatalf("action output missing %q:\n%s", expected, output)
 		}
+	}
+}
+
+func TestDoubleClickOpensServiceAndGroup(t *testing.T) {
+	tests := []struct {
+		name   string
+		config *config.Config
+		label  string
+		owner  string
+	}{
+		{
+			name: "service",
+			config: &config.Config{Project: "Service actions", Services: map[string]config.Service{
+				"app": {Actions: map[string]config.Action{"inspect": {Command: "true"}}},
+			}},
+			label: "app ▸",
+			owner: actionOwnerKey(config.ActionOwnerService, "app"),
+		},
+		{
+			name: "group",
+			config: &config.Config{Project: "Group actions", ActionGroups: map[string]config.ActionGroup{
+				"tools": {Actions: map[string]config.Action{"inspect": {Command: "true"}}},
+			}},
+			label: "▸  tools",
+			owner: actionOwnerKey(config.ActionOwnerGroup, "tools"),
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			model := NewModel(test.config, "test")
+			defer model.Shutdown()
+			model.width, model.height, model.ready = 100, 30, true
+
+			clickRenderedText(t, model, test.label)
+			if model.expandedActionOwner[test.owner] {
+				t.Fatal("single click opened the row")
+			}
+			clickRenderedText(t, model, test.label)
+			if !model.expandedActionOwner[test.owner] {
+				t.Fatal("double click did not open the row")
+			}
+		})
+	}
+}
+
+func TestDoubleClickRequiresConsecutiveRowClicks(t *testing.T) {
+	model := NewModel(&config.Config{Project: "Service actions", Services: map[string]config.Service{
+		"app": {Actions: map[string]config.Action{"inspect": {Command: "true"}}},
+	}}, "test")
+	defer model.Shutdown()
+	model.width, model.height, model.ready = 100, 30, true
+	owner := actionOwnerKey(config.ActionOwnerService, "app")
+
+	clickRenderedText(t, model, "app ▸")
+	clickRenderedText(t, model, "[2]")
+	clickRenderedText(t, model, "app ▸")
+	if model.expandedActionOwner[owner] {
+		t.Fatal("row opened despite an intervening mouse press")
+	}
+}
+
+func TestDoubleClickExpiresAndDoesNotOverrideCheckboxClicks(t *testing.T) {
+	model := NewModel(&config.Config{Project: "Service actions", Services: map[string]config.Service{
+		"app": {Actions: map[string]config.Action{"inspect": {Command: "true"}}},
+	}}, "test")
+	defer model.Shutdown()
+	model.width, model.height, model.ready = 100, 30, true
+	owner := actionOwnerKey(config.ActionOwnerService, "app")
+
+	started := time.Now()
+	model.mousePressSequence = 1
+	model.openListOwnerOnDoubleClick(owner, started)
+	model.mousePressSequence = 2
+	model.openListOwnerOnDoubleClick(owner, started.Add(doubleClickInterval+time.Millisecond))
+	if model.expandedActionOwner[owner] {
+		t.Fatal("expired clicks opened the row")
+	}
+
+	rowY := -1
+	for y, line := range strings.Split(ansi.Strip(model.View()), "\n") {
+		if strings.Contains(line, "app ▸") {
+			rowY = y
+			break
+		}
+	}
+	if rowY < 0 {
+		t.Fatalf("service row not found:\n%s", ansi.Strip(model.View()))
+	}
+	checkboxClick := tea.MouseMsg{X: checkboxMinColumn, Y: rowY, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft}
+	_, _ = model.handleMouseMsg(checkboxClick)
+	_, _ = model.handleMouseMsg(checkboxClick)
+	if model.selected["app"] || model.expandedActionOwner[owner] {
+		t.Fatalf("double checkbox click left selected=%v expanded=%v", model.selected["app"], model.expandedActionOwner[owner])
 	}
 }
 

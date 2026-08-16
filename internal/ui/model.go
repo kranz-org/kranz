@@ -245,6 +245,10 @@ type Model struct {
 	backgroundProbeBusy bool
 	lastBackgroundProbe time.Time
 	lastMouseRefresh    time.Time
+	mousePressSequence  uint64
+	lastListClickOwner  string
+	lastListClickSeq    uint64
+	lastListClickAt     time.Time
 	systemAppearanceSet bool
 	systemDark          bool
 	themeBefore         Theme

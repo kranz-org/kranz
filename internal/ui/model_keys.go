@@ -240,15 +240,33 @@ func (m *Model) handleLogKey(msg tea.KeyMsg) bool {
 }
 
 func (m *Model) triggerAction(action string) (tea.Model, tea.Cmd) {
+	actionOwnerFocused := m.listMode == listServices && (m.focusedAction != nil || m.focusedActionGroup != "")
 	switch action {
 	case "toggle":
+		if m.focusedAction != nil {
+			if command, handled := m.toggleFocusedAction(); handled {
+				return m, command
+			}
+		}
+		if actionOwnerFocused {
+			return m, nil
+		}
 		return m.toggleSelectedServices()
 	case "force":
+		if actionOwnerFocused {
+			return m, nil
+		}
 		return m.forceToggleSelectedServices()
 	case "select":
+		if actionOwnerFocused {
+			return m, nil
+		}
 		m.toggleFocusedSelection()
 		return m, nil
 	case "restart":
+		if actionOwnerFocused {
+			return m, nil
+		}
 		return m.restartSelectedService()
 	case "all":
 		m.toggleAllSelection()

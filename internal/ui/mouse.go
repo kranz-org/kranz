@@ -2,10 +2,12 @@ package ui
 
 import (
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/kranz-org/kranz/internal/config"
 )
 
 const (
@@ -14,6 +16,7 @@ const (
 	listFirstItemRow    = 2
 	checkboxMinColumn   = 3
 	checkboxMaxColumn   = 5
+	doubleClickInterval = 500 * time.Millisecond
 )
 
 type mouseKeyBinding struct {
@@ -67,6 +70,9 @@ func renderedTextRegionHit(rendered string, x, y int, label string, leftCells, r
 // keyboard input. Keeping both paths aligned prevents click-only behavior from
 // drifting away from documented shortcuts.
 func (m *Model) handleMouseMsg(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+		m.mousePressSequence++
+	}
 	if m.mode != ModeNormal {
 		return m.handleOverlayMouse(msg)
 	}
@@ -218,10 +224,44 @@ func (m *Model) handleServiceRowClick(row, listHeight, column int) {
 		return
 	}
 	rows := m.serviceListRows()
-	m.focusServiceListRow(index)
-	if index < len(rows) && rows[index].Kind == actionRowService && column >= checkboxMinColumn && column <= checkboxMaxColumn {
-		m.toggleFocusedSelection()
+	if index >= len(rows) {
+		return
 	}
+	m.focusServiceListRow(index)
+	owner := ""
+	switch rows[index].Kind {
+	case actionRowService:
+		if column >= checkboxMinColumn && column <= checkboxMaxColumn {
+			m.toggleFocusedSelection()
+			return
+		}
+		m.selectedTags = nil
+		m.selected = make(map[string]bool)
+		owner = actionOwnerKey(config.ActionOwnerService, rows[index].Service.Name)
+	case actionRowGroup:
+		owner = actionOwnerKey(config.ActionOwnerGroup, rows[index].Group)
+	default:
+		return
+	}
+	m.openListOwnerOnDoubleClick(owner, time.Now())
+}
+
+func (m *Model) openListOwnerOnDoubleClick(owner string, now time.Time) {
+	elapsed := now.Sub(m.lastListClickAt)
+	isDoubleClick := owner == m.lastListClickOwner &&
+		m.lastListClickSeq+1 == m.mousePressSequence &&
+		!m.lastListClickAt.IsZero() &&
+		elapsed >= 0 && elapsed <= doubleClickInterval
+	if isDoubleClick {
+		m.lastListClickOwner = ""
+		m.lastListClickSeq = 0
+		m.lastListClickAt = time.Time{}
+		_, _ = m.openFocusedListItem()
+		return
+	}
+	m.lastListClickOwner = owner
+	m.lastListClickSeq = m.mousePressSequence
+	m.lastListClickAt = now
 }
 
 func (m *Model) handleTagRowClick(row, listHeight, column int) {
@@ -242,7 +282,10 @@ func (m *Model) handleTagRowClick(row, listHeight, column int) {
 	}
 	if column >= checkboxStart && column <= checkboxEnd {
 		m.toggleCurrentSelection()
+		return
 	}
+	m.selectedTags = nil
+	m.selected = make(map[string]bool)
 }
 
 func (m *Model) handleOverlayMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
