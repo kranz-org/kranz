@@ -4,6 +4,17 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-08-17
+
+### Fixed
+
+- Double-clicking a service or action group now opens it consistently with the
+  keyboard interaction.
+- Mouse clicks now make the focused service or action the footer command target
+  instead of operating on the service selected during startup. Explicit
+  checkbox multi-selection is preserved, and service-only controls are hidden
+  and blocked while an action or action group is focused.
+
 ## [0.7.0] - 2026-08-13
 
 ### Added
@@ -224,7 +235,9 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 - Explicit global-user and project-config save destinations in the live theme picker.
 - Native compatibility for common Process Compose configurations.
 
-[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/kranz-org/kranz/compare/v0.7.0...v0.7.1
+[0.7.0]: https://github.com/kranz-org/kranz/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/kranz-org/kranz/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/kranz-org/kranz/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/kranz-org/kranz/compare/v0.4.0...v0.5.0
