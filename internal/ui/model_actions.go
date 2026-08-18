@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -26,12 +25,7 @@ func (m *Model) serviceListRows() []actionListRow {
 			}
 		}
 	}
-	groups := make([]string, 0, len(m.cfg.ActionGroups))
-	for name := range m.cfg.ActionGroups {
-		groups = append(groups, name)
-	}
-	sort.Strings(groups)
-	for _, group := range groups {
+	for _, group := range m.cfg.ActionGroupNames() {
 		rows = append(rows, actionListRow{Kind: actionRowGroup, Group: group})
 		if m.expandedActionOwner[actionOwnerKey(config.ActionOwnerGroup, group)] {
 			for _, id := range m.actionIDsFor(config.ActionOwnerGroup, group) {

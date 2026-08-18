@@ -175,6 +175,7 @@ func loadProcessCompose(data []byte, path string) (*Config, error) {
 			DisableDotenv: process.IsDotenvDisabled, disabledSet: disabledSet,
 		}
 	}
+	cfg.ServiceOrder = mappingKeyOrder(data, "processes")
 	return cfg, nil
 }
 
