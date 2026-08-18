@@ -4,6 +4,21 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-08-18
+
+### Fixed
+
+- Services, action groups, and actions are now listed in the order the
+  configuration declares them instead of alphabetically. Layered configurations
+  keep the order of the base file and append only the entries an override
+  introduces, in the order the override declares them.
+
+### Security
+
+- The documentation site now builds against a patched Vite, resolving three
+  Vite development server advisories and one esbuild development server
+  advisory reported against the previous transitive dependency.
+
 ## [0.7.1] - 2026-08-17
 
 ### Fixed
@@ -235,7 +250,8 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 - Explicit global-user and project-config save destinations in the live theme picker.
 - Native compatibility for common Process Compose configurations.
 
-[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.7.2...HEAD
+[0.7.2]: https://github.com/kranz-org/kranz/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/kranz-org/kranz/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/kranz-org/kranz/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/kranz-org/kranz/compare/v0.6.0...v0.6.1
