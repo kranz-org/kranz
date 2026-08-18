@@ -633,3 +633,27 @@ func TestStartConfirmFlagDoesNotBypassStopConfirmation(t *testing.T) {
 		t.Fatalf("stopped confirmed action state = %#v", state)
 	}
 }
+
+func TestServiceListRowsFollowActionGroupDeclarationOrder(t *testing.T) {
+	model := NewModel(&config.Config{
+		Project: "Actions",
+		ActionGroups: map[string]config.ActionGroup{
+			"development": {Actions: map[string]config.Action{"build": {Command: "true"}}},
+			"analytics":   {Actions: map[string]config.Action{"stats": {Command: "true"}}},
+			"release":     {Actions: map[string]config.Action{"tag": {Command: "true"}}},
+		},
+		ActionGroupOrder: []string{"development", "analytics", "release"},
+	}, "test")
+	defer model.Shutdown()
+	model.width, model.height, model.ready = 120, 30, true
+
+	groups := make([]string, 0, 3)
+	for _, row := range model.serviceListRows() {
+		if row.Kind == actionRowGroup {
+			groups = append(groups, row.Group)
+		}
+	}
+	if strings.Join(groups, ",") != "development,analytics,release" {
+		t.Errorf("group row order = %v, want [development analytics release]", groups)
+	}
+}
