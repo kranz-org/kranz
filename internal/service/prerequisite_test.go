@@ -163,10 +163,19 @@ func TestPrerequisiteRunsAfterDependenciesAreReady(t *testing.T) {
 	manager := NewManager(&config.Config{
 		Project: "Prerequisites",
 		Services: map[string]config.Service{
-			"database": {Command: "echo database >> " + order + " && sleep 60", Dir: directory, Shell: "/bin/sh"},
+			// The dependency announces readiness on stdout only after it has
+			// appended to the order file, so "ready" and the recorded side
+			// effect cannot be observed out of order.
+			"database": {
+				Command:      "sleep 0.5 && echo database >> " + order + " && echo ready && sleep 60",
+				Dir:          directory,
+				Shell:        "/bin/sh",
+				ReadyLogLine: "ready",
+			},
 			"api": {
-				Command:   "sleep 60",
-				DependsOn: []string{"database"},
+				Command:              "sleep 60",
+				DependsOn:            []string{"database"},
+				DependencyConditions: map[string]config.DependencyConfig{"database": {Condition: config.DependencyLogReady}},
 				Actions: map[string]config.Action{
 					"migrate": {Command: "echo migrate >> " + order, Dir: directory, Shell: "/bin/sh"},
 				},
@@ -179,7 +188,7 @@ func TestPrerequisiteRunsAfterDependenciesAreReady(t *testing.T) {
 	if err := manager.StartServicesContext(context.Background(), []string{"api"}); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	var content []byte
 	for time.Now().Before(deadline) {
 		content, _ = os.ReadFile(order)
