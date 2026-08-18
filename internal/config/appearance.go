@@ -83,6 +83,9 @@ func yamlMappingRoot(document *yaml.Node) (*yaml.Node, error) {
 }
 
 func mappingValue(mapping *yaml.Node, key string) *yaml.Node {
+	if mapping == nil || mapping.Kind != yaml.MappingNode {
+		return nil
+	}
 	for index := 0; index+1 < len(mapping.Content); index += 2 {
 		if mapping.Content[index].Value == key {
 			return mapping.Content[index+1]

@@ -154,11 +154,13 @@ func mergeConfig(base, override *Config) error {
 	if base.ActionGroups == nil {
 		base.ActionGroups = make(map[string]ActionGroup)
 	}
-	for name, incoming := range override.ActionGroups {
+	for _, name := range override.ActionGroupNames() {
+		incoming := override.ActionGroups[name]
 		if current, exists := base.ActionGroups[name]; exists {
 			base.ActionGroups[name] = mergeActionGroup(current, incoming)
 		} else {
 			base.ActionGroups[name] = incoming
+			base.ActionGroupOrder = append(base.ActionGroupOrder, name)
 		}
 	}
 	if baseSource == SourceKranz || overrideSource == SourceKranz {
@@ -288,7 +290,7 @@ func mergeService(base, override Service, mergeDependencies bool) Service {
 	if override.DisableDotenv {
 		base.DisableDotenv = true
 	}
-	base.Actions = mergeActions(base.Actions, override.Actions)
+	base.Actions, base.ActionOrder = mergeActions(base.Actions, base.ActionOrder, override.Actions, override.ActionNames())
 	return base
 }
 
@@ -389,22 +391,24 @@ func mergeActionGroup(base, override ActionGroup) ActionGroup {
 	if len(override.EnvFiles) > 0 {
 		base.EnvFiles = append([]string(nil), override.EnvFiles...)
 	}
-	base.Actions = mergeActions(base.Actions, override.Actions)
+	base.Actions, base.ActionOrder = mergeActions(base.Actions, base.ActionOrder, override.Actions, override.ActionNames())
 	return base
 }
 
-func mergeActions(base, override map[string]Action) map[string]Action {
+func mergeActions(base map[string]Action, baseOrder []string, override map[string]Action, overrideOrder []string) (map[string]Action, []string) {
 	if base == nil && len(override) > 0 {
 		base = make(map[string]Action, len(override))
 	}
-	for name, incoming := range override {
+	for _, name := range overrideOrder {
+		incoming := override[name]
 		if current, exists := base[name]; exists {
 			base[name] = mergeAction(current, incoming)
 		} else {
 			base[name] = incoming
+			baseOrder = append(baseOrder, name)
 		}
 	}
-	return base
+	return base, baseOrder
 }
 
 func mergeAction(base, override Action) Action {
@@ -457,7 +461,53 @@ func loadNative(data []byte) (*Config, error) {
 		return nil, fmt.Errorf("parse Kranz YAML: %w", err)
 	}
 	cfg.Source = SourceKranz
+	recordDeclarationOrder(&cfg, data)
 	return &cfg, nil
+}
+
+// recordDeclarationOrder captures the document ordering of services, action
+// groups, and the actions each of them owns.
+func recordDeclarationOrder(cfg *Config, data []byte) {
+	cfg.ServiceOrder = mappingKeyOrder(data, "services")
+	for name, service := range cfg.Services {
+		service.ActionOrder = mappingKeyOrder(data, "services", name, "actions")
+		cfg.Services[name] = service
+	}
+	cfg.ActionGroupOrder = mappingKeyOrder(data, "action_groups")
+	for name, group := range cfg.ActionGroups {
+		group.ActionOrder = mappingKeyOrder(data, "action_groups", name, "actions")
+		cfg.ActionGroups[name] = group
+	}
+}
+
+// mappingKeyOrder returns the keys of the mapping reached by following path
+// from the document root, in declaration order. Every source format decodes
+// services and actions into maps, so the document itself is the only place the
+// author's ordering survives.
+func mappingKeyOrder(data []byte, path ...string) []string {
+	var document yaml.Node
+	if err := yaml.Unmarshal(data, &document); err != nil {
+		return nil
+	}
+	if len(document.Content) == 0 {
+		return nil
+	}
+	node := document.Content[0]
+	for _, section := range path {
+		child := mappingValue(node, section)
+		if child == nil {
+			return nil
+		}
+		node = child
+	}
+	if node.Kind != yaml.MappingNode {
+		return nil
+	}
+	keys := make([]string, 0, len(node.Content)/2)
+	for index := 0; index+1 < len(node.Content); index += 2 {
+		keys = append(keys, node.Content[index].Value)
+	}
+	return keys
 }
 
 func normalizeServiceStartSyntax(cfg *Config) error {
@@ -818,17 +868,37 @@ func applyCheckDefaults(c *CheckConfig) {
 	}
 }
 
-// ServiceNames returns service names in stable configuration order.
+// ServiceNames returns service names in declaration order.
 func (cfg *Config) ServiceNames() []string {
-	if len(cfg.ServiceOrder) == len(cfg.Services) {
-		return append([]string(nil), cfg.ServiceOrder...)
-	}
-	names := make([]string, 0, len(cfg.Services))
-	for name := range cfg.Services {
+	return orderedNames(cfg.ServiceOrder, cfg.Services)
+}
+
+// orderedNames lists the keys of values in declaration order. The order is a
+// hint recorded while parsing, never the source of truth: entries missing from
+// values are skipped, and keys the order does not mention, which happens when a
+// source format cannot express ordering, follow alphabetically so the result
+// stays deterministic either way.
+func orderedNames[V any](order []string, values map[string]V) []string {
+	names := make([]string, 0, len(values))
+	listed := make(map[string]struct{}, len(values))
+	for _, name := range order {
+		if _, exists := values[name]; !exists {
+			continue
+		}
+		if _, duplicate := listed[name]; duplicate {
+			continue
+		}
+		listed[name] = struct{}{}
 		names = append(names, name)
 	}
-	sort.Strings(names)
-	return names
+	remainder := make([]string, 0, len(values)-len(names))
+	for name := range values {
+		if _, ordered := listed[name]; !ordered {
+			remainder = append(remainder, name)
+		}
+	}
+	sort.Strings(remainder)
+	return append(names, remainder...)
 }
 
 // GetAllTags returns every unique service tag.

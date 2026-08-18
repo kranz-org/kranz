@@ -4,25 +4,25 @@ package config
 import (
 	"fmt"
 	"net/url"
-	"sort"
 	"time"
 )
 
 // Config is the normalized root structure for every supported source format.
 type Config struct {
-	Project      string                 `yaml:"project"`
-	Version      string                 `yaml:"version,omitempty"`
-	UI           UIConfig               `yaml:"ui,omitempty"`
-	Defaults     Defaults               `yaml:"defaults,omitempty"`
-	Services     map[string]Service     `yaml:"services,omitempty"`
-	ActionGroups map[string]ActionGroup `yaml:"action_groups,omitempty"`
-	ServiceOrder []string               `yaml:"-"`
-	Source       SourceFormat           `yaml:"-"`
-	Diagnostics  []string               `yaml:"-"`
-	Paths        []string               `yaml:"-"`
-	WatchPaths   []string               `yaml:"-"`
-	dotenvEnv    map[string]string      `yaml:"-"`
-	explicitEnv  map[string]string      `yaml:"-"`
+	Project          string                 `yaml:"project"`
+	Version          string                 `yaml:"version,omitempty"`
+	UI               UIConfig               `yaml:"ui,omitempty"`
+	Defaults         Defaults               `yaml:"defaults,omitempty"`
+	Services         map[string]Service     `yaml:"services,omitempty"`
+	ActionGroups     map[string]ActionGroup `yaml:"action_groups,omitempty"`
+	ServiceOrder     []string               `yaml:"-"`
+	ActionGroupOrder []string               `yaml:"-"`
+	Source           SourceFormat           `yaml:"-"`
+	Diagnostics      []string               `yaml:"-"`
+	Paths            []string               `yaml:"-"`
+	WatchPaths       []string               `yaml:"-"`
+	dotenvEnv        map[string]string      `yaml:"-"`
+	explicitEnv      map[string]string      `yaml:"-"`
 }
 
 // UIConfig defines project-specific presentation defaults.
@@ -83,6 +83,7 @@ type Service struct {
 	Disabled             bool                        `yaml:"disabled,omitempty"`
 	DisableDotenv        bool                        `yaml:"is_dotenv_disabled,omitempty"`
 	Actions              map[string]Action           `yaml:"actions,omitempty"`
+	ActionOrder          []string                    `yaml:"-"`
 	BeforeStart          []Prerequisite              `yaml:"before_start,omitempty"`
 	disabledSet          bool                        `yaml:"-"`
 }
@@ -244,6 +245,7 @@ type ActionGroup struct {
 	Env         map[string]string `yaml:"env,omitempty"`
 	EnvFiles    []string          `yaml:"env_files,omitempty"`
 	Actions     map[string]Action `yaml:"actions"`
+	ActionOrder []string          `yaml:"-"`
 }
 
 // ActionOwnerKind distinguishes service-scoped and project-level actions.
@@ -295,30 +297,31 @@ func (c *Config) ActionIDs() []ActionID {
 	}
 	ids := make([]ActionID, 0)
 	for _, owner := range c.ServiceNames() {
-		for _, name := range sortedActionNames(c.Services[owner].Actions) {
+		for _, name := range c.Services[owner].ActionNames() {
 			ids = append(ids, ActionID{OwnerKind: ActionOwnerService, Owner: owner, Name: name})
 		}
 	}
-	groups := make([]string, 0, len(c.ActionGroups))
-	for owner := range c.ActionGroups {
-		groups = append(groups, owner)
-	}
-	sort.Strings(groups)
-	for _, owner := range groups {
-		for _, name := range sortedActionNames(c.ActionGroups[owner].Actions) {
+	for _, owner := range c.ActionGroupNames() {
+		for _, name := range c.ActionGroups[owner].ActionNames() {
 			ids = append(ids, ActionID{OwnerKind: ActionOwnerGroup, Owner: owner, Name: name})
 		}
 	}
 	return ids
 }
 
-func sortedActionNames(actions map[string]Action) []string {
-	names := make([]string, 0, len(actions))
-	for name := range actions {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
+// ActionGroupNames returns action group names in declaration order.
+func (c *Config) ActionGroupNames() []string {
+	return orderedNames(c.ActionGroupOrder, c.ActionGroups)
+}
+
+// ActionNames returns the service action names in declaration order.
+func (s Service) ActionNames() []string {
+	return orderedNames(s.ActionOrder, s.Actions)
+}
+
+// ActionNames returns the group action names in declaration order.
+func (g ActionGroup) ActionNames() []string {
+	return orderedNames(g.ActionOrder, g.Actions)
 }
 
 // PortDiscoveryEnabled resolves the service-level tri-state. Services without
