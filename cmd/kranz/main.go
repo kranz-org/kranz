@@ -13,6 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/kranz-org/kranz/internal/app"
 	"github.com/kranz-org/kranz/internal/config"
 	"github.com/kranz-org/kranz/internal/settings"
 	"github.com/kranz-org/kranz/internal/ui"
@@ -72,9 +73,10 @@ func run() (runErr error) {
 	}
 
 	darkBackground := lipgloss.HasDarkBackground()
+	application := app.NewLocal(cfg, cfgPaths, app.Options{})
 	model := ui.NewModelWithOptions(cfg, version, ui.ModelOptions{
 		Settings: userSettings, SettingsPath: settingsPath, ConfigPaths: cfgPaths,
-		DarkBackground: &darkBackground,
+		DarkBackground: &darkBackground, App: application,
 	})
 	defer func() {
 		runErr = errors.Join(runErr, model.Shutdown())
