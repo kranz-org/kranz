@@ -170,6 +170,14 @@ func (m *Manager) groupByDependencyLevel(order []string) [][]string {
 	return groups
 }
 
+// StartDependencyClosure exposes the dependency expansion a start operation
+// would use, so a caller outside this package (the application layer's start
+// confirmation and planning) can compute the same closure instead of walking
+// config.Service.DependsOn on its own.
+func (m *Manager) StartDependencyClosure(names []string) (map[string]bool, error) {
+	return m.expandWithDependencies(names)
+}
+
 // StartByTags starts services matching at least one tag and their dependencies.
 
 func (m *Manager) expandWithDependencies(names []string) (map[string]bool, error) {
