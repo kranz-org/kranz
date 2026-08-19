@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -181,6 +182,59 @@ func TestSupervisorClientInteractiveActionLeaseRoundTrips(t *testing.T) {
 	}
 	if result.Status != app.ActionSucceeded {
 		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestDisconnectReleasesInteractiveActionLease(t *testing.T) {
+	cfg := &config.Config{
+		Project: "RPC Interactive Disconnect",
+		Services: map[string]config.Service{
+			"app": {Command: "sleep 60", Actions: map[string]config.Action{
+				"console": {Command: "exit 0", Shell: "/bin/sh", Interactive: boolPointer(true)},
+			}},
+		},
+	}
+	client, cleanup := startTestSupervisor(t, cfg, nil)
+	defer cleanup()
+
+	id := config.ActionID{OwnerKind: config.ActionOwnerService, Owner: "app", Name: "console"}
+	_, lease, err := client.AcquireInteractiveAction(id)
+	if err != nil {
+		t.Fatalf("acquire: %v", err)
+	}
+	intruder, err := Dial(client.conn.RemoteAddr().String(), "test")
+	if err != nil {
+		t.Fatalf("dial second client: %v", err)
+	}
+	if _, err := intruder.CompleteInteractiveAction(id, lease, nil, 0, 0); err == nil {
+		t.Fatal("another client completed a lease it does not own")
+	}
+	_ = intruder.Close()
+	if err := client.Close(); err != nil {
+		t.Fatalf("close client: %v", err)
+	}
+
+	// Teardown is asynchronous. A fresh client must eventually be able to
+	// acquire the same owner, proving the dead connection did not strand it.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		next, err := Dial(client.conn.RemoteAddr().String(), "test")
+		if err != nil {
+			t.Fatalf("dial replacement client: %v", err)
+		}
+		_, lease, acquireErr := next.AcquireInteractiveAction(id)
+		if acquireErr == nil {
+			if _, completeErr := next.CompleteInteractiveAction(id, lease, errors.New("test cleanup"), -1, 0); completeErr != nil {
+				t.Fatalf("complete replacement lease: %v", completeErr)
+			}
+			_ = next.Close()
+			break
+		}
+		_ = next.Close()
+		if time.Now().After(deadline) {
+			t.Fatalf("lease remained busy after disconnect: %v", acquireErr)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

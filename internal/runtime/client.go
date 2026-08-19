@@ -79,6 +79,26 @@ func Dial(socketPath, clientVersion string) (*Client, error) {
 		_ = conn.Close()
 		return nil, decodeError(payload)
 	}
+	if reply.Type != messageResponse {
+		_ = conn.Close()
+		return nil, fmt.Errorf("unexpected hello response type %q", reply.Type)
+	}
+	var hello helloResponse
+	if err := json.Unmarshal(reply.Body, &hello); err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("decode hello response: %w", err)
+	}
+	if hello.ProtocolMin > protocolVersion || hello.ProtocolMax < protocolVersion || hello.AgreedProtocol != protocolVersion {
+		_ = conn.Close()
+		return nil, &VersionMismatchError{
+			Message: fmt.Sprintf(
+				"Kranz: session speaks protocol %d, this client (%s) speaks %d. Upgrade kranz, or stop the session with the matching binary.",
+				hello.AgreedProtocol, clientVersion, protocolVersion,
+			),
+			ServerProtocol: hello.AgreedProtocol,
+			ServerVersion:  hello.ServerVersion,
+		}
+	}
 
 	go client.readLoop()
 	return client, nil

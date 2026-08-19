@@ -2,9 +2,27 @@ package runtime
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/kranz-org/kranz/internal/app"
 )
+
+// VersionMismatchError distinguishes protocol incompatibility from transport
+// failures such as timeout, EOF, or a malformed frame. Registry-aware clients
+// use this classification to report an incompatible live session instead of
+// incorrectly calling it unreachable.
+type VersionMismatchError struct {
+	Message        string
+	ServerProtocol int
+	ServerVersion  string
+}
+
+func (e *VersionMismatchError) Error() string {
+	if e.Message != "" {
+		return e.Message
+	}
+	return fmt.Sprintf("runtime protocol %d from Kranz %s is incompatible", e.ServerProtocol, e.ServerVersion)
+}
 
 // encodeError turns a Go error into the wire shape. app.PortConflictError is
 // the one error type internal/ui reconstructs with errors.As to drive the
@@ -36,6 +54,10 @@ func encodeError(err error) errorPayload {
 // its own kind.
 func decodeError(payload errorPayload) error {
 	switch payload.Kind {
+	case errorVersionMismatch:
+		return &VersionMismatchError{
+			Message: payload.Message, ServerProtocol: payload.ServerProtocol, ServerVersion: payload.ServerVersion,
+		}
 	case errorPortConflict:
 		return &app.PortConflictError{
 			Service:      payload.Service,

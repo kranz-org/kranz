@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"encoding/json"
+	"errors"
 	"net"
 	"strings"
 	"testing"
@@ -62,6 +63,55 @@ func TestDialRejectsAnIncompatibleProtocolRange(t *testing.T) {
 	}
 	if !strings.Contains(payload.Message, "future-kranz") || !strings.Contains(payload.Message, "Upgrade kranz") {
 		t.Fatalf("message = %q, missing expected content", payload.Message)
+	}
+}
+
+func TestDialRejectsAnOldServerThatIncorrectlyReturnsHelloSuccess(t *testing.T) {
+	_, socketPath, cleanupDir, err := NewSocketDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanupDir()
+	listener, err := listenUnix(socketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = listener.Close() }()
+
+	serverDone := make(chan error, 1)
+	go func() {
+		conn, acceptErr := listener.AcceptUnix()
+		if acceptErr != nil {
+			serverDone <- acceptErr
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		codec := newCodec(conn)
+		request, receiveErr := codec.receive()
+		if receiveErr != nil {
+			serverDone <- receiveErr
+			return
+		}
+		body, marshalErr := json.Marshal(helloResponse{
+			ProtocolMin: 0, ProtocolMax: 0, ServerVersion: "v0.7.2", AgreedProtocol: 0,
+		})
+		if marshalErr != nil {
+			serverDone <- marshalErr
+			return
+		}
+		serverDone <- codec.send(envelope{Type: messageResponse, ID: request.ID, Body: body})
+	}()
+
+	_, err = Dial(socketPath, "v0.8.0")
+	var mismatch *VersionMismatchError
+	if !errors.As(err, &mismatch) {
+		t.Fatalf("Dial error = %T %v, want VersionMismatchError", err, err)
+	}
+	if mismatch.ServerProtocol != 0 || mismatch.ServerVersion != "v0.7.2" {
+		t.Fatalf("mismatch = %#v", mismatch)
+	}
+	if serverErr := <-serverDone; serverErr != nil {
+		t.Fatalf("fake server: %v", serverErr)
 	}
 }
 
