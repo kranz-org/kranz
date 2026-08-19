@@ -78,6 +78,17 @@ func execute(args []string, stdout, stderr io.Writer) int {
 		}
 		return 0
 	}
+	if command := invocation.Command(); command == "start" || command == "stop" || command == "restart" || command == "reload" {
+		if err := runLifecycle(invocation.Globals, command, invocation.Args); err != nil {
+			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
+		}
+		if invocation.Globals.Output == kranzcli.OutputJSON {
+			if err := kranzcli.WriteJSON(stdout, struct{}{}); err != nil {
+				return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
+			}
+		}
+		return 0
+	}
 	if invocation.Command() == "down" {
 		if err := runDown(invocation.Globals, invocation.Args); err != nil {
 			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)

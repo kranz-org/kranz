@@ -586,9 +586,16 @@ func runStatus(options kranzcli.GlobalOptions, args []string, stdout io.Writer) 
 	return w.Flush()
 }
 
-func runDown(options kranzcli.GlobalOptions, args []string) error {
-	if len(args) > 0 {
-		return &kranzcli.Error{Code: "invalid_arguments", Message: "down does not accept arguments in this build", ExitCode: kranzcli.ExitUsage}
+func runLifecycle(options kranzcli.GlobalOptions, command string, args []string) error {
+	if options.Project == "" {
+		return &kranzcli.Error{Code: "missing_project", Message: "-p NAME_OR_ID is required", ExitCode: kranzcli.ExitUsage}
+	}
+	if command == "reload" {
+		if len(args) != 0 {
+			return &kranzcli.Error{Code: "invalid_arguments", Message: "reload does not accept selectors", ExitCode: kranzcli.ExitUsage}
+		}
+	} else if len(args) == 0 {
+		return &kranzcli.Error{Code: "missing_selector", Message: command + " requires at least one service or tag selector", ExitCode: kranzcli.ExitUsage}
 	}
 	record, err := resolveSession(options, true)
 	if err != nil {
@@ -598,7 +605,88 @@ func runDown(options kranzcli.GlobalOptions, args []string) error {
 	if err != nil {
 		return classifyRuntimeError(err)
 	}
-	return client.Shutdown()
+	defer func() { _ = client.Close() }()
+	if command == "reload" {
+		_, err = client.Reload(true)
+		return err
+	}
+	names, err := resolveServiceSelectors(client.Config(), args)
+	if err != nil {
+		return err
+	}
+	switch command {
+	case "start":
+		return client.StartServicesContext(context.Background(), names)
+	case "stop":
+		return client.StopServices(names)
+	case "restart":
+		return client.RestartServices(names)
+	}
+	return nil
+}
+
+func resolveServiceSelectors(cfg *config.Config, selectors []string) ([]string, error) {
+	selected := make(map[string]bool)
+	for _, selector := range selectors {
+		if _, ok := cfg.Services[selector]; ok {
+			selected[selector] = true
+			continue
+		}
+		matched := false
+		for name, service := range cfg.Services {
+			for _, tag := range service.Tags {
+				if strings.EqualFold(tag, selector) {
+					selected[name] = true
+					matched = true
+					break
+				}
+			}
+		}
+		if !matched {
+			return nil, &kranzcli.Error{Code: "selector_not_found", Message: fmt.Sprintf("service or tag %q was not found", selector), ExitCode: kranzcli.ExitNotFound}
+		}
+	}
+	names := make([]string, 0, len(selected))
+	for _, name := range cfg.ServiceOrder {
+		if selected[name] {
+			names = append(names, name)
+		}
+	}
+	return names, nil
+}
+
+func runDown(options kranzcli.GlobalOptions, args []string) error {
+	force := false
+	for _, arg := range args {
+		if arg == "--force" {
+			force = true
+			continue
+		}
+		return &kranzcli.Error{Code: "unknown_option", Message: "unknown down option " + arg, ExitCode: kranzcli.ExitUsage}
+	}
+	record, err := resolveSession(options, true)
+	if err != nil {
+		return err
+	}
+	dialCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	client, dialErr := kranzruntime.DialContext(dialCtx, record.Socket, version)
+	cancel()
+	if dialErr == nil {
+		return client.Shutdown()
+	}
+	if !force {
+		return classifyRuntimeError(dialErr)
+	}
+	registry, err := kranzruntime.DefaultRegistry()
+	if err != nil {
+		return err
+	}
+	forceCtx, forceCancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer forceCancel()
+	if err := registry.ForceDown(forceCtx, record); err != nil {
+		return classifyRuntimeError(err)
+	}
+	return nil
 }
 
 func classifyRuntimeError(err error) error {
@@ -617,6 +705,10 @@ func classifyRuntimeError(err error) error {
 	var mismatch *kranzruntime.VersionMismatchError
 	if errors.As(err, &mismatch) {
 		return &kranzcli.Error{Code: "protocol_mismatch", Message: mismatch.Error(), ExitCode: kranzcli.ExitUnavailable}
+	}
+	var refused *kranzruntime.ForceDownError
+	if errors.As(err, &refused) {
+		return &kranzcli.Error{Code: "force_down_refused", Message: refused.Error(), ExitCode: kranzcli.ExitUnavailable}
 	}
 	var networkError net.Error
 	if errors.As(err, &networkError) {

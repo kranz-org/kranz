@@ -121,6 +121,35 @@ func TestRegistryListCleansStaleMetadataWithoutRemovingLock(t *testing.T) {
 	}
 }
 
+func TestForceDownRefusesMismatchedSupervisorBirthIdentity(t *testing.T) {
+	registry, err := NewRegistry(filepath.Join(t.TempDir(), "registry"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	handle, err := registry.Acquire("mismatch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata, err := handle.Prepare("Mismatch", "dev", "background", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := handle.Publish(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = handle.Close() }()
+	metadata.ProcessFingerprint = "not-the-current-process"
+	if err := atomicJSON(registry.metadataPath(metadata.Name), metadata); err != nil {
+		t.Fatal(err)
+	}
+	record := SessionRecord{SessionMetadata: metadata, State: SessionUnreachable}
+	err = registry.ForceDown(context.Background(), record)
+	var refused *ForceDownError
+	if !errors.As(err, &refused) {
+		t.Fatalf("ForceDown error = %T %v, want ForceDownError", err, err)
+	}
+}
+
 func syscallUnlockAndClose(handle *SessionHandle) error {
 	if err := unix.Flock(int(handle.lock.Fd()), unix.LOCK_UN); err != nil {
 		return err

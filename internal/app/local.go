@@ -254,6 +254,10 @@ func (l *Local) RestartService(name string) error {
 	return l.manager.RestartService(name)
 }
 
+func (l *Local) RestartServices(names []string) error {
+	return l.manager.RestartServices(names)
+}
+
 func (l *Local) HasRunningServices() bool {
 	return l.manager.HasRunningServices()
 }

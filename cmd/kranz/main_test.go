@@ -74,7 +74,7 @@ func TestBackgroundHelperProcess(t *testing.T) {
 func TestBackgroundRuntimeReadinessConflictAndDown(t *testing.T) {
 	directory := t.TempDir()
 	name := fmt.Sprintf("test-background-%d", os.Getpid())
-	configText := fmt.Sprintf("project: Test Background\nruntime:\n  name: %s\nservices:\n  sleeper:\n    command: sleep 60\n", name)
+	configText := fmt.Sprintf("project: Test Background\nruntime:\n  name: %s\nservices:\n  sleeper:\n    command: sleep 60\n    tags: [workers]\n", name)
 	if err := os.WriteFile(filepath.Join(directory, "kranz.yaml"), []byte(configText), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -105,6 +105,20 @@ func TestBackgroundRuntimeReadinessConflictAndDown(t *testing.T) {
 	}
 	stdout.Reset()
 	stderr.Reset()
+	if code := execute([]string{"-p", name, "start", "workers"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("start tag exit=%d stderr=%s", code, stderr.String())
+	}
+	if code := execute([]string{"-p", name, "restart", "sleeper"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("restart exit=%d stderr=%s", code, stderr.String())
+	}
+	if code := execute([]string{"-p", name, "stop", "sleeper"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("stop exit=%d stderr=%s", code, stderr.String())
+	}
+	if code := execute([]string{"-p", name, "reload"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("reload exit=%d stderr=%s", code, stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
 	if code := execute([]string{"-p", name, "down"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("down exit=%d stderr=%s", code, stderr.String())
 	}
@@ -123,6 +137,59 @@ func TestBackgroundRuntimeReadinessConflictAndDown(t *testing.T) {
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("background runtime remained after down: %v", err)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func TestForceDownRecoversUnreachableBackgroundRuntime(t *testing.T) {
+	directory := t.TempDir()
+	name := fmt.Sprintf("test-force-down-%d", os.Getpid())
+	configText := fmt.Sprintf("project: Test Force Down\nruntime:\n  name: %s\nservices:\n  sleeper:\n    command: sleep 60\n", name)
+	if err := os.WriteFile(filepath.Join(directory, "kranz.yaml"), []byte(configText), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	previousFactory := newBackgroundCommand
+	newBackgroundCommand = func(_ string, args ...string) *exec.Cmd {
+		data, _ := json.Marshal(args)
+		command := exec.Command(os.Args[0], "-test.run=^TestBackgroundHelperProcess$")
+		command.Env = append(os.Environ(), "KRANZ_TEST_BACKGROUND_HELPER=1", "KRANZ_TEST_BACKGROUND_ARGS="+base64.StdEncoding.EncodeToString(data))
+		return command
+	}
+	defer func() { newBackgroundCommand = previousFactory }()
+	var stdout, stderr bytes.Buffer
+	if code := execute([]string{"-C", directory, "up", "-d"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("up -d exit=%d stderr=%s", code, stderr.String())
+	}
+	registry, err := kranzruntime.DefaultRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	record, err := registry.Resolve(ctx, name, "test")
+	cancel()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(record.Socket); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := execute([]string{"-p", name, "down", "--force"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("down --force exit=%d stderr=%s", code, stderr.String())
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		_, err = registry.Resolve(ctx, name, "test")
+		cancel()
+		var missing *kranzruntime.SessionNotFoundError
+		if errors.As(err, &missing) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("forced runtime remained registered: %v", err)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}

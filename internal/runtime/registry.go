@@ -31,19 +31,20 @@ const (
 )
 
 type SessionMetadata struct {
-	MetadataVersion int       `json:"metadata_version"`
-	ID              string    `json:"id"`
-	Name            string    `json:"name"`
-	Project         string    `json:"project"`
-	PID             int       `json:"pid"`
-	ProcessStarted  time.Time `json:"process_started_at"`
-	KranzVersion    string    `json:"kranz_version"`
-	ProtocolMin     int       `json:"protocol_min"`
-	ProtocolMax     int       `json:"protocol_max"`
-	Socket          string    `json:"socket"`
-	Mode            string    `json:"mode"`
-	StartedAt       time.Time `json:"started_at"`
-	Directory       string    `json:"directory"`
+	MetadataVersion    int       `json:"metadata_version"`
+	ID                 string    `json:"id"`
+	Name               string    `json:"name"`
+	Project            string    `json:"project"`
+	PID                int       `json:"pid"`
+	ProcessStarted     time.Time `json:"process_started_at"`
+	ProcessFingerprint string    `json:"process_birth_fingerprint"`
+	KranzVersion       string    `json:"kranz_version"`
+	ProtocolMin        int       `json:"protocol_min"`
+	ProtocolMax        int       `json:"protocol_max"`
+	Socket             string    `json:"socket"`
+	Mode               string    `json:"mode"`
+	StartedAt          time.Time `json:"started_at"`
+	Directory          string    `json:"directory"`
 }
 
 type SessionRecord struct {
@@ -141,6 +142,10 @@ type OwnedProcess struct {
 	Fingerprint string `json:"birth_fingerprint"`
 }
 
+type ForceDownError struct{ Reason string }
+
+func (e *ForceDownError) Error() string { return "refusing forced shutdown: " + e.Reason }
+
 func (r *Registry) Acquire(name string) (*SessionHandle, error) {
 	return r.acquire(name, nil)
 }
@@ -224,10 +229,18 @@ func (h *SessionHandle) Prepare(project, version, mode, directory string) (Sessi
 		return SessionMetadata{}, fmt.Errorf("create session id: %w", err)
 	}
 	now := time.Now().UTC()
+	started, err := processStartedAt(os.Getpid())
+	if err != nil {
+		return SessionMetadata{}, fmt.Errorf("identify runtime process start: %w", err)
+	}
+	_, fingerprint, err := processIdentity(os.Getpid())
+	if err != nil {
+		return SessionMetadata{}, fmt.Errorf("identify runtime process: %w", err)
+	}
 	hash := sha256.Sum256([]byte(h.registry.root + "\x00" + hex.EncodeToString(idBytes)))
 	socket := filepath.Join(h.registry.socketRoot, "s-"+hex.EncodeToString(hash[:8])+".sock")
 	_ = os.Remove(socket)
-	h.meta = SessionMetadata{MetadataVersion: metadataVersion, ID: hex.EncodeToString(idBytes), Name: strings.TrimSuffix(filepath.Base(h.lock.Name()), ".lock"), Project: project, PID: os.Getpid(), ProcessStarted: now, KranzVersion: version, ProtocolMin: protocolVersion, ProtocolMax: protocolVersion, Socket: socket, Mode: mode, StartedAt: now, Directory: directory}
+	h.meta = SessionMetadata{MetadataVersion: metadataVersion, ID: hex.EncodeToString(idBytes), Name: strings.TrimSuffix(filepath.Base(h.lock.Name()), ".lock"), Project: project, PID: os.Getpid(), ProcessStarted: started, ProcessFingerprint: fingerprint, KranzVersion: version, ProtocolMin: protocolVersion, ProtocolMax: protocolVersion, Socket: socket, Mode: mode, StartedAt: now, Directory: directory}
 	return h.meta, nil
 }
 
@@ -390,6 +403,179 @@ func (r *Registry) Resolve(ctx context.Context, reference, clientVersion string)
 		names[i] = match.ID[:8] + " (" + match.Name + ")"
 	}
 	return SessionRecord{}, &AmbiguousSessionError{Reference: reference, Matches: names}
+}
+
+// ForceDown performs the recovery-only shutdown path for a session whose RPC
+// endpoint cannot be reached. Every signal target is proven again immediately
+// before use; a PID, metadata file, or ownership snapshot alone is never
+// accepted as evidence of ownership.
+func (r *Registry) ForceDown(ctx context.Context, record SessionRecord) error {
+	metadata, ownership, err := r.forceEvidence(record)
+	if err != nil {
+		return err
+	}
+	for _, process := range ownership.Processes {
+		if err := validateOwnedProcess(process, metadata.PID); err != nil {
+			return err
+		}
+	}
+	for _, process := range ownership.Processes {
+		if err := signalOwnedGroup(process, syscall.SIGTERM); err != nil && !processGone(err) {
+			return err
+		}
+	}
+	if err := signalSupervisor(metadata, syscall.SIGTERM); err != nil && !processGone(err) {
+		return err
+	}
+	if r.waitUnlocked(ctx, metadata.Name, 3*time.Second) {
+		return r.cleanupForced(metadata.Name)
+	}
+
+	// Only identities that still match the immutable evidence may receive
+	// SIGKILL. An identity mismatch is a hard refusal, never a reason to widen
+	// or substitute the target set.
+	for _, process := range ownership.Processes {
+		if err := validateOwnedProcess(process, metadata.PID); err != nil {
+			if processGone(err) {
+				continue
+			}
+			return err
+		}
+		if err := signalOwnedGroup(process, syscall.SIGKILL); err != nil && !processGone(err) {
+			return err
+		}
+	}
+	if err := validateSupervisor(metadata); err != nil {
+		if !processGone(err) {
+			return err
+		}
+	} else if err := syscall.Kill(metadata.PID, syscall.SIGKILL); err != nil && !processGone(err) {
+		return err
+	}
+	if !r.waitUnlocked(ctx, metadata.Name, 3*time.Second) {
+		return &ForceDownError{Reason: "runtime lock was not released after validated signals"}
+	}
+	return r.cleanupForced(metadata.Name)
+}
+
+func (r *Registry) forceEvidence(record SessionRecord) (SessionMetadata, OwnershipSnapshot, error) {
+	locked, err := r.isLocked(record.Name)
+	if err != nil {
+		return SessionMetadata{}, OwnershipSnapshot{}, err
+	}
+	if !locked {
+		return SessionMetadata{}, OwnershipSnapshot{}, &ForceDownError{Reason: "session lock is not held"}
+	}
+	data, err := os.ReadFile(r.metadataPath(record.Name))
+	if err != nil {
+		return SessionMetadata{}, OwnershipSnapshot{}, &ForceDownError{Reason: "immutable metadata is unavailable"}
+	}
+	var metadata SessionMetadata
+	if err := json.Unmarshal(data, &metadata); err != nil || metadata.MetadataVersion != metadataVersion || metadata.Name != record.Name || metadata.ID != record.ID {
+		return SessionMetadata{}, OwnershipSnapshot{}, &ForceDownError{Reason: "immutable metadata does not match the selected lock generation"}
+	}
+	if err := validateSupervisor(metadata); err != nil {
+		return SessionMetadata{}, OwnershipSnapshot{}, err
+	}
+	data, err = os.ReadFile(r.ownershipPath(record.Name))
+	if err != nil {
+		return SessionMetadata{}, OwnershipSnapshot{}, &ForceDownError{Reason: "ownership snapshot is unavailable"}
+	}
+	var ownership OwnershipSnapshot
+	if err := json.Unmarshal(data, &ownership); err != nil || ownership.Version != 1 || ownership.SessionID != metadata.ID {
+		return SessionMetadata{}, OwnershipSnapshot{}, &ForceDownError{Reason: "ownership snapshot does not match the selected session"}
+	}
+	return metadata, ownership, nil
+}
+
+func validateSupervisor(metadata SessionMetadata) error {
+	_, fingerprint, err := processIdentity(metadata.PID)
+	if err != nil {
+		return err
+	}
+	started, err := processStartedAt(metadata.PID)
+	if err != nil {
+		return err
+	}
+	if metadata.ProcessFingerprint == "" || fingerprint != metadata.ProcessFingerprint || !started.Equal(metadata.ProcessStarted) {
+		return &ForceDownError{Reason: "runtime process birth identity does not match metadata"}
+	}
+	return nil
+}
+
+func validateOwnedProcess(process OwnedProcess, supervisorPID int) error {
+	pgid, fingerprint, err := processIdentity(process.PID)
+	if err != nil {
+		return err
+	}
+	if process.PID <= 1 || process.PGID <= 1 || process.PGID != process.PID || pgid != process.PGID || fingerprint != process.Fingerprint {
+		return &ForceDownError{Reason: fmt.Sprintf("service %q process identity does not match ownership evidence", process.Service)}
+	}
+	pid := process.PID
+	for depth := 0; depth < 256 && pid > 1; depth++ {
+		parent, err := processParent(pid)
+		if err != nil {
+			return err
+		}
+		if parent == supervisorPID {
+			return nil
+		}
+		if parent <= 1 || parent == pid {
+			break
+		}
+		pid = parent
+	}
+	return &ForceDownError{Reason: fmt.Sprintf("service %q is outside the runtime process ancestry", process.Service)}
+}
+
+func signalOwnedGroup(process OwnedProcess, signal syscall.Signal) error {
+	// The full ancestry check is performed by the caller. Refresh the birth
+	// identity immediately before signalling to close the PID-reuse race.
+	pgid, fingerprint, err := processIdentity(process.PID)
+	if err != nil {
+		return err
+	}
+	if pgid != process.PGID || fingerprint != process.Fingerprint {
+		return &ForceDownError{Reason: fmt.Sprintf("service %q changed identity before signal", process.Service)}
+	}
+	return syscall.Kill(-process.PGID, signal)
+}
+
+func signalSupervisor(metadata SessionMetadata, signal syscall.Signal) error {
+	if err := validateSupervisor(metadata); err != nil {
+		return err
+	}
+	return syscall.Kill(metadata.PID, signal)
+}
+
+func processGone(err error) bool {
+	return errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ESRCH)
+}
+
+func (r *Registry) waitUnlocked(ctx context.Context, name string, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for {
+		locked, err := r.isLocked(name)
+		if err == nil && !locked {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(25 * time.Millisecond):
+		}
+	}
+}
+
+func (r *Registry) cleanupForced(name string) error {
+	handle, err := r.Acquire(name)
+	if err != nil {
+		return err
+	}
+	return handle.Close()
 }
 
 func (r *Registry) isLocked(name string) (bool, error) {

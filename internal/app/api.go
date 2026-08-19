@@ -69,6 +69,9 @@ type API interface {
 	RestartAll() error
 	// RestartService restarts name and its transitive dependents.
 	RestartService(name string) error
+	// RestartServices restarts names and their active transitive dependents in
+	// one config generation.
+	RestartServices(names []string) error
 	// HasRunningServices reports whether any service is running, starting,
 	// stopping, or unhealthy.
 	HasRunningServices() bool

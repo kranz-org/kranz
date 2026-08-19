@@ -372,22 +372,34 @@ func (m *Manager) StartByTags(tags []string) error {
 // StopAll stops every service in reverse dependency order.
 
 func (m *Manager) RestartService(name string) error {
+	return m.RestartServices([]string{name})
+}
+
+// RestartServices performs one stop/start plan while holding the reload lock,
+// so a watcher reload cannot split a multi-selector CLI request across config
+// generations.
+func (m *Manager) RestartServices(names []string) error {
 	// Hold reloadMu for the whole operation so a concurrent config reload
 	// cannot swap or remove services mid-restart out from under this plan.
 	m.reloadMu.Lock()
 	defer m.reloadMu.Unlock()
-	if _, ok := m.GetService(name); !ok {
-		return fmt.Errorf("service %q not found", name)
+	for _, name := range names {
+		if _, ok := m.GetService(name); !ok {
+			return fmt.Errorf("service %q not found", name)
+		}
 	}
 
 	order, err := m.topologicalSort()
 	if err != nil {
 		return err
 	}
-	affectedSet := map[string]bool{name: true}
-	for _, dependent := range m.findDependents(name) {
-		if svc, ok := m.GetService(dependent); ok && svc.Status() != config.StatusStopped {
-			affectedSet[dependent] = true
+	affectedSet := make(map[string]bool)
+	for _, name := range names {
+		affectedSet[name] = true
+		for _, dependent := range m.findDependents(name) {
+			if svc, ok := m.GetService(dependent); ok && svc.Status() != config.StatusStopped {
+				affectedSet[dependent] = true
+			}
 		}
 	}
 	var affected []string

@@ -33,6 +33,7 @@ const (
 	methodStopAll                         = "stopAll"
 	methodRestartAll                      = "restartAll"
 	methodRestartService                  = "restartService"
+	methodRestartServices                 = "restartServices"
 	methodHasRunningServices              = "hasRunningServices"
 	methodProjectExitRequested            = "projectExitRequested"
 	methodShutdown                        = "shutdown"
