@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"os/exec"
 	"time"
 
 	"github.com/kranz-org/kranz/internal/config"
@@ -90,10 +89,20 @@ type API interface {
 	// CancelAction cancels a running action, reporting whether one was
 	// running to cancel.
 	CancelAction(id config.ActionID) bool
-	// PrepareInteractiveAction reserves an interactive action's execution
-	// slot and returns the command a delivery surface must run with direct
-	// terminal access, plus the finish callback that records its result.
-	PrepareInteractiveAction(id config.ActionID) (*exec.Cmd, func(error) ActionResult, error)
+	// AcquireInteractiveAction reserves an interactive action's execution
+	// slot and returns its resolved definition plus a lease token. The
+	// caller builds and runs the command itself, with direct terminal
+	// access — see BuildInteractiveCommand — and reports the outcome
+	// through CompleteInteractiveAction. Splitting the reservation this way
+	// (rather than handing back a live *exec.Cmd, as Manager still does)
+	// lets an IPC-backed API implementation support interactive actions:
+	// neither a process handle nor a closure over one survives the wire.
+	AcquireInteractiveAction(id config.ActionID) (config.Action, string, error)
+	// CompleteInteractiveAction finishes an AcquireInteractiveAction lease
+	// with the outcome the caller observed running the command: the error
+	// tea.ExecProcess reported, if any, plus the exit code and PID read
+	// from the command's ProcessState.
+	CompleteInteractiveAction(id config.ActionID, lease string, execErr error, exitCode, pid int) (ActionResult, error)
 
 	// Logs returns the current buffered log entries for a service.
 	Logs(name string) []config.LogEntry
