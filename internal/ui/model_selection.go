@@ -5,25 +5,34 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kranz-org/kranz/internal/app"
 	"github.com/kranz-org/kranz/internal/config"
-	"github.com/kranz-org/kranz/internal/service"
 )
 
 // Cursor, panel focus, and what is selected. Tags expand into their services
 // here, so a tag can be acted on as a single target.
 
+// markServiceLogsRead resets a service's unread log count. It updates the
+// local snapshot immediately so the count clears on this render — the
+// authoritative reset already happened synchronously in the same call — and
+// still reset again on the next tick's refresh, exactly as before.
+func (m *Model) markServiceLogsRead(svc *app.ServiceSnapshot) {
+	m.app.MarkLogsRead(svc.Name)
+	svc.State.NewLogCount = 0
+}
+
 func (m *Model) markFocusedRead() {
 	if svc := m.FocusedService(); svc != nil {
-		svc.ResetNewLogCount()
+		m.markServiceLogsRead(svc)
 	}
 	if svc := m.PinnedService(); svc != nil {
-		svc.ResetNewLogCount()
+		m.markServiceLogsRead(svc)
 	}
 }
 
 func (m *Model) moveFocus(next int) {
 	if current := m.FocusedService(); current != nil {
-		current.ResetNewLogCount()
+		m.markServiceLogsRead(current)
 	}
 	m.focused = next
 	m.focusedAction = nil
@@ -129,7 +138,7 @@ func (m *Model) togglePinnedLog() {
 	}
 	m.pinnedLog = svc.Name
 	m.pinnedOffset, m.pinnedAnchor, m.pinnedFollow = 0, 0, true
-	svc.ResetNewLogCount()
+	m.markServiceLogsRead(svc)
 	m.addNotification("logs", "Pinned logs: "+svc.Name, config.LogInfo)
 }
 
@@ -206,7 +215,7 @@ func (m *Model) focusedTag() string {
 	return row.Tag
 }
 
-func (m *Model) servicesForTag(tag string) []*service.Service {
+func (m *Model) servicesForTag(tag string) []*app.ServiceSnapshot {
 	if tag == "" {
 		return nil
 	}
@@ -214,7 +223,7 @@ func (m *Model) servicesForTag(tag string) []*service.Service {
 	for _, name := range m.cfg.GetServicesByTags([]string{tag}) {
 		names[name] = true
 	}
-	services := make([]*service.Service, 0, len(names))
+	services := make([]*app.ServiceSnapshot, 0, len(names))
 	for _, svc := range m.allServices {
 		if names[svc.Name] {
 			services = append(services, svc)
@@ -245,7 +254,7 @@ func (m *Model) focusedTagRow() (tagListRow, bool) {
 	return rows[m.tagCursor], true
 }
 
-func (m *Model) focusedTagService() *service.Service {
+func (m *Model) focusedTagService() *app.ServiceSnapshot {
 	row, ok := m.focusedTagRow()
 	if !ok {
 		return nil

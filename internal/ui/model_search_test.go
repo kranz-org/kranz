@@ -34,8 +34,8 @@ func TestRegexSearchFiltersMatchingLogsByDefault(t *testing.T) {
 	model := newTestModel()
 	defer model.Shutdown()
 	model.width, model.height, model.ready = 80, 24, true
-	model.FocusedService().AppendLog("request complete")
-	model.FocusedService().AppendLog("ERROR database unavailable")
+	model.app.AppendLogForTest(model.FocusedService().Name, "request complete")
+	model.app.AppendLogForTest(model.FocusedService().Name, "ERROR database unavailable")
 
 	_, _ = model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
 	for _, character := range "ERROR" {
@@ -61,8 +61,8 @@ func newFilteredSearchModel(t *testing.T) *Model {
 	t.Helper()
 	model := newTestModel()
 	model.width, model.height, model.ready = 80, 24, true
-	model.FocusedService().AppendLog("request complete")
-	model.FocusedService().AppendLog("ERROR database unavailable")
+	model.app.AppendLogForTest(model.FocusedService().Name, "request complete")
+	model.app.AppendLogForTest(model.FocusedService().Name, "ERROR database unavailable")
 	pressKey(model, '/')
 	for _, character := range "ERROR" {
 		pressKey(model, character)
@@ -392,7 +392,7 @@ func TestRegexTabEnablesHighlightModeWithoutFalsePausedLabel(t *testing.T) {
 		if index == 3 {
 			line = "ERROR database unavailable"
 		}
-		model.FocusedService().AppendLog(line)
+		model.app.AppendLogForTest(model.FocusedService().Name, line)
 	}
 
 	pressKey(model, '/')

@@ -7,8 +7,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/kranz-org/kranz/internal/app"
 	"github.com/kranz-org/kranz/internal/config"
-	"github.com/kranz-org/kranz/internal/service"
 )
 
 func actionOwnerKey(kind config.ActionOwnerKind, owner string) string {
@@ -168,7 +168,7 @@ func (m *Model) toggleFocusedAction() (tea.Cmd, bool) {
 		m.addNotification("action", "Action is no longer configured", config.LogWarn)
 		return nil, true
 	}
-	if state, ok := m.manager.ActionState(id); ok && state.Status == service.ActionRunning {
+	if state, ok := m.app.ActionState(id); ok && state.Status == app.ActionRunning {
 		m.beginActionConfirmation(id, true)
 		return nil, true
 	}
@@ -187,7 +187,7 @@ func (m *Model) toggleFocusedAction() (tea.Cmd, bool) {
 // the command owns the terminal until it exits, and the outcome is recorded
 // like any other action.
 func (m *Model) runInteractiveAction(id config.ActionID) tea.Cmd {
-	command, finish, err := m.manager.PrepareInteractiveAction(id)
+	command, finish, err := m.app.PrepareInteractiveAction(id)
 	if err != nil {
 		m.addNotification("action", id.Name+": "+err.Error(), config.LogError)
 		return nil
@@ -212,7 +212,7 @@ func (m *Model) runAction(id config.ActionID, action config.Action) tea.Cmd {
 	}
 	m.addNotification("action", "Running "+id.Name, config.LogInfo)
 	return func() tea.Msg {
-		result, err := m.manager.RunAction(context.Background(), id)
+		result, err := m.app.RunAction(context.Background(), id)
 		return actionResultMsg{id: id, result: result, err: err}
 	}
 }
@@ -227,7 +227,7 @@ func (m *Model) confirmPendingAction() tea.Cmd {
 		return nil
 	}
 	if stop {
-		if m.manager.CancelAction(*id) {
+		if m.app.CancelAction(*id) {
 			m.addNotification("action", "Stopping "+id.Name, config.LogWarn)
 		} else {
 			m.addNotification("action", id.Name+" is no longer running", config.LogWarn)
@@ -266,15 +266,15 @@ func (m *Model) handleActionResult(msg actionResultMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *Model) focusedActionDefinition() (config.ActionID, config.Action, service.ActionResult, bool) {
+func (m *Model) focusedActionDefinition() (config.ActionID, config.Action, app.ActionResult, bool) {
 	if m.focusedAction == nil {
-		return config.ActionID{}, config.Action{}, service.ActionResult{}, false
+		return config.ActionID{}, config.Action{}, app.ActionResult{}, false
 	}
 	id := *m.focusedAction
 	action, exists := m.cfg.ResolveAction(id)
 	if !exists {
-		return config.ActionID{}, config.Action{}, service.ActionResult{}, false
+		return config.ActionID{}, config.Action{}, app.ActionResult{}, false
 	}
-	state, _ := m.manager.ActionState(id)
+	state, _ := m.app.ActionState(id)
 	return id, action, state, true
 }

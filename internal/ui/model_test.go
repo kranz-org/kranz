@@ -112,7 +112,8 @@ func TestServiceStatusUsesQueuedAndRuntimeVisualStates(t *testing.T) {
 		t.Fatalf("stopped service visual state = %v", state)
 	}
 	svc.Config.DependsOn = []string{"database"}
-	svc.SetDesiredRunning(true)
+	model.app.SetServiceDesiredRunningForTest(svc.Name, true)
+	svc.DesiredRunning = true
 	if state := model.serviceVisualState(svc); state != visualQueued {
 		t.Fatalf("queued service visual state = %v", state)
 	}
@@ -128,8 +129,10 @@ func TestServiceStatusUsesQueuedAndRuntimeVisualStates(t *testing.T) {
 	if controls := ansi.Strip(model.renderStatusBar()); !strings.Contains(controls, "Stop") {
 		t.Fatalf("queued service controls = %q", controls)
 	}
-	svc.SetDesiredRunning(false)
-	svc.SetStatus(config.StatusRunning)
+	model.app.SetServiceDesiredRunningForTest(svc.Name, false)
+	svc.DesiredRunning = false
+	model.app.SetServiceStatusForTest(svc.Name, config.StatusRunning)
+	svc.State.Status = config.StatusRunning
 	if state := model.serviceVisualState(svc); state != visualRunning {
 		t.Fatalf("running service visual state = %v", state)
 	}
@@ -137,7 +140,8 @@ func TestServiceStatusUsesQueuedAndRuntimeVisualStates(t *testing.T) {
 	if state := model.serviceVisualState(svc); state != visualStarting {
 		t.Fatalf("waiting service visual state = %v", state)
 	}
-	svc.SetStatus(config.StatusUnhealthy)
+	model.app.SetServiceStatusForTest(svc.Name, config.StatusUnhealthy)
+	svc.State.Status = config.StatusUnhealthy
 	if state := model.serviceVisualState(svc); state != visualUnhealthy {
 		t.Fatalf("unhealthy service visual state = %v", state)
 	}
@@ -177,7 +181,7 @@ func TestPanelFocusUsesNumbersAndContextualArrows(t *testing.T) {
 	}
 
 	for index := range 40 {
-		model.FocusedService().AppendLog(fmt.Sprintf("line %d", index))
+		model.app.AppendLogForTest(model.FocusedService().Name, fmt.Sprintf("line %d", index))
 	}
 	_, _ = model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
 	_, _ = model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyUp})
@@ -668,8 +672,9 @@ func TestQuitConfirmationDescribesManagedAndDetachedExitPlan(t *testing.T) {
 	defer model.Shutdown()
 	model.width, model.height, model.ready = 100, 40, true
 	for _, name := range []string{"api", "remote-kept", "remote-stopped"} {
-		svc, _ := model.manager.GetService(name)
-		svc.SetStatus(config.StatusRunning)
+		svc, _ := model.app.Service(name)
+		model.app.SetServiceStatusForTest(svc.Name, config.StatusRunning)
+		svc.State.Status = config.StatusRunning
 	}
 
 	plain := ansi.Strip(model.renderConfirmQuitView())
@@ -700,8 +705,9 @@ func TestQuitConfirmationCanLeaveOnlyDetachedResourcesRunning(t *testing.T) {
 	}}, "test")
 	defer model.Shutdown()
 	model.width, model.height, model.ready = 100, 40, true
-	svc, _ := model.manager.GetService("mk-backend-stack")
-	svc.SetStatus(config.StatusRunning)
+	svc, _ := model.app.Service("mk-backend-stack")
+	model.app.SetServiceStatusForTest(svc.Name, config.StatusRunning)
+	svc.State.Status = config.StatusRunning
 
 	plain := ansi.Strip(model.renderConfirmQuitView())
 	for _, expected := range []string{
@@ -879,9 +885,6 @@ func TestManualConfigReloadReconcilesModel(t *testing.T) {
 	if got := model.FocusedService().Config.Command; got != "sleep 61" {
 		t.Fatalf("reloaded command = %q", got)
 	}
-	if model.reloadBusy {
-		t.Fatal("reload remained busy")
-	}
 }
 
 func TestProcfileAndDotenvReloadReconcileModel(t *testing.T) {
@@ -909,8 +912,9 @@ func TestProcfileAndDotenvReloadReconcileModel(t *testing.T) {
 	}
 	model := NewModelWithOptions(cfg, "test", ModelOptions{ConfigPaths: []string{procfilePath}})
 	defer model.Shutdown()
-	if !containsPath(model.configWatchPaths, procfilePath) || !containsPath(model.configWatchPaths, dotenvPath) {
-		t.Fatalf("watch paths = %v", model.configWatchPaths)
+	watchPaths := model.app.Project().WatchPaths
+	if !containsPath(watchPaths, procfilePath) || !containsPath(watchPaths, dotenvPath) {
+		t.Fatalf("watch paths = %v", watchPaths)
 	}
 
 	writeProcfile("sleep 61")

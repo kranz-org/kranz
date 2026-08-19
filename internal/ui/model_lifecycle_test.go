@@ -9,8 +9,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/kranz-org/kranz/internal/app"
 	"github.com/kranz-org/kranz/internal/config"
-	"github.com/kranz-org/kranz/internal/service"
 )
 
 // Tests for service lifecycle actions driven from the dashboard.
@@ -24,8 +24,8 @@ func TestEnterDoesNotControlServiceLifecycle(t *testing.T) {
 	if command != nil {
 		t.Fatal("Enter scheduled a lifecycle operation")
 	}
-	if serviceInstance.Status() != config.StatusStopped {
-		t.Fatalf("Enter changed status to %s", serviceInstance.Status())
+	if serviceInstance.State.Status != config.StatusStopped {
+		t.Fatalf("Enter changed status to %s", serviceInstance.State.Status)
 	}
 }
 
@@ -43,16 +43,16 @@ func TestDetachedServiceStartsFromUnknownAndConfirmsStop(t *testing.T) {
 	}}, "test")
 	defer model.Shutdown()
 	model.width, model.height, model.ready = 100, 30, true
-	if model.FocusedService().Status() != config.StatusUnknown {
-		t.Fatalf("initial status = %s", model.FocusedService().Status())
+	if model.FocusedService().State.Status != config.StatusUnknown {
+		t.Fatalf("initial status = %s", model.FocusedService().State.Status)
 	}
 	_, command := model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
 	if command == nil {
 		t.Fatal("detached start was not scheduled")
 	}
 	_, _ = model.Update(command())
-	if model.FocusedService().Status() != config.StatusRunning {
-		t.Fatalf("started status = %s", model.FocusedService().Status())
+	if model.FocusedService().State.Status != config.StatusRunning {
+		t.Fatalf("started status = %s", model.FocusedService().State.Status)
 	}
 	_, command = model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'A'}})
 	if command != nil || model.mode != ModeConfirmServiceStop || !model.pendingStopAll {
@@ -68,7 +68,7 @@ func TestDetachedServiceStartsFromUnknownAndConfirmsStop(t *testing.T) {
 		t.Fatalf("detached stop modal:\n%s", view)
 	}
 	_, command = model.handleConfirmServiceStopKeys(tea.KeyMsg{Type: tea.KeyEsc})
-	if command != nil || model.FocusedService().Status() != config.StatusRunning {
+	if command != nil || model.FocusedService().State.Status != config.StatusRunning {
 		t.Fatal("cancelled stop changed service")
 	}
 	_, _ = model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
@@ -77,20 +77,24 @@ func TestDetachedServiceStartsFromUnknownAndConfirmsStop(t *testing.T) {
 		t.Fatal("confirmed stop was not scheduled")
 	}
 	_, _ = model.Update(command())
-	if model.FocusedService().Status() != config.StatusStopped {
-		t.Fatalf("stopped status = %s", model.FocusedService().Status())
+	if model.FocusedService().State.Status != config.StatusStopped {
+		t.Fatalf("stopped status = %s", model.FocusedService().State.Status)
 	}
 }
 
 func TestUnobservedDetachedServiceUsesNeutralExternalVisualState(t *testing.T) {
 	model := &Model{}
-	unobserved := service.NewService("remote", config.Service{
-		Supervision: config.SupervisionDetached,
-		Lifecycle: config.LifecycleConfig{
-			Start: &config.Action{Command: "true"},
-			Stop:  &config.Action{Command: "true"},
+	unobserved := &app.ServiceSnapshot{
+		Name: "remote",
+		Config: config.Service{
+			Supervision: config.SupervisionDetached,
+			Lifecycle: config.LifecycleConfig{
+				Start: &config.Action{Command: "true"},
+				Stop:  &config.Action{Command: "true"},
+			},
 		},
-	}, 10)
+		State: config.ServiceState{Status: config.StatusUnknown},
+	}
 	if state := model.serviceVisualState(unobserved); state != visualExternal {
 		t.Fatalf("unobserved detached visual state = %v, want external", state)
 	}
@@ -98,12 +102,16 @@ func TestUnobservedDetachedServiceUsesNeutralExternalVisualState(t *testing.T) {
 		t.Fatalf("unobserved detached label = %q, want External", label)
 	}
 
-	observed := service.NewService("remote", config.Service{
-		Supervision: config.SupervisionDetached,
-		Lifecycle: config.LifecycleConfig{Status: &config.LifecycleStatusConfig{
-			CheckConfig: config.CheckConfig{Type: config.CheckCommand, Command: "exit 4"},
-		}},
-	}, 10)
+	observed := &app.ServiceSnapshot{
+		Name: "remote",
+		Config: config.Service{
+			Supervision: config.SupervisionDetached,
+			Lifecycle: config.LifecycleConfig{Status: &config.LifecycleStatusConfig{
+				CheckConfig: config.CheckConfig{Type: config.CheckCommand, Command: "exit 4"},
+			}},
+		},
+		State: config.ServiceState{Status: config.StatusUnknown},
+	}
 	if state := model.serviceVisualState(observed); state != visualChecking {
 		t.Fatalf("unobserved status probe visual state = %v, want checking", state)
 	}
@@ -199,7 +207,8 @@ func TestStartConfirmationIdentifiesConfirmedDependencyCommand(t *testing.T) {
 func TestRestartOperationsConfirmTheirStopPhase(t *testing.T) {
 	model := newTestModel()
 	defer model.Shutdown()
-	model.FocusedService().SetStatus(config.StatusRunning)
+	model.app.SetServiceStatusForTest(model.FocusedService().Name, config.StatusRunning)
+	model.refreshServices()
 
 	_, command := model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
 	if command != nil || model.mode != ModeConfirmRestart || model.confirmRestartAll {
@@ -242,9 +251,10 @@ func TestSStopsTargetsWhenAllAreActive(t *testing.T) {
 	model := newTestModel()
 	defer model.Shutdown()
 	for _, svc := range model.allServices {
-		svc.SetStatus(config.StatusRunning)
+		model.app.SetServiceStatusForTest(svc.Name, config.StatusRunning)
 		model.selected[svc.Name] = true
 	}
+	model.refreshServices()
 
 	_, command := model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
 	command = acceptServiceStop(t, model, command)
@@ -252,9 +262,10 @@ func TestSStopsTargetsWhenAllAreActive(t *testing.T) {
 	if message.kind != operationStopSet || message.err != nil {
 		t.Fatalf("selection result = kind %q, error %v", message.kind, message.err)
 	}
+	model.refreshServices()
 	for _, svc := range model.allServices {
-		if svc.Status() != config.StatusStopped {
-			t.Errorf("service %s status = %s", svc.Name, svc.Status())
+		if svc.State.Status != config.StatusStopped {
+			t.Errorf("service %s status = %s", svc.Name, svc.State.Status)
 		}
 	}
 }
@@ -338,14 +349,14 @@ func TestStopInterruptsReadinessGatedStart(t *testing.T) {
 	_, startCommand := model.toggleSelectedServices()
 	startResult := make(chan operationResultMsg, 1)
 	go func() { startResult <- startCommand().(operationResultMsg) }()
-	waitForServiceStatus(t, model.FocusedService(), config.StatusRunning)
+	waitForServiceStatus(t, model, model.FocusedService().Name, config.StatusRunning)
 
 	_, stopCommand := model.toggleSelectedServices()
 	stopCommand = acceptServiceStop(t, model, stopCommand)
 	stopMessage := stopCommand().(operationResultMsg)
 	_, _ = model.Update(stopMessage)
-	if model.FocusedService().Status() != config.StatusStopped {
-		t.Fatalf("service status = %s after interrupted stop", model.FocusedService().Status())
+	if model.FocusedService().State.Status != config.StatusStopped {
+		t.Fatalf("service status = %s after interrupted stop", model.FocusedService().State.Status)
 	}
 	select {
 	case stale := <-startResult:
@@ -369,10 +380,10 @@ func TestShiftSForceStartsOnlySelectedService(t *testing.T) {
 	}
 	message := command().(operationResultMsg)
 	_, _ = model.Update(message)
-	api, _ := model.manager.GetService("api")
-	database, _ := model.manager.GetService("database")
-	if api.Status() != config.StatusRunning || database.Status() != config.StatusStopped {
-		t.Fatalf("force start statuses: api=%s database=%s", api.Status(), database.Status())
+	api, _ := model.app.Service("api")
+	database, _ := model.app.Service("database")
+	if api.State.Status != config.StatusRunning || database.State.Status != config.StatusStopped {
+		t.Fatalf("force start statuses: api=%s database=%s", api.State.Status, database.State.Status)
 	}
 	if !strings.Contains(model.toastMessage, "without dependencies") {
 		t.Fatalf("force start notification = %q", model.toastMessage)
@@ -386,7 +397,7 @@ func TestSStopsDependentsAndShiftSStopsOnlySelectedService(t *testing.T) {
 			"backend":  {Command: "sleep 60", Dir: ".", Shell: "sh"},
 			"frontend": {Command: "sleep 60", Dir: ".", Shell: "sh", DependsOn: []string{"backend"}},
 		}}, "test")
-		if err := model.manager.ForceStartServices([]string{"backend", "frontend"}); err != nil {
+		if err := model.app.ForceStartServices([]string{"backend", "frontend"}); err != nil {
 			model.Shutdown()
 			t.Fatal(err)
 		}
@@ -404,9 +415,9 @@ func TestSStopsDependentsAndShiftSStopsOnlySelectedService(t *testing.T) {
 		}
 		_, _ = model.Update(command().(operationResultMsg))
 		for _, name := range []string{"backend", "frontend"} {
-			svc, _ := model.manager.GetService(name)
-			if svc.Status() != config.StatusStopped {
-				t.Errorf("%s status = %s, want stopped", name, svc.Status())
+			svc, _ := model.app.Service(name)
+			if svc.State.Status != config.StatusStopped {
+				t.Errorf("%s status = %s, want stopped", name, svc.State.Status)
 			}
 		}
 		if !strings.Contains(model.toastMessage, "dependent services stopped") {
@@ -423,10 +434,10 @@ func TestSStopsDependentsAndShiftSStopsOnlySelectedService(t *testing.T) {
 			t.Fatal("Shift+S did not schedule force stop")
 		}
 		_, _ = model.Update(command().(operationResultMsg))
-		backend, _ := model.manager.GetService("backend")
-		frontend, _ := model.manager.GetService("frontend")
-		if backend.Status() != config.StatusStopped || frontend.Status() != config.StatusRunning {
-			t.Fatalf("force stop statuses: backend=%s frontend=%s", backend.Status(), frontend.Status())
+		backend, _ := model.app.Service("backend")
+		frontend, _ := model.app.Service("frontend")
+		if backend.State.Status != config.StatusStopped || frontend.State.Status != config.StatusRunning {
+			t.Fatalf("force stop statuses: backend=%s frontend=%s", backend.State.Status, frontend.State.Status)
 		}
 		if !strings.Contains(model.toastMessage, "without stopping dependents") {
 			t.Fatalf("force stop notification = %q", model.toastMessage)
@@ -462,13 +473,14 @@ func TestShiftSOverridesQueuedDependencyStart(t *testing.T) {
 	_, queuedCommand := model.toggleSelectedServices()
 	queuedResult := make(chan operationResultMsg, 1)
 	go func() { queuedResult <- queuedCommand().(operationResultMsg) }()
-	api, _ := model.manager.GetService("api")
+	api, _ := model.app.Service("api")
 	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) && (api.Status() != config.StatusStopped || !api.DesiredRunning()) {
+	for time.Now().Before(deadline) && (api.State.Status != config.StatusStopped || !api.DesiredRunning) {
 		time.Sleep(10 * time.Millisecond)
+		api, _ = model.app.Service("api")
 	}
-	if api.Status() != config.StatusStopped || !api.DesiredRunning() {
-		t.Fatalf("api did not enter queued state: status=%s desired=%v", api.Status(), api.DesiredRunning())
+	if api.State.Status != config.StatusStopped || !api.DesiredRunning {
+		t.Fatalf("api did not enter queued state: status=%s desired=%v", api.State.Status, api.DesiredRunning)
 	}
 
 	_, forceCommand := model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'S'}})
@@ -476,8 +488,9 @@ func TestShiftSOverridesQueuedDependencyStart(t *testing.T) {
 		t.Fatal("Shift+S did not replace the queued start")
 	}
 	_, _ = model.Update(forceCommand().(operationResultMsg))
-	if api.Status() != config.StatusRunning {
-		t.Fatalf("force-started api status = %s", api.Status())
+	api, _ = model.app.Service("api")
+	if api.State.Status != config.StatusRunning {
+		t.Fatalf("force-started api status = %s", api.State.Status)
 	}
 	select {
 	case stale := <-queuedResult:
@@ -499,8 +512,8 @@ func TestMouseCanForceStartFocusedService(t *testing.T) {
 		t.Fatal("force-start button did not schedule the operation")
 	}
 	_, _ = model.Update(command().(operationResultMsg))
-	if model.FocusedService().Status() != config.StatusRunning {
-		t.Fatalf("focused service status = %s", model.FocusedService().Status())
+	if model.FocusedService().State.Status != config.StatusRunning {
+		t.Fatalf("focused service status = %s", model.FocusedService().State.Status)
 	}
 }
 
@@ -520,10 +533,10 @@ func TestMouseClickChangesServiceStartedByFooterAction(t *testing.T) {
 	}
 	_, _ = model.Update(command().(operationResultMsg))
 
-	api, _ := model.manager.GetService("api")
-	worker, _ := model.manager.GetService("worker")
-	if api.Status() != config.StatusStopped || worker.Status() != config.StatusRunning {
-		t.Fatalf("after clicking worker, statuses api=%s worker=%s", api.Status(), worker.Status())
+	api, _ := model.app.Service("api")
+	worker, _ := model.app.Service("worker")
+	if api.State.Status != config.StatusStopped || worker.State.Status != config.StatusRunning {
+		t.Fatalf("after clicking worker, statuses api=%s worker=%s", api.State.Status, worker.State.Status)
 	}
 }
 
@@ -560,10 +573,10 @@ func TestMouseClickInTagGroupChangesServiceStartedByFooterAction(t *testing.T) {
 	}
 	_, _ = model.Update(command().(operationResultMsg))
 
-	api, _ := model.manager.GetService("api")
-	worker, _ := model.manager.GetService("worker")
-	if api.Status() != config.StatusStopped || worker.Status() != config.StatusRunning {
-		t.Fatalf("after clicking grouped worker, statuses api=%s worker=%s", api.Status(), worker.Status())
+	api, _ := model.app.Service("api")
+	worker, _ := model.app.Service("worker")
+	if api.State.Status != config.StatusStopped || worker.State.Status != config.StatusRunning {
+		t.Fatalf("after clicking grouped worker, statuses api=%s worker=%s", api.State.Status, worker.State.Status)
 	}
 }
 
@@ -585,12 +598,13 @@ func TestDetailsShowLifecycleConfiguration(t *testing.T) {
 			model.focused = index
 		}
 	}
-	state := model.FocusedService().GetState()
+	state := model.FocusedService().State
 	state.StartedAt = time.Now().Add(-2 * time.Minute)
 	state.Completed = true
 	state.ExitCode = 1
 	state.RestartCount = 2
-	model.FocusedService().SetState(state)
+	model.app.SetServiceStateForTest(model.FocusedService().Name, state)
+	model.FocusedService().State = state
 	plain := ansi.Strip(strings.Join(model.serviceDetailLines(model.FocusedService(), 80), "\n"))
 	for _, expected := range []string{
 		"LAST START", "LAST EXIT code 1",
@@ -607,14 +621,15 @@ func TestDetailsShowLifecycleConfiguration(t *testing.T) {
 	}
 }
 
-func waitForServiceStatus(t *testing.T, svc interface{ Status() config.ServiceStatus }, expected config.ServiceStatus) {
+func waitForServiceStatus(t *testing.T, model *Model, name string, expected config.ServiceStatus) {
 	t.Helper()
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
-		if svc.Status() == expected {
+		if svc, ok := model.app.Service(name); ok && svc.State.Status == expected {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatalf("service status = %s, want %s", svc.Status(), expected)
+	svc, _ := model.app.Service(name)
+	t.Fatalf("service status = %s, want %s", svc.State.Status, expected)
 }

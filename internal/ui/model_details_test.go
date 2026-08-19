@@ -10,8 +10,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/kranz-org/kranz/internal/app"
 	"github.com/kranz-org/kranz/internal/config"
-	"github.com/kranz-org/kranz/internal/service"
 	"github.com/muesli/termenv"
 )
 
@@ -97,7 +97,7 @@ func TestExternalPortConflictOffersVerifiedStopAction(t *testing.T) {
 	defer model.Shutdown()
 	model.width, model.height, model.ready = 100, 32, true
 	model.operationID = 7
-	conflict := &service.PortConflictError{
+	conflict := &app.PortConflictError{
 		Service: "api", Port: 8080, PID: 4242, Process: "outside", Command: "outside --serve", External: true,
 	}
 	_, _ = model.Update(operationResultMsg{id: 7, target: "selection", err: conflict})
@@ -110,7 +110,7 @@ func TestExternalPortConflictOffersVerifiedStopAction(t *testing.T) {
 			t.Errorf("port conflict modal does not contain %q:\n%s", expected, plain)
 		}
 	}
-	model.portChecker = fakePortChecker{details: map[int]*config.PortInfo{8080: {Port: 8080, PID: 4242}}}
+	model.app.SetPortChecker(fakePortChecker{details: map[int]*config.PortInfo{8080: {Port: 8080, PID: 4242}}})
 	_, command := model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
 	if command == nil {
 		t.Fatal("k did not schedule a verified external-process stop")
@@ -120,7 +120,7 @@ func TestExternalPortConflictOffersVerifiedStopAction(t *testing.T) {
 func TestPortReleaseRefusesChangedOwner(t *testing.T) {
 	model := newTestModel()
 	defer model.Shutdown()
-	model.portChecker = fakePortChecker{details: map[int]*config.PortInfo{8080: {Port: 8080, PID: 5252}}}
+	model.app.SetPortChecker(fakePortChecker{details: map[int]*config.PortInfo{8080: {Port: 8080, PID: 5252}}})
 	message := model.releaseExternalPort(8080, 4242)().(releasePortResultMsg)
 	if message.err == nil || !strings.Contains(message.err.Error(), "owner changed") {
 		t.Fatalf("changed-owner result = %v", message.err)
@@ -145,9 +145,9 @@ func TestServiceDetailsUseAsyncPortInspection(t *testing.T) {
 		Readiness: &config.CheckConfig{Type: config.CheckHTTP, URL: "http://127.0.0.1:8080/ready"},
 		Liveness:  &config.CheckConfig{Type: config.CheckTCP, Port: 8080},
 	}
-	model.portChecker = fakePortChecker{details: map[int]*config.PortInfo{
+	model.app.SetPortChecker(fakePortChecker{details: map[int]*config.PortInfo{
 		8080: {Port: 8080, Address: "127.0.0.1", Protocol: "tcp", PID: 4321, Process: "test-api"},
-	}}
+	}})
 
 	command := model.scanFocusedPorts(true)
 	if command == nil {

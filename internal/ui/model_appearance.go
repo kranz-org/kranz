@@ -570,7 +570,7 @@ func (m *Model) saveThemePickerToProject() {
 		}
 		m.addNotification("appearance", "Project appearance saved to "+path, config.LogInfo)
 	}
-	m.configStamps, _ = readConfigStamps(m.configWatchPaths)
+	m.app.AcknowledgeExternalWrite()
 	m.mode = ModeNormal
 }
 

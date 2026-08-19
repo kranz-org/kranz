@@ -10,11 +10,9 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/kranz-org/kranz/internal/app"
 	"github.com/kranz-org/kranz/internal/config"
-	"github.com/kranz-org/kranz/internal/health"
 	kranzlog "github.com/kranz-org/kranz/internal/log"
-	"github.com/kranz-org/kranz/internal/port"
-	"github.com/kranz-org/kranz/internal/service"
 	usersettings "github.com/kranz-org/kranz/internal/settings"
 )
 
@@ -64,7 +62,7 @@ const (
 
 type tagListRow struct {
 	Tag     string
-	Service *service.Service
+	Service *app.ServiceSnapshot
 }
 
 type actionListRowKind uint8
@@ -77,7 +75,7 @@ const (
 
 type actionListRow struct {
 	Kind    actionListRowKind
-	Service *service.Service
+	Service *app.ServiceSnapshot
 	Group   string
 	Action  config.ActionID
 }
@@ -111,7 +109,7 @@ type operationResultMsg struct {
 
 type actionResultMsg struct {
 	id     config.ActionID
-	result service.ActionResult
+	result app.ActionResult
 	err    error
 }
 
@@ -135,15 +133,11 @@ type tickMsg time.Time
 
 const mouseTrackingRefreshInterval = 250 * time.Millisecond
 
-type configStamp struct {
-	Modified int64
-	Size     int64
-}
 type configReloadMsg struct {
-	cfg     *config.Config
-	stamps  map[string]configStamp
-	err     error
-	changed bool
+	result     app.ReloadResult
+	err        error
+	generation uint64
+	changed    bool
 }
 
 type portDetailsMsg struct {
@@ -160,9 +154,9 @@ type Model struct {
 	version          string
 	workingDirectory string
 
-	manager             *service.Manager
-	services            []*service.Service
-	allServices         []*service.Service
+	app                 app.API
+	services            []*app.ServiceSnapshot
+	allServices         []*app.ServiceSnapshot
 	focused             int
 	selected            map[string]bool
 	detailOffset        int
@@ -176,14 +170,12 @@ type Model struct {
 	focusedActionGroup  string
 	expandedActionOwner map[string]bool
 
-	healthChecker *health.Checker
-	portChecker   port.Checker
-	portDetails   map[int]*config.PortInfo
-	portError     error
-	portService   string
-	portChecked   time.Time
-	portScanID    int
-	portScanBusy  bool
+	portDetails  map[int]*config.PortInfo
+	portError    error
+	portService  string
+	portChecked  time.Time
+	portScanID   int
+	portScanBusy bool
 
 	logSearcher  *kranzlog.Searcher
 	searchInput  textinput.Model
@@ -274,10 +266,6 @@ type Model struct {
 	themeColorReplace  bool
 	themeColorError    string
 	configPaths        []string
-	configWatchPaths   []string
-	configStamps       map[string]configStamp
-	lastConfigScan     time.Time
-	reloadBusy         bool
 	projectExitHandled bool
 
 	shutdownOnce sync.Once
@@ -292,6 +280,10 @@ type ModelOptions struct {
 	// DarkBackground is detected by the executable. Nil keeps the historical
 	// dark default for embedders and deterministic tests.
 	DarkBackground *bool
+	// App is the application-layer runtime the model drives. When nil, one
+	// is constructed from cfg and ConfigPaths with production defaults —
+	// the shape every existing caller and test relies on.
+	App app.API
 }
 
 // NewModel creates a model with default user settings and terminal detection.
@@ -311,23 +303,19 @@ func NewModelWithOptions(cfg *config.Config, version string, options ModelOption
 	if themeErr != nil {
 		activeTheme, _ = applyAppearance(DefaultTheme, "", backgroundTerminal, colorModeAuto, terminalDark)
 	}
-	manager := service.NewManager(cfg)
-	healthChecker := health.NewChecker()
-	portChecker := port.NewChecker()
-	manager.SetHealthChecker(healthChecker)
-	manager.SetPortChecker(portChecker)
-	manager.SetListenerScanner(port.NewListenerScanner())
-	services := manager.Services()
+	application := options.App
+	if application == nil {
+		application = app.NewLocal(cfg, options.ConfigPaths, app.Options{})
+	}
+	services := application.Services()
 
 	model := &Model{
-		cfg:                 cfg,
+		cfg:                 application.Config(),
 		version:             version,
 		workingDirectory:    workingDirectory,
-		manager:             manager,
+		app:                 application,
 		services:            services,
 		allServices:         services,
-		healthChecker:       healthChecker,
-		portChecker:         portChecker,
 		portDetails:         make(map[int]*config.PortInfo),
 		selected:            make(map[string]bool),
 		expandedTags:        make(map[string]bool),
@@ -357,8 +345,6 @@ func NewModelWithOptions(cfg *config.Config, version string, options ModelOption
 	if len(model.configPaths) == 0 {
 		model.configPaths = append([]string(nil), cfg.Paths...)
 	}
-	model.configWatchPaths = watchedConfigPaths(model.configPaths, cfg.WatchPaths)
-	model.configStamps, _ = readConfigStamps(model.configWatchPaths)
 	if themeErr != nil {
 		model.addNotification("appearance", themeErr.Error()+"; using the Kranz theme", config.LogWarn)
 	}
@@ -402,7 +388,7 @@ func (m *Model) refreshMouseTracking(now time.Time) tea.Cmd {
 
 // RequestedExitCode returns the exit code requested by an availability policy.
 func (m *Model) RequestedExitCode() int {
-	requested, code := m.manager.ProjectExitRequested()
+	requested, code := m.app.ProjectExitRequested()
 	if !requested {
 		return 0
 	}
@@ -498,7 +484,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		now := time.Time(msg)
 		m.refreshServices()
 		m.expireToast()
-		if requested, _ := m.manager.ProjectExitRequested(); requested && !m.projectExitHandled {
+		if requested, _ := m.app.ProjectExitRequested(); requested && !m.projectExitHandled {
 			m.projectExitHandled = true
 			return m.beginShutdown()
 		}
@@ -540,7 +526,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) refreshServices() {
-	m.allServices = m.manager.Services()
+	m.allServices = m.app.Services()
 	m.services = m.allServices
 	rows := m.tagRows()
 	m.tagCursor = min(max(0, len(rows)-1), max(0, m.tagCursor))
@@ -579,7 +565,7 @@ const (
 type searchNudgeMsg time.Time
 
 // FocusedService returns the service selected by the list cursor.
-func (m *Model) FocusedService() *service.Service {
+func (m *Model) FocusedService() *app.ServiceSnapshot {
 	if m.focused < 0 || m.focused >= len(m.services) {
 		return nil
 	}
@@ -600,10 +586,18 @@ func (m *Model) addNotification(serviceName, message string, level config.LogLev
 }
 
 // PinnedService returns the service shown in the fixed upper log panel.
-func (m *Model) PinnedService() *service.Service {
+func (m *Model) PinnedService() *app.ServiceSnapshot {
 	if m.pinnedLog == "" {
 		return nil
 	}
-	svc, _ := m.manager.GetService(m.pinnedLog)
-	return svc
+	// Look up within this tick's already-fetched snapshots rather than
+	// querying app fresh, so PinnedService and FocusedService return the
+	// same pointer for the same service within one render — some callers
+	// compare them by identity.
+	for _, svc := range m.allServices {
+		if svc.Name == m.pinnedLog {
+			return svc
+		}
+	}
+	return nil
 }

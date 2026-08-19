@@ -8,8 +8,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/kranz-org/kranz/internal/app"
 	"github.com/kranz-org/kranz/internal/config"
-	"github.com/kranz-org/kranz/internal/service"
 )
 
 func TestSConfirmsBeforeStoppingRunningAction(t *testing.T) {
@@ -31,14 +31,14 @@ func TestSConfirmsBeforeStoppingRunningAction(t *testing.T) {
 	go func() { done <- command() }()
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		state, _ := model.manager.ActionState(*model.focusedAction)
-		if state.Status == service.ActionRunning && state.PID > 0 && strings.Contains(strings.Join(state.Stdout, ""), "started") {
+		state, _ := model.app.ActionState(*model.focusedAction)
+		if state.Status == app.ActionRunning && state.PID > 0 && strings.Contains(strings.Join(state.Stdout, ""), "started") {
 			break
 		}
 		time.Sleep(time.Millisecond)
 	}
-	state, _ := model.manager.ActionState(*model.focusedAction)
-	if state.Status != service.ActionRunning || state.PID <= 0 || !strings.Contains(strings.Join(state.Stdout, ""), "started") {
+	state, _ := model.app.ActionState(*model.focusedAction)
+	if state.Status != app.ActionRunning || state.PID <= 0 || !strings.Contains(strings.Join(state.Stdout, ""), "started") {
 		t.Fatalf("long-running action state = %#v", state)
 	}
 	buttons := model.actionButtons()
@@ -62,8 +62,8 @@ func TestSConfirmsBeforeStoppingRunningAction(t *testing.T) {
 	if stopCommand != nil || model.mode != ModeNormal || model.pendingAction != nil || model.pendingActionStop {
 		t.Fatalf("cancel stop = command %v, mode %v, action %#v, stop %v", stopCommand, model.mode, model.pendingAction, model.pendingActionStop)
 	}
-	state, _ = model.manager.ActionState(*model.focusedAction)
-	if state.Status != service.ActionRunning {
+	state, _ = model.app.ActionState(*model.focusedAction)
+	if state.Status != app.ActionRunning {
 		t.Fatalf("cancelled stop changed action state = %#v", state)
 	}
 
@@ -81,8 +81,8 @@ func TestSConfirmsBeforeStoppingRunningAction(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("stopped action did not finish")
 	}
-	state, _ = model.manager.ActionState(*model.focusedAction)
-	if state.Status != service.ActionCancelled {
+	state, _ = model.app.ActionState(*model.focusedAction)
+	if state.Status != app.ActionCancelled {
 		t.Fatalf("stopped action state = %#v", state)
 	}
 }
@@ -104,8 +104,8 @@ func TestEnterExpandsOwnerAndSRunsFocusedAction(t *testing.T) {
 	if command != nil {
 		t.Fatal("Enter scheduled a focused action")
 	}
-	state, _ := model.manager.ActionState(*model.focusedAction)
-	if state.Status != service.ActionReady {
+	state, _ := model.app.ActionState(*model.focusedAction)
+	if state.Status != app.ActionReady {
 		t.Fatalf("Enter changed action state = %#v", state)
 	}
 	if output := ansi.Strip(model.renderActionLogPanel(60, 8)); !strings.Contains(output, "Press s to run") || strings.Contains(output, "Press Enter") {
@@ -121,8 +121,8 @@ func TestEnterExpandsOwnerAndSRunsFocusedAction(t *testing.T) {
 		t.Fatal("s did not schedule focused action")
 	}
 	_, _ = model.Update(command())
-	state, _ = model.manager.ActionState(*model.focusedAction)
-	if state.Status != service.ActionSucceeded {
+	state, _ = model.app.ActionState(*model.focusedAction)
+	if state.Status != app.ActionSucceeded {
 		t.Fatalf("keyboard action state = %#v", state)
 	}
 }
@@ -171,7 +171,7 @@ func TestMouseClickFocusesActionForFooterRun(t *testing.T) {
 			t.Fatalf("%s scheduled a service command for focused action", action)
 		}
 	}
-	if status := model.FocusedService().Status(); status != config.StatusStopped {
+	if status := model.FocusedService().State.Status; status != config.StatusStopped {
 		t.Fatalf("service changed before action run: %s", status)
 	}
 	_, command := model.triggerAction("toggle")
@@ -179,11 +179,11 @@ func TestMouseClickFocusesActionForFooterRun(t *testing.T) {
 		t.Fatal("clicked action footer did not schedule the action")
 	}
 	_, _ = model.Update(command())
-	state, _ := model.manager.ActionState(*model.focusedAction)
-	if state.Status != service.ActionSucceeded {
+	state, _ := model.app.ActionState(*model.focusedAction)
+	if state.Status != app.ActionSucceeded {
 		t.Fatalf("clicked action status = %#v", state)
 	}
-	if status := model.FocusedService().Status(); status != config.StatusStopped {
+	if status := model.FocusedService().State.Status; status != config.StatusStopped {
 		t.Fatalf("action footer changed service status to %s", status)
 	}
 }
@@ -221,7 +221,7 @@ func TestActionGroupFooterCannotOperatePreviouslyFocusedService(t *testing.T) {
 			t.Fatalf("%s scheduled a service command for focused group", action)
 		}
 	}
-	if status := model.FocusedService().Status(); status != config.StatusStopped {
+	if status := model.FocusedService().State.Status; status != config.StatusStopped {
 		t.Fatalf("focused group changed service status to %s", status)
 	}
 	if len(model.selected) != selectedBefore {
@@ -252,7 +252,7 @@ func TestServiceActionsExpandNavigateRunAndRenderOutput(t *testing.T) {
 	}
 	model.moveServiceListCursor(1)
 	id, _, state, exists := model.focusedActionDefinition()
-	if !exists || id.Name != "inspect" || state.Status != service.ActionReady {
+	if !exists || id.Name != "inspect" || state.Status != app.ActionReady {
 		t.Fatalf("focused action = %#v, %#v, %v", id, state, exists)
 	}
 
@@ -267,7 +267,7 @@ func TestServiceActionsExpandNavigateRunAndRenderOutput(t *testing.T) {
 	_, _ = model.Update(message)
 
 	_, _, state, _ = model.focusedActionDefinition()
-	if state.Status != service.ActionSucceeded || state.ExitCode != 0 {
+	if state.Status != app.ActionSucceeded || state.ExitCode != 0 {
 		t.Fatalf("completed action state = %#v", state)
 	}
 	model.selected["app"] = true
@@ -402,13 +402,13 @@ func TestSelectionAndActionSuccessUseDistinctMarkers(t *testing.T) {
 	}{
 		"not selected": {selectionIndicator(false), 3},
 		"selected":     {selectionIndicator(true), 3},
-		"succeeded":    {actionStatusIndicator(service.ActionSucceeded), 1},
+		"succeeded":    {actionStatusIndicator(app.ActionSucceeded), 1},
 	} {
 		if width := lipgloss.Width(testCase.marker); width != testCase.width {
 			t.Errorf("%s marker width = %d, want %d", name, width, testCase.width)
 		}
 	}
-	if selected, succeeded := ansi.Strip(selectionIndicator(true)), ansi.Strip(actionStatusIndicator(service.ActionSucceeded)); selected != "[✓]" || succeeded != "✓" || selected == succeeded {
+	if selected, succeeded := ansi.Strip(selectionIndicator(true)), ansi.Strip(actionStatusIndicator(app.ActionSucceeded)); selected != "[✓]" || succeeded != "✓" || selected == succeeded {
 		t.Fatalf("selection/action markers = %q/%q, want distinct [✓]/✓", selected, succeeded)
 	}
 }
@@ -444,7 +444,7 @@ func TestActionOnlyGroupIsFocusableAndRunnable(t *testing.T) {
 	}
 	_, _ = model.Update(command())
 	_, _, state, exists := model.focusedActionDefinition()
-	if !exists || state.Status != service.ActionSucceeded || strings.TrimSpace(strings.Join(state.Stdout, "")) != "v1" {
+	if !exists || state.Status != app.ActionSucceeded || strings.TrimSpace(strings.Join(state.Stdout, "")) != "v1" {
 		t.Fatalf("group action state = %#v, %v", state, exists)
 	}
 }
@@ -480,7 +480,7 @@ func TestExpandedActionsDoNotInsertBlankRows(t *testing.T) {
 }
 
 func TestActionOutputCannotRepositionOrGrowTheDashboard(t *testing.T) {
-	state := service.ActionResult{
+	state := app.ActionResult{
 		Stdout: []string{"\x1b[2Jtransforming...\rnext\nbuilt\n"},
 		Stderr: []string{"warning\bretry\rfailed\n"},
 	}
@@ -534,8 +534,8 @@ func TestConfiguredActionConfirmationCanCancelOrRun(t *testing.T) {
 	if command != nil || model.mode != ModeNormal || model.pendingAction != nil {
 		t.Fatalf("cancel confirmation = command %v, mode %v, action %#v", command, model.mode, model.pendingAction)
 	}
-	state, _ := model.manager.ActionState(config.ActionID{OwnerKind: config.ActionOwnerService, Owner: "app", Name: "confirm"})
-	if state.Status != service.ActionReady {
+	state, _ := model.app.ActionState(config.ActionID{OwnerKind: config.ActionOwnerService, Owner: "app", Name: "confirm"})
+	if state.Status != app.ActionReady {
 		t.Fatalf("cancelled confirmation changed action state = %#v", state)
 	}
 
@@ -547,8 +547,8 @@ func TestConfiguredActionConfirmationCanCancelOrRun(t *testing.T) {
 		t.Fatalf("accept confirmation = command %v, mode %v, action %#v", command, model.mode, model.pendingAction)
 	}
 	_, _ = model.Update(command())
-	state, _ = model.manager.ActionState(config.ActionID{OwnerKind: config.ActionOwnerService, Owner: "app", Name: "confirm"})
-	if state.Status != service.ActionSucceeded {
+	state, _ = model.app.ActionState(config.ActionID{OwnerKind: config.ActionOwnerService, Owner: "app", Name: "confirm"})
+	if state.Status != app.ActionSucceeded {
 		t.Fatalf("confirmed action state = %#v", state)
 	}
 
@@ -571,8 +571,8 @@ func TestConfiguredActionConfirmationCanCancelOrRun(t *testing.T) {
 	}
 	// Cancelling leaves the action untouched.
 	_, _ = model.handleConfirmActionKeys(tea.KeyMsg{Type: tea.KeyEsc})
-	state, _ = model.manager.ActionState(interactiveID)
-	if state.Status != service.ActionReady {
+	state, _ = model.app.ActionState(interactiveID)
+	if state.Status != app.ActionReady {
 		t.Fatalf("cancelled handoff state = %#v, want ready", state)
 	}
 
@@ -584,8 +584,8 @@ func TestConfiguredActionConfirmationCanCancelOrRun(t *testing.T) {
 	if command == nil {
 		t.Fatal("accepted handoff produced no command")
 	}
-	state, _ = model.manager.ActionState(interactiveID)
-	if state.Status != service.ActionRunning {
+	state, _ = model.app.ActionState(interactiveID)
+	if state.Status != app.ActionRunning {
 		t.Fatalf("accepted handoff state = %#v, want running while the terminal is handed over", state)
 	}
 }
@@ -607,8 +607,8 @@ func TestStartConfirmFlagDoesNotBypassStopConfirmation(t *testing.T) {
 	go func() { done <- command() }()
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		state, _ := model.manager.ActionState(id)
-		if state.Status == service.ActionRunning {
+		state, _ := model.app.ActionState(id)
+		if state.Status == app.ActionRunning {
 			break
 		}
 		time.Sleep(time.Millisecond)
@@ -628,8 +628,8 @@ func TestStartConfirmFlagDoesNotBypassStopConfirmation(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("stopped confirmed action did not finish")
 	}
-	state, _ := model.manager.ActionState(id)
-	if state.Status != service.ActionCancelled {
+	state, _ := model.app.ActionState(id)
+	if state.Status != app.ActionCancelled {
 		t.Fatalf("stopped confirmed action state = %#v", state)
 	}
 }

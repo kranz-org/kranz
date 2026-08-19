@@ -10,9 +10,8 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/kranz-org/kranz/internal/app"
 	"github.com/kranz-org/kranz/internal/config"
-	"github.com/kranz-org/kranz/internal/health"
-	"github.com/kranz-org/kranz/internal/service"
 )
 
 // The Details panel. Every field is width-aware because the panel is the
@@ -26,7 +25,7 @@ func (m *Model) mouseInDetails(x, y int) bool {
 	return y >= 1+listHeight
 }
 
-func (m *Model) renderServiceDetails(svc *service.Service, width, height int) string {
+func (m *Model) renderServiceDetails(svc *app.ServiceSnapshot, width, height int) string {
 	contentWidth := max(1, width-2)
 	contentHeight := max(1, height-2)
 	if svc == nil {
@@ -60,7 +59,7 @@ func (m *Model) renderActionDetails(width, height int) string {
 	return renderDetailViewport(m, "[2] ACTION", lines, contentWidth, contentHeight)
 }
 
-func (m *Model) actionDetailLines(id config.ActionID, action config.Action, state service.ActionResult, contentWidth int) []string {
+func (m *Model) actionDetailLines(id config.ActionID, action config.Action, state app.ActionResult, contentWidth int) []string {
 	lines := []string{actionStatusIndicator(state.Status) + " " + ServiceNameStyle.Render(id.Name) + "  " + ContextBarStyle.Render(state.Status.String())}
 	owner := "service " + id.Owner
 	if id.OwnerKind == config.ActionOwnerGroup {
@@ -84,7 +83,7 @@ func (m *Model) actionDetailLines(id config.ActionID, action config.Action, stat
 	lines = append(lines, detailFieldLines("MODE", mode, contentWidth)...)
 	if !state.StartedAt.IsZero() {
 		lines = append(lines, detailFieldLines("LAST RUN", state.StartedAt.Local().Format("15:04:05"), contentWidth)...)
-		if state.Status != service.ActionRunning {
+		if state.Status != app.ActionRunning {
 			lines = append(lines, detailFieldLines("RESULT", fmt.Sprintf("exit %d · %s", state.ExitCode, state.Duration.Round(time.Millisecond)), contentWidth)...)
 		}
 	}
@@ -153,7 +152,7 @@ func (m *Model) tagDetailLines(tag string, contentWidth int) []string {
 	serviceNames := make(map[string]bool)
 	for _, svc := range services {
 		serviceNames[svc.Name] = true
-		state := serviceStatusLabel(svc.Status(), m.serviceVisualState(svc))
+		state := serviceStatusLabel(svc.State.Status, m.serviceVisualState(svc))
 		stateCounts[state]++
 		for _, portNumber := range svc.Config.Ports {
 			ports[portNumber] = true
@@ -179,7 +178,7 @@ func (m *Model) tagDetailLines(tag string, contentWidth int) []string {
 	serviceParts := make([]string, 0, len(services))
 	externalDependencies := make(map[string]bool)
 	for _, svc := range services {
-		state := serviceStatusLabel(svc.Status(), m.serviceVisualState(svc))
+		state := serviceStatusLabel(svc.State.Status, m.serviceVisualState(svc))
 		part := serviceStatusIndicator(m.serviceVisualState(svc)) + " " + svc.Name + " · " + strings.ToLower(state)
 		if len(svc.Config.Ports) > 0 {
 			configuredPorts := make([]string, 0, len(svc.Config.Ports))
@@ -218,11 +217,11 @@ func (m *Model) tagDetailLines(tag string, contentWidth int) []string {
 	return lines
 }
 
-func (m *Model) serviceDetailLines(svc *service.Service, contentWidth int) []string {
+func (m *Model) serviceDetailLines(svc *app.ServiceSnapshot, contentWidth int) []string {
 	visualState := m.serviceVisualState(svc)
 	lines := []string{
 		serviceStatusIndicator(visualState) + " " + ServiceNameStyle.Render(svc.Name) + "  " +
-			ContextBarStyle.Render(serviceStatusLabel(svc.Status(), visualState)),
+			ContextBarStyle.Render(serviceStatusLabel(svc.State.Status, visualState)),
 	}
 	if svc.Config.Disabled {
 		lines = append(lines, StartingBadgeStyle.Render("DISABLED")+" "+detailValue("manual start only"))
@@ -235,7 +234,7 @@ func (m *Model) serviceDetailLines(svc *service.Service, contentWidth int) []str
 		lines = append(lines, detailFieldLines("START", StartingBadgeStyle.Render(reason), contentWidth)...)
 	}
 	directory := displayServiceDirectory(svc.Config.Dir, m.workingDirectory)
-	lines = append(lines, pidDirectoryDetailLines(svc.PID(), directory, contentWidth)...)
+	lines = append(lines, pidDirectoryDetailLines(svc.State.PID, directory, contentWidth)...)
 	lines = append(lines, runtimeDetailLines(svc, contentWidth)...)
 	if svc.Config.Description != "" {
 		lines = append(lines, detailFieldLines("ABOUT", svc.Config.Description, contentWidth)...)
@@ -273,8 +272,8 @@ func (m *Model) serviceDetailLines(svc *service.Service, contentWidth int) []str
 	lines = append(lines, dependencyDetailLines(svc, contentWidth)...)
 	lines = append(lines, prerequisiteDetailLines(svc, contentWidth)...)
 	lines = append(lines, m.renderPortDetailLines(svc, contentWidth)...)
-	detectedPorts := svc.DetectedPorts()
-	serviceActive := svc.Status() != config.StatusStopped
+	detectedPorts := svc.DetectedPorts
+	serviceActive := svc.State.Status != config.StatusStopped
 	lines = append(lines, m.healthDetailLines("READINESS", healthReadiness(svc), m.readinessSummary(svc), detectedPorts, serviceActive, contentWidth)...)
 	lines = append(lines, m.healthDetailLines("LIVENESS", healthLiveness(svc), m.livenessSummary(svc), detectedPorts, serviceActive, contentWidth)...)
 	if svc.Config.ReadyLogLine != "" {
@@ -298,7 +297,7 @@ func (m *Model) serviceDetailLines(svc *service.Service, contentWidth int) []str
 
 // prerequisiteDetailLines renders before_start so the reason a service runs
 // extra work before starting is visible without opening the configuration.
-func prerequisiteDetailLines(svc *service.Service, contentWidth int) []string {
+func prerequisiteDetailLines(svc *app.ServiceSnapshot, contentWidth int) []string {
 	if len(svc.Config.BeforeStart) == 0 {
 		return nil
 	}
@@ -322,7 +321,7 @@ func prerequisiteDetailLines(svc *service.Service, contentWidth int) []string {
 	return lines
 }
 
-func dependencyDetailLines(svc *service.Service, contentWidth int) []string {
+func dependencyDetailLines(svc *app.ServiceSnapshot, contentWidth int) []string {
 	if len(svc.Config.DependsOn) == 0 {
 		return detailFieldLines("DEPENDS", "—", contentWidth)
 	}
@@ -354,7 +353,7 @@ func dependencyDetailLines(svc *service.Service, contentWidth int) []string {
 	return lines
 }
 
-func availabilityDetailLines(svc *service.Service, contentWidth int) []string {
+func availabilityDetailLines(svc *app.ServiceSnapshot, contentWidth int) []string {
 	availability := svc.Config.Availability
 	policy := availability.Restart
 	if policy == "" {
@@ -370,7 +369,7 @@ func availabilityDetailLines(svc *service.Service, contentWidth int) []string {
 		if availability.MaxRestarts > 0 {
 			limit = strconv.Itoa(availability.MaxRestarts)
 		}
-		parts = append(parts, "backoff "+backoff.String(), fmt.Sprintf("restarts %d/%s", svc.GetState().RestartCount, limit))
+		parts = append(parts, "backoff "+backoff.String(), fmt.Sprintf("restarts %d/%s", svc.State.RestartCount, limit))
 	}
 	if availability.ExitOnEnd {
 		parts = append(parts, "exit on end")
@@ -381,14 +380,14 @@ func availabilityDetailLines(svc *service.Service, contentWidth int) []string {
 	return detailSectionLines("RECOVERY", parts, contentWidth)
 }
 
-func runtimeDetailLines(svc *service.Service, contentWidth int) []string {
-	state := svc.GetState()
+func runtimeDetailLines(svc *app.ServiceSnapshot, contentWidth int) []string {
+	state := svc.State
 	if state.StartedAt.IsZero() {
 		return nil
 	}
 
 	lines := detailFieldLines("LAST START", state.StartedAt.Local().Format("15:04:05"), contentWidth)
-	if svc.Status() != config.StatusStopped {
+	if svc.State.Status != config.StatusStopped {
 		elapsed := time.Since(state.StartedAt)
 		if elapsed < 0 {
 			elapsed = 0
@@ -409,7 +408,7 @@ func runtimeDetailLines(svc *service.Service, contentWidth int) []string {
 	return lines
 }
 
-func shutdownDetailLines(svc *service.Service, contentWidth int) []string {
+func shutdownDetailLines(svc *app.ServiceSnapshot, contentWidth int) []string {
 	shutdown := svc.Config.Shutdown
 	timeout := shutdown.Timeout
 	if timeout <= 0 {
@@ -453,14 +452,14 @@ func (m *Model) healthDetailLines(label string, check *config.CheckConfig, statu
 	return lines
 }
 
-func healthReadiness(svc *service.Service) *config.CheckConfig {
+func healthReadiness(svc *app.ServiceSnapshot) *config.CheckConfig {
 	if svc.Config.HealthCheck == nil {
 		return nil
 	}
 	return svc.Config.HealthCheck.Readiness
 }
 
-func healthLiveness(svc *service.Service) *config.CheckConfig {
+func healthLiveness(svc *app.ServiceSnapshot) *config.CheckConfig {
 	if svc.Config.HealthCheck == nil {
 		return nil
 	}
@@ -492,8 +491,8 @@ func (m *Model) scrollDetails(direction int) {
 	m.detailOffset = min(maxOffset, max(0, m.detailOffset+direction))
 }
 
-func (m *Model) renderPortDetailLines(svc *service.Service, contentWidth int) []string {
-	entries := mergePortDetailEntries(svc.Config.Ports, svc.DetectedPorts())
+func (m *Model) renderPortDetailLines(svc *app.ServiceSnapshot, contentWidth int) []string {
+	entries := mergePortDetailEntries(svc.Config.Ports, svc.DetectedPorts)
 	if len(entries) == 0 {
 		if !svc.Config.PortDiscoveryEnabled() {
 			return []string{DetailLabelStyle.Render("PORTS") + " " + ContextBarStyle.Render("detection off")}
@@ -564,7 +563,7 @@ func renderDetectedPortDetail(entry portDetailEntry, label string, portWidth, co
 	return renderPortStatus(base, role, RunningBadgeStyle.Render("listening"), contentWidth)
 }
 
-func (m *Model) renderPortDetail(svc *service.Service, portNumber int, label string, portWidth, contentWidth int) []string {
+func (m *Model) renderPortDetail(svc *app.ServiceSnapshot, portNumber int, label string, portWidth, contentWidth int) []string {
 	base := DetailLabelStyle.Render(label) + " " + PortStyle.Render(fmt.Sprintf("%*d", portWidth, portNumber)) + " "
 	if m.portService != svc.Name || (m.portScanBusy && m.portChecked.IsZero()) {
 		return renderPortStatus(base, "declared", StartingBadgeStyle.Render("checking…"), contentWidth)
@@ -575,10 +574,10 @@ func (m *Model) renderPortDetail(svc *service.Service, portNumber int, label str
 	if info := m.portDetails[portNumber]; info != nil {
 		prefix := base + ContextBarStyle.Render("declared · ")
 		if lipgloss.Width(prefix+"listening") <= contentWidth {
-			return renderListeningPort(prefix, info, m.manager.ManagedServiceForPID(info.PID), contentWidth)
+			return renderListeningPort(prefix, info, m.app.ManagedServiceForPID(info.PID), contentWidth)
 		}
 		lines := []string{base + ContextBarStyle.Render("declared")}
-		return append(lines, renderListeningPort(ContextBarStyle.Render("  ↳ "), info, m.manager.ManagedServiceForPID(info.PID), contentWidth)...)
+		return append(lines, renderListeningPort(ContextBarStyle.Render("  ↳ "), info, m.app.ManagedServiceForPID(info.PID), contentWidth)...)
 	}
 	return renderPortStatus(base, "declared", StoppedBadgeStyle.Render("free"), contentWidth)
 }
@@ -736,39 +735,37 @@ func listenerEndpoint(info *config.PortInfo) string {
 	return strings.ToLower(info.Protocol) + "://" + address + fmt.Sprintf(":%d", info.Port)
 }
 
-func (m *Model) readinessSummary(svc *service.Service) string {
+func (m *Model) readinessSummary(svc *app.ServiceSnapshot) string {
 	if svc.Config.HealthCheck == nil || svc.Config.HealthCheck.Readiness == nil {
 		return detailValue("not configured")
 	}
-	healthData := m.healthChecker.GetHealth(svc.Name)
-	if healthData == nil {
+	if !svc.Health.Observed {
 		return StoppedBadgeStyle.Render("inactive")
 	}
-	if !healthData.IsReady() {
+	if !svc.Health.Ready {
 		return StartingBadgeStyle.Render("waiting")
 	}
 	return RunningBadgeStyle.Render("ready")
 }
 
-func (m *Model) livenessSummary(svc *service.Service) string {
+func (m *Model) livenessSummary(svc *app.ServiceSnapshot) string {
 	if svc.Config.HealthCheck == nil || svc.Config.HealthCheck.Liveness == nil {
 		return detailValue("not configured")
 	}
-	healthData := m.healthChecker.GetHealth(svc.Name)
-	if healthData == nil {
+	if !svc.Health.Observed {
 		return StoppedBadgeStyle.Render("inactive")
 	}
-	if healthData.GetLastCheck().IsZero() {
+	if svc.Health.LastCheck.IsZero() {
 		return StartingBadgeStyle.Render("checking")
 	}
-	if healthData.IsAlive() {
+	if svc.Health.Alive {
 		return RunningBadgeStyle.Render("alive")
 	}
 	return FailedBadgeStyle.Render("failed")
 }
 
 func checkDescription(check *config.CheckConfig, detectedPorts []int, serviceActive bool) string {
-	resolved, err := health.ResolveCheckTarget(check, detectedPorts)
+	resolved, err := app.ResolveCheckTarget(check, detectedPorts)
 	if err != nil {
 		if strings.HasPrefix(err.Error(), "waiting for") {
 			return detectingCheckDescription(check, serviceActive)

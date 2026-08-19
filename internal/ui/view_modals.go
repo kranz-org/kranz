@@ -164,15 +164,13 @@ func (m *Model) renderHealthHistoryView() string {
 		return m.placeOverlay(renderModal("No service selected"))
 	}
 
-	healthData := m.healthChecker.GetHealth(svc.Name)
-
 	var lines []string
 	lines = append(lines, ModalTitleStyle.Render(fmt.Sprintf(" Health: %s ", svc.Name)))
 	lines = append(lines, "")
 
 	if svc.Config.HealthCheck != nil {
-		detectedPorts := svc.DetectedPorts()
-		serviceActive := svc.Status() != config.StatusStopped
+		detectedPorts := svc.DetectedPorts
+		serviceActive := svc.State.Status != config.StatusStopped
 		lines = append(lines, "  Readiness: "+m.readinessSummary(svc))
 		if check := healthReadiness(svc); check != nil {
 			lines = append(lines, checkDescription(check, detectedPorts, serviceActive))
@@ -181,10 +179,10 @@ func (m *Model) renderHealthHistoryView() string {
 		if check := healthLiveness(svc); check != nil {
 			lines = append(lines, checkDescription(check, detectedPorts, serviceActive))
 		}
-		if healthData != nil {
+		if svc.Health.Observed {
 			lines = append(lines, "")
 			lines = append(lines, "History:")
-			for _, h := range healthData.History.Lines() {
+			for _, h := range m.app.HealthHistory(svc.Name) {
 				lines = append(lines, "  "+h)
 			}
 		}
@@ -271,22 +269,8 @@ func (m *Model) renderConfirmQuitView() string {
 }
 
 func (m *Model) quitLifecyclePlan() (managed, detachedStop, detachedKeep []string) {
-	for _, svc := range m.manager.Services() {
-		status := svc.Status()
-		active := status == config.StatusRunning || status == config.StatusUnhealthy ||
-			status == config.StatusStarting || status == config.StatusStopping || svc.DesiredRunning()
-		if !active {
-			continue
-		}
-		if !svc.Config.IsDetached() {
-			managed = append(managed, svc.Name)
-		} else if svc.Config.StopOnExitEnabled() {
-			detachedStop = append(detachedStop, svc.Name)
-		} else {
-			detachedKeep = append(detachedKeep, svc.Name)
-		}
-	}
-	return managed, detachedStop, detachedKeep
+	plan := m.app.ShutdownPlan()
+	return plan.Managed, plan.DetachedStop, plan.DetachedKeep
 }
 
 func appendQuitServiceNames(lines []string, heading string, names []string) []string {
@@ -439,7 +423,7 @@ func (m *Model) renderConfirmServiceStopView() string {
 	}
 	body := []string{"Running services will be stopped."}
 	for _, name := range m.pendingStopNames {
-		if svc, ok := m.manager.GetService(name); ok && svc.Config.IsDetached() {
+		if svc, ok := m.app.Service(name); ok && svc.Config.IsDetached() {
 			body = append(body, "Configured detached lifecycle stop commands will be executed.")
 			break
 		}
@@ -467,7 +451,7 @@ func (m *Model) renderConfirmServiceStartView() string {
 }
 
 func (m *Model) renderServiceStartConfirmationBody() []string {
-	names := m.startConfirmationServiceNames(m.pendingStartNames, !m.pendingStartForce)
+	names := m.app.StartConfirmationNames(m.pendingStartNames, !m.pendingStartForce)
 	body := []string{StartingBadgeStyle.Render("⚠ CONFIRM BEFORE STARTING")}
 	if len(names) == 0 {
 		return append(body, "The lifecycle start command requires confirmation.")
@@ -478,7 +462,7 @@ func (m *Model) renderServiceStartConfirmationBody() []string {
 		if index > 0 {
 			body = append(body, "")
 		}
-		svc, ok := m.manager.GetService(name)
+		svc, ok := m.app.Service(name)
 		if !ok {
 			continue
 		}

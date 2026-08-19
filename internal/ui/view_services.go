@@ -7,8 +7,8 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/kranz-org/kranz/internal/app"
 	"github.com/kranz-org/kranz/internal/config"
-	"github.com/kranz-org/kranz/internal/service"
 )
 
 // The first column: the service list, the tag list with its inline expansion,
@@ -16,13 +16,13 @@ import (
 
 func (m *Model) serviceCounts() (running, pending, stopped int) {
 	for _, svc := range m.allServices {
-		switch svc.Status() {
+		switch svc.State.Status {
 		case config.StatusRunning, config.StatusUnhealthy:
 			running++
 		case config.StatusStarting, config.StatusStopping:
 			pending++
 		default:
-			if svc.DesiredRunning() {
+			if svc.DesiredRunning {
 				pending++
 			} else {
 				stopped++
@@ -162,12 +162,12 @@ func (m *Model) renderServiceListRow(index int, row actionListRow, width int) st
 		line := "   " + ContextBarStyle.Render(disclosure) + "  " + ServiceNameStyle.Render(row.Group)
 		return renderListLine(line, width, focused)
 	case actionRowAction:
-		state, _ := m.manager.ActionState(row.Action)
+		state, _ := m.app.ActionState(row.Action)
 		status := actionStatusIndicator(state.Status) + " " + row.Action.Name
-		if state.Status != service.ActionReady {
+		if state.Status != app.ActionReady {
 			status += ContextBarStyle.Render("  " + state.Status.String())
 		}
-		if state.Duration > 0 && state.Status != service.ActionRunning {
+		if state.Duration > 0 && state.Status != app.ActionRunning {
 			status += ContextBarStyle.Render(" · " + state.Duration.Round(time.Millisecond).String())
 		}
 		return renderListLine("      "+status, width, focused)
@@ -176,7 +176,7 @@ func (m *Model) renderServiceListRow(index int, row actionListRow, width int) st
 	}
 }
 
-func (m *Model) renderServiceOwnerLine(svc *service.Service, width int, focused bool) string {
+func (m *Model) renderServiceOwnerLine(svc *app.ServiceSnapshot, width int, focused bool) string {
 	disclosure := " "
 	if len(svc.Config.Actions) > 0 {
 		disclosure = "▸"
@@ -190,8 +190,8 @@ func (m *Model) renderServiceOwnerLine(svc *service.Service, width int, focused 
 	if visualState == visualQueued {
 		line += StartingBadgeStyle.Render("  queued")
 	}
-	if !focused && svc.NewLogCount() > 0 {
-		line += NewLogIndicatorStyle.Render(fmt.Sprintf(" +%d", svc.NewLogCount()))
+	if !focused && svc.State.NewLogCount > 0 {
+		line += NewLogIndicatorStyle.Render(fmt.Sprintf(" +%d", svc.State.NewLogCount))
 	}
 	if disclosure != " " {
 		line += ContextBarStyle.Render(" " + disclosure)
@@ -222,15 +222,15 @@ func selectionIndicator(selected bool) string {
 	return ContextBarStyle.Render("[ ]")
 }
 
-func actionStatusIndicator(status service.ActionStatus) string {
+func actionStatusIndicator(status app.ActionStatus) string {
 	switch status {
-	case service.ActionRunning:
+	case app.ActionRunning:
 		return StartingBadgeStyle.Render("◐")
-	case service.ActionSucceeded:
+	case app.ActionSucceeded:
 		return RunningBadgeStyle.Render("✓")
-	case service.ActionFailed, service.ActionTimedOut:
+	case app.ActionFailed, app.ActionTimedOut:
 		return FailedBadgeStyle.Render("×")
-	case service.ActionCancelled:
+	case app.ActionCancelled:
 		return StartingBadgeStyle.Render("■")
 	default:
 		return ContextBarStyle.Render("○")
@@ -309,7 +309,7 @@ func (m *Model) visibleTagRange(height int) (start, end int) {
 }
 
 // renderServiceLine renders selection, health state, name, and unread log count.
-func (m *Model) renderServiceLine(index int, svc *service.Service, width int) string {
+func (m *Model) renderServiceLine(index int, svc *app.ServiceSnapshot, width int) string {
 	return m.renderServiceOwnerLine(svc, width, index == m.focused && m.focusedAction == nil && m.focusedActionGroup == "")
 }
 
@@ -358,20 +358,20 @@ func serviceStatusLabel(status config.ServiceStatus, state serviceVisualState) s
 	}
 }
 
-func (m *Model) serviceVisualState(svc *service.Service) serviceVisualState {
-	switch svc.Status() {
+func (m *Model) serviceVisualState(svc *app.ServiceSnapshot) serviceVisualState {
+	switch svc.State.Status {
 	case config.StatusUnknown:
 		if svc.Config.IsDetached() {
 			if svc.Config.Lifecycle.Status == nil {
 				return visualExternal
 			}
-			if !svc.LifecycleStatusObserved() {
+			if !svc.StatusObserved {
 				return visualChecking
 			}
 		}
 		return visualUnknown
 	case config.StatusStopped:
-		if svc.DesiredRunning() {
+		if svc.DesiredRunning {
 			return visualQueued
 		}
 		return visualStopped
@@ -385,18 +385,17 @@ func (m *Model) serviceVisualState(svc *service.Service) serviceVisualState {
 	if checkConfig == nil {
 		return visualRunning
 	}
-	healthData := m.healthChecker.GetHealth(svc.Name)
-	if healthData == nil {
+	if !svc.Health.Observed {
 		return visualStarting
 	}
-	if checkConfig.Readiness != nil && !healthData.IsReady() {
+	if checkConfig.Readiness != nil && !svc.Health.Ready {
 		return visualStarting
 	}
 	if checkConfig.Liveness != nil {
-		if healthData.GetLastCheck().IsZero() {
+		if svc.Health.LastCheck.IsZero() {
 			return visualStarting
 		}
-		if !healthData.IsAlive() {
+		if !svc.Health.Alive {
 			return visualUnhealthy
 		}
 	}

@@ -980,11 +980,7 @@ func TestThemePickerSurvivesConfigReload(t *testing.T) {
 			model.activeTheme.Accent, model.themePickerBackground(), model.themeColorMode)
 	}
 
-	reloaded, err := config.Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, _ = model.Update(configReloadMsg{cfg: reloaded, changed: true})
+	reloadModelForTest(t, model)
 
 	if model.activeTheme.Accent != "#FF0000" {
 		t.Errorf("reload reverted the typed accent to %q while the panel still shows %q",

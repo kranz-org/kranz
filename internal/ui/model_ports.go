@@ -1,12 +1,10 @@
 package ui
 
 import (
-	"fmt"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/kranz-org/kranz/internal/config"
-	"github.com/kranz-org/kranz/internal/port"
 )
 
 // Port inspection and the external-process conflict dialog. Terminating a
@@ -37,9 +35,9 @@ func (m *Model) scanFocusedPorts(force bool) tea.Cmd {
 	ports := append([]int(nil), svc.Config.Ports...)
 	m.portService = serviceName
 	m.portScanBusy = true
-	checker := m.portChecker
+	application := m.app
 	return func() tea.Msg {
-		details, err := checker.CheckPorts(ports)
+		details, err := application.InspectPorts(ports)
 		if details == nil {
 			details = make(map[int]*config.PortInfo)
 		}
@@ -73,30 +71,15 @@ func (m *Model) handlePortConflictKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) releaseExternalPort(portNumber, expectedPID int) tea.Cmd {
-	checker := m.portChecker
-	manager := m.manager
+	application := m.app
 	return func() tea.Msg {
-		info, err := checker.CheckPort(portNumber)
+		alreadyFree, err := application.ReleaseExternalPort(portNumber, expectedPID)
 		if err != nil {
 			return releasePortResultMsg{port: portNumber, pid: expectedPID, err: err}
 		}
-		if info == nil {
+		if alreadyFree {
 			return releasePortResultMsg{port: portNumber, pid: expectedPID, alreadyFree: true}
 		}
-		if info.PID != expectedPID {
-			return releasePortResultMsg{port: portNumber, pid: expectedPID, err: fmt.Errorf(
-				"port %d owner changed from PID %d to PID %d; refusing to stop it", portNumber, expectedPID, info.PID,
-			)}
-		}
-		if owner := manager.ManagedServiceForPID(info.PID); owner != "" {
-			return releasePortResultMsg{port: portNumber, pid: expectedPID, err: fmt.Errorf(
-				"port %d is now owned by Kranz service %s; refusing to stop it as external", portNumber, owner,
-			)}
-		}
-		return releasePortResultMsg{
-			port: portNumber,
-			pid:  expectedPID,
-			err:  port.TerminateExternalPID(expectedPID, 3*time.Second),
-		}
+		return releasePortResultMsg{port: portNumber, pid: expectedPID}
 	}
 }

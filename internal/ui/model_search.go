@@ -22,11 +22,11 @@ func (m *Model) handleSearchNavigationKey(msg tea.KeyMsg) bool {
 	}
 	switch msg.String() {
 	case "n":
-		m.currentMatch = m.logSearcher.FindNext(serviceLogLines(svc), m.currentMatch)
+		m.currentMatch = m.logSearcher.FindNext(m.serviceLogLines(svc), m.currentMatch)
 		m.focusLogMatch(m.currentMatch)
 		return true
 	case "N":
-		m.currentMatch = m.logSearcher.FindPrev(serviceLogLines(svc), m.currentMatch)
+		m.currentMatch = m.logSearcher.FindPrev(m.serviceLogLines(svc), m.currentMatch)
 		m.focusLogMatch(m.currentMatch)
 		return true
 	default:
@@ -113,7 +113,7 @@ func (m *Model) applySearchQuery() bool {
 	m.logPaused = false
 	if m.searchMode == searchHighlight && m.logSearcher.HasPattern() {
 		if svc := m.FocusedService(); svc != nil {
-			m.currentMatch = m.logSearcher.FindNext(serviceLogLines(svc), -1)
+			m.currentMatch = m.logSearcher.FindNext(m.serviceLogLines(svc), -1)
 			m.focusLogMatch(m.currentMatch)
 		}
 	}
@@ -153,7 +153,7 @@ func (m *Model) handleSearchKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// a match instead of waiting for the next apply.
 		if m.searchMode == searchHighlight && m.logSearcher.HasPattern() {
 			if svc := m.FocusedService(); svc != nil {
-				m.currentMatch = m.logSearcher.FindNext(serviceLogLines(svc), -1)
+				m.currentMatch = m.logSearcher.FindNext(m.serviceLogLines(svc), -1)
 				m.focusLogMatch(m.currentMatch)
 			}
 		}

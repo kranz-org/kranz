@@ -87,7 +87,7 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if key.Matches(msg, m.keys.Quit) {
-		if m.manager.HasRunningServices() || m.operation != "" {
+		if m.app.HasRunningServices() || m.operation != "" {
 			m.mode = ModeConfirmQuit
 			return m, nil
 		}
@@ -272,7 +272,7 @@ func (m *Model) triggerAction(action string) (tea.Model, tea.Cmd) {
 		m.toggleAllSelection()
 		return m, nil
 	case "quit":
-		if m.manager.HasRunningServices() || m.operation != "" {
+		if m.app.HasRunningServices() || m.operation != "" {
 			m.mode = ModeConfirmQuit
 			return m, nil
 		}

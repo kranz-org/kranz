@@ -6,8 +6,8 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/kranz-org/kranz/internal/app"
 	"github.com/kranz-org/kranz/internal/config"
-	"github.com/kranz-org/kranz/internal/service"
 )
 
 // Log panels: layout, scrolling and the follow/browse distinction, filtering and
@@ -62,15 +62,15 @@ func (m *Model) renderActionLogPanel(width, height int) string {
 		return renderTitledPanel(m.panelStyle(panelLogs), m.panelTitleStyle(panelLogs), contentWidth, contentHeight, "[3] ACTION OUTPUT", []string{"", "Select an action"})
 	}
 	title := "[3] ACTION OUTPUT" + ContextBarStyle.Render(" │ ") + actionStatusIndicator(state.Status) + " " + ServiceNameStyle.Render(id.Name) + ContextBarStyle.Render(" · "+state.Status.String())
-	if state.Status == service.ActionRunning {
+	if state.Status == app.ActionRunning {
 		title += StartingBadgeStyle.Render(" RUNNING")
 	}
 	outputLines := actionOutputLines(state)
 	lines := outputLines
-	if state.Status != service.ActionReady {
+	if state.Status != app.ActionReady {
 		lines = append(appendSafeActionOutput(nil, action.Command, "$ "), lines...)
 	}
-	if state.Status == service.ActionRunning && len(outputLines) == 0 {
+	if state.Status == app.ActionRunning && len(outputLines) == 0 {
 		lines = append(lines, "Running · press s to stop")
 	}
 	if len(lines) == 0 {
@@ -97,7 +97,7 @@ func (m *Model) renderActionLogPanel(width, height int) string {
 	return renderTitledPanel(m.panelStyle(panelLogs), m.panelTitleStyle(panelLogs), contentWidth, contentHeight, title, rows[start:end])
 }
 
-func actionOutputLines(state service.ActionResult) []string {
+func actionOutputLines(state app.ActionResult) []string {
 	lines := make([]string, 0, len(state.Stdout)+len(state.Stderr))
 	for _, line := range state.Stdout {
 		lines = appendSafeActionOutput(lines, line, "")
@@ -142,15 +142,15 @@ func (m *Model) logColumnLayout(height int) (pinnedHeight, currentHeight int) {
 }
 
 // renderLogPanel renders the focused service's bounded log viewport.
-func (m *Model) renderLogPanel(svc *service.Service, width, height int) string {
+func (m *Model) renderLogPanel(svc *app.ServiceSnapshot, width, height int) string {
 	return m.renderLogPanelMode(svc, width, height, false)
 }
 
-func (m *Model) renderPinnedLogPanel(svc *service.Service, width, height int) string {
+func (m *Model) renderPinnedLogPanel(svc *app.ServiceSnapshot, width, height int) string {
 	return m.renderLogPanelMode(svc, width, height, true)
 }
 
-func (m *Model) renderLogPanelMode(svc *service.Service, width, height int, pinned bool) string {
+func (m *Model) renderLogPanelMode(svc *app.ServiceSnapshot, width, height int, pinned bool) string {
 	contentWidth := max(1, width-2)
 	contentHeight := max(1, height-2)
 	panelStyle := m.panelStyle(panelLogs)
@@ -169,7 +169,7 @@ func (m *Model) renderLogPanelMode(svc *service.Service, width, height int, pinn
 
 	visualState := m.serviceVisualState(svc)
 	title := titlePrefix + ContextBarStyle.Render(" │ ") + serviceStatusIndicator(visualState) + " " + ServiceNameStyle.Render(svc.Name) +
-		ContextBarStyle.Render(" · "+strings.ToLower(serviceStatusLabel(svc.Status(), visualState)))
+		ContextBarStyle.Render(" · "+strings.ToLower(serviceStatusLabel(svc.State.Status, visualState)))
 	if !followMode {
 		state := "BROWSING"
 		if logPaused {
@@ -184,7 +184,7 @@ func (m *Model) renderLogPanelMode(svc *service.Service, width, height int, pinn
 		title += " " + RunningBadgeStyle.Render("TIME")
 	}
 
-	sourceEntries := svc.LogEntries()
+	sourceEntries := m.app.Logs(svc.Name)
 	sourceLines := logEntryLines(sourceEntries)
 
 	var searchMatches []int
@@ -322,8 +322,8 @@ func (m *Model) displayedPinnedLogLineCount() int {
 	if svc == nil {
 		return 0
 	}
-	lines := make([]string, 0, len(svc.LogEntries()))
-	for _, entry := range svc.LogEntries() {
+	lines := make([]string, 0, len(m.app.Logs(svc.Name)))
+	for _, entry := range m.app.Logs(svc.Name) {
 		lines = append(lines, m.displayLogEntry(entry))
 	}
 	return visualLogRowCount(lines, m.currentLogContentWidth(), m.wrapLogs)
@@ -337,7 +337,7 @@ func (m *Model) displayedLogLineCount() int {
 	if svc == nil {
 		return 0
 	}
-	entries := svc.LogEntries()
+	entries := m.app.Logs(svc.Name)
 	lines := logEntryLines(entries)
 	indices := make([]int, len(lines))
 	for index := range indices {
@@ -375,7 +375,7 @@ func (m *Model) focusLogMatch(match int) {
 	if svc == nil || match < 0 {
 		return
 	}
-	entries := svc.LogEntries()
+	entries := m.app.Logs(svc.Name)
 	maxLines := max(1, m.currentLogPanelHeight()-2)
 	displayLines := make([]string, 0, min(match, len(entries)))
 	for _, entry := range entries[:min(match, len(entries))] {
@@ -397,11 +397,11 @@ func (m *Model) focusLogMatch(match int) {
 	m.panelFocus = panelLogs
 }
 
-func serviceLogLines(svc *service.Service) []string {
+func (m *Model) serviceLogLines(svc *app.ServiceSnapshot) []string {
 	if svc == nil {
 		return nil
 	}
-	return logEntryLines(svc.LogEntries())
+	return logEntryLines(m.app.Logs(svc.Name))
 }
 
 func logEntryLines(entries []config.LogEntry) []string {

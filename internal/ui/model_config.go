@@ -2,77 +2,52 @@ package ui
 
 import (
 	"fmt"
-	"os"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/kranz-org/kranz/internal/config"
 )
 
-// Configuration hot reload. Edits are reconciled into the running manager, and
-// an invalid file leaves the last known good runtime untouched.
+// Configuration hot reload. The stamping, debounce, and ApplyConfig work
+// itself lives in internal/app; this file only reacts to the result on the
+// Bubble Tea goroutine — reconciling focus, appearance, and notifications.
 
 func (m *Model) reloadConfig(force bool) tea.Cmd {
-	if len(m.configPaths) == 0 || m.reloadBusy || m.operation != "" {
+	if m.operation != "" {
 		return nil
 	}
-	if !force && time.Since(m.lastConfigScan) < time.Second {
-		return nil
-	}
-	m.lastConfigScan = time.Now()
-	m.reloadBusy = true
-	paths := append([]string(nil), m.configPaths...)
-	watchPaths := append([]string(nil), m.configWatchPaths...)
-	previous := cloneConfigStamps(m.configStamps)
+	before := m.app.Project().Generation
 	return func() tea.Msg {
-		stamps, err := readConfigStamps(watchPaths)
+		result, err := m.app.Reload(force)
 		if err != nil {
-			return configReloadMsg{stamps: stamps, err: err}
+			return configReloadMsg{err: err}
 		}
-		changed := force || !equalConfigStamps(previous, stamps)
-		if !changed {
-			return configReloadMsg{stamps: stamps}
-		}
-		cfg, err := config.LoadFiles(paths)
-		return configReloadMsg{cfg: cfg, stamps: stamps, err: err, changed: true}
+		project := m.app.Project()
+		return configReloadMsg{result: result, generation: project.Generation, changed: project.Generation != before}
 	}
 }
 
 func (m *Model) handleConfigReload(msg configReloadMsg) (tea.Model, tea.Cmd) {
-	m.reloadBusy = false
-	if msg.stamps != nil {
-		m.configStamps = msg.stamps
-	}
 	if msg.err != nil {
 		m.addNotification("config", "Reload failed: "+msg.err.Error(), config.LogError)
 		return m, nil
 	}
-	if !msg.changed || msg.cfg == nil {
+	if !msg.changed {
 		return m, nil
 	}
 	focusedName := ""
 	if svc := m.FocusedService(); svc != nil {
 		focusedName = svc.Name
 	}
-	result, err := m.manager.ApplyConfig(msg.cfg)
-	if err != nil {
-		m.addNotification("config", "Reload failed: "+err.Error(), config.LogError)
-		return m, nil
-	}
-	m.cfg = msg.cfg
+	m.cfg = m.app.Config()
 	if m.focusedAction != nil {
-		if _, exists := msg.cfg.ResolveAction(*m.focusedAction); !exists {
+		if _, exists := m.cfg.ResolveAction(*m.focusedAction); !exists {
 			m.focusedAction = nil
 		}
 	}
 	if m.focusedActionGroup != "" {
-		if _, exists := msg.cfg.ActionGroups[m.focusedActionGroup]; !exists {
+		if _, exists := m.cfg.ActionGroups[m.focusedActionGroup]; !exists {
 			m.focusedActionGroup = ""
 		}
-	}
-	m.configWatchPaths = watchedConfigPaths(m.configPaths, msg.cfg.WatchPaths)
-	if stamps, stampErr := readConfigStamps(m.configWatchPaths); stampErr == nil {
-		m.configStamps = stamps
 	}
 	m.refreshServices()
 	for index, svc := range m.services {
@@ -99,58 +74,7 @@ func (m *Model) handleConfigReload(msg configReloadMsg) (tea.Model, tea.Cmd) {
 		m.addNotification("appearance", err.Error(), config.LogWarn)
 	}
 	message := fmt.Sprintf("Configuration reloaded: %d added, %d removed, %d updated, %d restarted",
-		len(result.Added), len(result.Removed), len(result.Updated), len(result.Restarted))
+		len(msg.result.Added), len(msg.result.Removed), len(msg.result.Updated), len(msg.result.Restarted))
 	m.addNotification("config", message, config.LogInfo)
 	return m, m.scanFocusedPorts(true)
-}
-
-func readConfigStamps(paths []string) (map[string]configStamp, error) {
-	result := make(map[string]configStamp, len(paths))
-	for _, path := range paths {
-		info, err := os.Stat(path)
-		if os.IsNotExist(err) {
-			result[path] = configStamp{}
-			continue
-		}
-		if err != nil {
-			return result, fmt.Errorf("stat %s: %w", path, err)
-		}
-		result[path] = configStamp{Modified: info.ModTime().UnixNano(), Size: info.Size()}
-	}
-	return result, nil
-}
-
-func watchedConfigPaths(configPaths, auxiliaryPaths []string) []string {
-	result := append([]string(nil), configPaths...)
-	seen := make(map[string]bool, len(result)+len(auxiliaryPaths))
-	for _, path := range result {
-		seen[path] = true
-	}
-	for _, path := range auxiliaryPaths {
-		if path != "" && !seen[path] {
-			seen[path] = true
-			result = append(result, path)
-		}
-	}
-	return result
-}
-
-func cloneConfigStamps(source map[string]configStamp) map[string]configStamp {
-	result := make(map[string]configStamp, len(source))
-	for path, stamp := range source {
-		result[path] = stamp
-	}
-	return result
-}
-
-func equalConfigStamps(left, right map[string]configStamp) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	for path, stamp := range left {
-		if right[path] != stamp {
-			return false
-		}
-	}
-	return true
 }

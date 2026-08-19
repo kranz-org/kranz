@@ -8,8 +8,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/kranz-org/kranz/internal/app"
 	"github.com/kranz-org/kranz/internal/config"
-	"github.com/kranz-org/kranz/internal/service"
 )
 
 const (
@@ -212,14 +212,14 @@ func (m *Model) actionButtons() []actionButton {
 	allRunning := len(targets) > 0
 	canToggle := len(targets) > 0
 	for _, name := range targets {
-		svc, ok := m.manager.GetService(name)
-		if !ok || !serviceStartPlanned(svc) {
+		svc, ok := m.app.Service(name)
+		if !ok || !app.ServiceStartPlanned(svc) {
 			allActive = false
 		}
-		if !ok || svc.Status() == config.StatusStopped {
+		if !ok || svc.State.Status == config.StatusStopped {
 			allRunning = false
 		}
-		if !ok || (serviceStartPlanned(svc) && !svc.CanStop()) || (!serviceStartPlanned(svc) && !svc.CanStart()) {
+		if !ok || (app.ServiceStartPlanned(svc) && !svc.CanStop) || (!app.ServiceStartPlanned(svc) && !svc.CanStart) {
 			canToggle = false
 		}
 	}
@@ -244,7 +244,7 @@ func (m *Model) actionButtons() []actionButton {
 		toggleStyle = PrimaryButtonStyle
 		toggleLabel = "▶ Run action: s"
 		compactToggle = "Run: s"
-		if state, exists := m.manager.ActionState(*m.focusedAction); exists && state.Status == service.ActionRunning {
+		if state, exists := m.app.ActionState(*m.focusedAction); exists && state.Status == app.ActionRunning {
 			toggleStyle = DangerButtonStyle
 			toggleLabel = "■ Stop action: s"
 			compactToggle = "Stop: s"
