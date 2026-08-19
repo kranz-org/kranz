@@ -1,10 +1,10 @@
 // Package main provides the Kranz command-line entry point.
-// Kranz is a terminal process orchestrator for local development environments.
 package main
 
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strings"
@@ -14,52 +14,113 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/kranz-org/kranz/internal/app"
+	kranzcli "github.com/kranz-org/kranz/internal/cli"
 	"github.com/kranz-org/kranz/internal/config"
 	"github.com/kranz-org/kranz/internal/settings"
 	"github.com/kranz-org/kranz/internal/ui"
 )
 
-// version, commit, and buildTime are injected with -ldflags by release builds.
 var (
 	version   = "dev"
 	commit    = "unknown"
 	buildTime = "unknown"
 )
 
-func main() {
-	if err := run(); err != nil {
+func main() { os.Exit(execute(os.Args[1:], os.Stdout, os.Stderr)) }
+
+func execute(args []string, stdout, stderr io.Writer) int {
+	tree := kranzcli.DefaultTree()
+	invocation, err := kranzcli.Parse(tree, args)
+	if err != nil {
+		return kranzcli.WriteError(stdout, stderr, kranzcli.RequestedOutput(args), err)
+	}
+
+	if invocation.Help {
+		output, helpErr := kranzcli.Help(tree, invocation.CommandPath)
+		if helpErr != nil {
+			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, helpErr)
+		}
+		if _, err := fmt.Fprint(stdout, output); err != nil {
+			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
+		}
+		return 0
+	}
+	if invocation.Command() == "version" {
+		return writeVersion(stdout, stderr, invocation.Globals.Output)
+	}
+	if invocation.Command() != "" {
+		err := &kranzcli.Error{
+			Code: "not_implemented", Message: fmt.Sprintf("command %q is not implemented yet", invocation.Command()),
+			ExitCode: kranzcli.ExitUsage,
+		}
+		return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
+	}
+	if invocation.Globals.Output != kranzcli.OutputText {
+		err := &kranzcli.Error{Code: "invalid_output", Message: "the TUI requires text output", ExitCode: kranzcli.ExitUsage}
+		return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
+	}
+	if invocation.Globals.Project != "" {
+		err := &kranzcli.Error{
+			Code: "invalid_arguments", Message: "-p requires attach or another runtime command",
+			Hint: "Use `kranz -p " + invocation.Globals.Project + " attach`.", ExitCode: kranzcli.ExitUsage,
+		}
+		return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
+	}
+
+	if err := runTUI(invocation.Globals); err != nil {
 		var requested requestedExitError
 		if errors.As(err, &requested) {
-			os.Exit(requested.code)
+			return requested.code
 		}
-		fmt.Fprintf(os.Stderr, "Kranz error: %v\n", err)
-		os.Exit(1)
+		return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
 	}
+	return 0
+}
+
+func writeVersion(stdout, stderr io.Writer, format kranzcli.OutputFormat) int {
+	metadata := struct {
+		Version   string `json:"version"`
+		Commit    string `json:"commit"`
+		BuildTime string `json:"build_time"`
+	}{Version: strings.TrimPrefix(version, "v"), Commit: commit, BuildTime: buildTime}
+	if format == kranzcli.OutputJSON {
+		if err := kranzcli.WriteJSON(stdout, metadata); err != nil {
+			return kranzcli.WriteError(stdout, stderr, format, err)
+		}
+		return 0
+	}
+	if _, err := fmt.Fprintf(stdout, "kranz %s (commit %s, built %s)\n", metadata.Version, metadata.Commit, metadata.BuildTime); err != nil {
+		return kranzcli.WriteError(stdout, stderr, format, err)
+	}
+	return 0
 }
 
 type requestedExitError struct{ code int }
 
-// Error satisfies error while the concrete type carries the requested code.
 func (e requestedExitError) Error() string {
 	return fmt.Sprintf("project requested exit code %d", e.code)
 }
 
-func run() (runErr error) {
-	if output, handled, err := commandInformation(os.Args[1:]); err != nil {
-		return err
-	} else if handled {
-		fmt.Print(output)
-		return nil
-	}
-	cfgPaths, err := configPaths(os.Args[1:])
+func runTUI(options kranzcli.GlobalOptions) (runErr error) {
+	originalDirectory, err := os.Getwd()
 	if err != nil {
-		return err
+		return &kranzcli.Error{Code: "directory", Message: "determine working directory", ExitCode: kranzcli.ExitConfig, Cause: err}
 	}
+	if err := os.Chdir(options.Directory); err != nil {
+		return &kranzcli.Error{Code: "directory", Message: fmt.Sprintf("change directory to %s", options.Directory), ExitCode: kranzcli.ExitConfig, Cause: err}
+	}
+	defer func() { runErr = errors.Join(runErr, os.Chdir(originalDirectory)) }()
 
-	// Resolve and load every native, Process Compose, or Procfile layer.
+	cfgPaths := options.ConfigPaths
+	if len(cfgPaths) == 0 {
+		cfgPaths, err = config.DiscoverFiles(".")
+		if err != nil {
+			return &kranzcli.Error{Code: "config_not_found", Message: "discover configuration", ExitCode: kranzcli.ExitConfig, Cause: err}
+		}
+	}
 	cfg, err := config.LoadFiles(cfgPaths)
 	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+		return &kranzcli.Error{Code: "invalid_config", Message: "load configuration", ExitCode: kranzcli.ExitConfig, Cause: err}
 	}
 
 	settingsPath, settingsPathErr := settings.DefaultPath()
@@ -78,20 +139,9 @@ func run() (runErr error) {
 		Settings: userSettings, SettingsPath: settingsPath, ConfigPaths: cfgPaths,
 		DarkBackground: &darkBackground, App: application,
 	})
-	defer func() {
-		runErr = errors.Join(runErr, model.Shutdown())
-	}()
+	defer func() { runErr = errors.Join(runErr, model.Shutdown()) }()
 
-	// Cell-motion tracking enables clicks without reporting passive mouse motion.
-	p := tea.NewProgram(
-		model,
-		tea.WithAltScreen(),
-		tea.WithMouseCellMotion(),
-		tea.WithReportFocus(),
-	)
-
-	// An external signal first exits Bubble Tea; the deferred shutdown above then
-	// synchronously stops every managed process group before the command returns.
+	program := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithReportFocus())
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer signal.Stop(signals)
@@ -100,80 +150,16 @@ func run() (runErr error) {
 	go func() {
 		select {
 		case <-signals:
-			p.Quit()
+			program.Quit()
 		case <-runDone:
 		}
 	}()
 
-	if _, err := p.Run(); err != nil {
-		return fmt.Errorf("run TUI: %w", err)
+	if _, err := program.Run(); err != nil {
+		return &kranzcli.Error{Code: "tui", Message: "run TUI", ExitCode: kranzcli.ExitInternal, Cause: err}
 	}
 	if code := model.RequestedExitCode(); code != 0 {
 		return requestedExitError{code: code}
 	}
 	return nil
-}
-
-func commandInformation(args []string) (output string, handled bool, err error) {
-	if len(args) == 0 {
-		return "", false, nil
-	}
-	switch args[0] {
-	case "--version", "-v":
-		if len(args) != 1 {
-			return "", false, errors.New("--version does not accept additional arguments")
-		}
-		return fmt.Sprintf("kranz %s (commit %s, built %s)\n",
-			strings.TrimPrefix(version, "v"), commit, buildTime), true, nil
-	case "--help", "-h":
-		if len(args) != 1 {
-			return "", false, errors.New("--help does not accept additional arguments")
-		}
-		return `Kranz — a local service orchestrator with a terminal UI.
-
-Usage:
-  kranz                     Auto-discover a project configuration
-  kranz [CONFIG ...]
-  kranz -f CONFIG [-f OVERRIDE ...]
-
-Auto-discovery priority:
-  kranz.yaml, kranz.yml, process-compose.yaml, process-compose.yml,
-  Procfile.dev, Procfile
-
-Options:
-  -f, --config PATH  Load a configuration layer (repeatable)
-  -h, --help         Show this help
-  -v, --version      Show version and build metadata
-`, true, nil
-	default:
-		return "", false, nil
-	}
-}
-
-func configPaths(args []string) ([]string, error) {
-	if len(args) == 0 {
-		return config.DiscoverFiles(".")
-	}
-	var paths []string
-	for index := 0; index < len(args); index++ {
-		arg := args[index]
-		switch {
-		case arg == "-f" || arg == "--config":
-			index++
-			if index >= len(args) {
-				return nil, fmt.Errorf("%s requires a path", arg)
-			}
-			paths = append(paths, args[index])
-		case strings.HasPrefix(arg, "--config="):
-			paths = append(paths, strings.TrimPrefix(arg, "--config="))
-		case strings.HasPrefix(arg, "-"):
-			return nil, fmt.Errorf("unknown option %s", arg)
-		default:
-			paths = append(paths, arg)
-		}
-	}
-	if len(paths) == 0 {
-		return nil, errors.New("no configuration files provided")
-	}
-	return paths, nil
 }

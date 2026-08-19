@@ -1,100 +1,68 @@
 package main
 
 import (
-	"os"
-	"path/filepath"
-	"reflect"
+	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
-	"time"
-
-	"github.com/kranz-org/kranz/internal/config"
 )
 
-func TestConfigPathsSupportsRepeatedFlagsAndPositionalFiles(t *testing.T) {
-	paths, err := configPaths([]string{"-f", "base.yaml", "--config=dev.yaml", "local.yaml"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []string{"base.yaml", "dev.yaml", "local.yaml"}
-	if !reflect.DeepEqual(paths, want) {
-		t.Fatalf("config paths = %v, want %v", paths, want)
-	}
-}
-
-func TestCommandInformation(t *testing.T) {
+func TestVersionTextAndJSON(t *testing.T) {
 	previousVersion, previousCommit, previousBuildTime := version, commit, buildTime
 	version, commit, buildTime = "v1.2.3", "abc123", "2026-07-21T00:00:00Z"
 	defer func() { version, commit, buildTime = previousVersion, previousCommit, previousBuildTime }()
 
-	output, handled, err := commandInformation([]string{"--version"})
-	if err != nil || !handled || output != "kranz 1.2.3 (commit abc123, built 2026-07-21T00:00:00Z)\n" {
-		t.Fatalf("version output = %q/%v/%v", output, handled, err)
+	var stdout, stderr bytes.Buffer
+	if code := execute([]string{"--version"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr.String())
 	}
-	output, handled, err = commandInformation([]string{"--help"})
-	if err != nil || !handled || !strings.Contains(output, "--config PATH") || !strings.Contains(output, "Procfile.dev, Procfile") {
-		t.Fatalf("help output = %q/%v/%v", output, handled, err)
+	if stdout.String() != "kranz 1.2.3 (commit abc123, built 2026-07-21T00:00:00Z)\n" {
+		t.Fatalf("version = %q", stdout.String())
 	}
-	if _, handled, err = commandInformation([]string{"project.yaml"}); err != nil || handled {
-		t.Fatalf("config argument treated as information = %v/%v", handled, err)
+
+	stdout.Reset()
+	if code := execute([]string{"version", "--output=json"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr.String())
+	}
+	var envelope map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	data := envelope["data"].(map[string]any)
+	if data["version"] != "1.2.3" || data["commit"] != "abc123" {
+		t.Fatalf("version envelope = %#v", envelope)
 	}
 }
 
-func TestConfigPathsRejectsUnknownOptions(t *testing.T) {
-	if _, err := configPaths([]string{"--wat"}); err == nil {
-		t.Fatal("unknown option was accepted")
+func TestHelpUsesCommandTree(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := execute([]string{"help", "action"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr.String())
+	}
+	for _, expected := range []string{"action", "list", "info", "run", "--project VALUE"} {
+		if !strings.Contains(stdout.String(), expected) {
+			t.Errorf("help missing %q:\n%s", expected, stdout.String())
+		}
 	}
 }
 
-func TestExplicitProcfilePathsAndOrderedYAMLMerge(t *testing.T) {
-	directory := t.TempDir()
-	procfilePath := filepath.Join(directory, "Procfile")
-	yamlPath := filepath.Join(directory, "kranz.yaml")
-	if err := os.WriteFile(procfilePath, []byte("worker: echo worker\nweb: echo procfile\n"), 0o600); err != nil {
-		t.Fatal(err)
+func TestPositionalYAMLPrintsMigrationHint(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := execute([]string{"prod.yaml"}, &stdout, &stderr); code != 2 {
+		t.Fatalf("exit = %d", code)
 	}
-	if err := os.WriteFile(yamlPath, []byte(`project: Explicit merge
-services:
-  web:
-    command: echo yaml
-  api:
-    command: echo api
-`), 0o600); err != nil {
-		t.Fatal(err)
+	want := "Kranz: unknown command \"prod.yaml\".\nDid you mean `kranz -f prod.yaml`?\n"
+	if stderr.String() != want || stdout.Len() != 0 {
+		t.Fatalf("stdout/stderr = %q/%q", stdout.String(), stderr.String())
 	}
+}
 
-	for _, args := range [][]string{{procfilePath}, {"-f", procfilePath}} {
-		paths, err := configPaths(args)
-		if err != nil {
-			t.Fatalf("configPaths(%v) error = %v", args, err)
-		}
-		cfg, err := config.LoadFiles(paths)
-		if err != nil {
-			t.Fatalf("LoadFiles(%v) error = %v", paths, err)
-		}
-		if cfg.Services["web"].Command != "echo procfile" {
-			t.Errorf("web command = %q", cfg.Services["web"].Command)
-		}
+func TestUsageErrorWithJSONKeepsStderrClean(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := execute([]string{"--output=json", "unknown"}, &stdout, &stderr); code != 2 {
+		t.Fatalf("exit = %d", code)
 	}
-
-	paths, err := configPaths([]string{"-f", procfilePath, "-f", yamlPath})
-	if err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := config.LoadFiles(paths)
-	if err != nil {
-		t.Fatalf("LoadFiles() error = %v", err)
-	}
-	if cfg.Source != config.SourceKranz || cfg.Project != "Explicit merge" {
-		t.Errorf("merged metadata = source %q project %q", cfg.Source, cfg.Project)
-	}
-	if cfg.Services["web"].Command != "echo yaml" {
-		t.Errorf("ordered merge web command = %q, want echo yaml", cfg.Services["web"].Command)
-	}
-	if shutdown := cfg.Services["web"].Shutdown; shutdown.Signal != 15 || shutdown.Timeout != 30*time.Second {
-		t.Errorf("ordered merge Procfile shutdown = %#v", shutdown)
-	}
-	if !reflect.DeepEqual(cfg.ServiceNames(), []string{"worker", "web", "api"}) {
-		t.Errorf("merged service order = %v", cfg.ServiceNames())
+	if stderr.Len() != 0 || !json.Valid(stdout.Bytes()) {
+		t.Fatalf("stdout/stderr = %q/%q", stdout.String(), stderr.String())
 	}
 }
