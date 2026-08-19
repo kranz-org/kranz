@@ -2,6 +2,9 @@
 
 package main
 
-import "syscall"
+import (
+	"os"
+	"syscall"
+)
 
-func forceDefaultSignal(syscall.Signal) error { return nil }
+func reraiseDefaultSignal(sig syscall.Signal) error { return syscall.Kill(os.Getpid(), sig) }

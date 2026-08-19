@@ -14,11 +14,11 @@ type userSignalAction struct {
 	flags   int32
 }
 
-func forceDefaultSignal(sig syscall.Signal) error {
+func reraiseDefaultSignal(sig syscall.Signal) error {
 	action := userSignalAction{}
 	_, _, errno := syscall.RawSyscall(syscall.SYS_SIGACTION, uintptr(sig), uintptr(unsafe.Pointer(&action)), 0)
 	if errno != 0 {
 		return errno
 	}
-	return nil
+	return syscall.Kill(syscall.Getpid(), sig)
 }

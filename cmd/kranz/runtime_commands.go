@@ -254,13 +254,10 @@ func terminateForegroundWithSignal(host *runtimeHost, closeHost func() error, si
 	if !ok {
 		return fmt.Errorf("unsupported signal %v", sig)
 	}
-	if err := forceDefaultSignal(unixSignal); err != nil {
-		return fmt.Errorf("restore default %s disposition: %w", sig, err)
+	if err := reraiseDefaultSignal(unixSignal); err != nil {
+		return fmt.Errorf("re-raise %s with default disposition: %w", sig, err)
 	}
-	if err := syscall.Kill(os.Getpid(), unixSignal); err != nil {
-		return err
-	}
-	return nil
+	return fmt.Errorf("re-raising %s with default disposition did not terminate the process", sig)
 }
 
 func resolveSession(options kranzcli.GlobalOptions, requireProject bool) (kranzruntime.SessionRecord, error) {

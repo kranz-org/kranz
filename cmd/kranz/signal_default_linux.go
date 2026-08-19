@@ -14,11 +14,11 @@ type kernelSignalAction struct {
 	mask     uint64
 }
 
-func forceDefaultSignal(sig syscall.Signal) error {
+func reraiseDefaultSignal(sig syscall.Signal) error {
 	action := kernelSignalAction{}
 	_, _, errno := syscall.RawSyscall6(syscall.SYS_RT_SIGACTION, uintptr(sig), uintptr(unsafe.Pointer(&action)), 0, 8, 0, 0)
 	if errno != 0 {
 		return errno
 	}
-	return nil
+	return syscall.Kill(syscall.Getpid(), sig)
 }
