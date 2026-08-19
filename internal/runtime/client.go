@@ -36,7 +36,9 @@ type Client struct {
 	pendingMu sync.Mutex
 	pending   map[uint64]chan envelope
 
-	readErr atomic.Value // error
+	readErr   atomic.Value // error
+	closeOnce sync.Once
+	closeErr  error
 }
 
 // Dial connects to a Supervisor listening on socketPath and performs the
@@ -44,7 +46,12 @@ type Client struct {
 // diagnostics; it does not affect protocol negotiation in this stream, since
 // client and server are always built from the same binary.
 func Dial(socketPath, clientVersion string) (*Client, error) {
-	conn, err := net.Dial("unix", socketPath)
+	return DialContext(context.Background(), socketPath, clientVersion)
+}
+
+// DialContext bounds both connection establishment and the hello handshake.
+func DialContext(ctx context.Context, socketPath, clientVersion string) (*Client, error) {
+	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
 	if err != nil {
 		return nil, fmt.Errorf("dial %s: %w", socketPath, err)
 	}
@@ -57,6 +64,14 @@ func Dial(socketPath, clientVersion string) (*Client, error) {
 		conn:    unixConn,
 		c:       newCodec(unixConn),
 		pending: make(map[uint64]chan envelope),
+	}
+	deadline, hasDeadline := ctx.Deadline()
+	if !hasDeadline {
+		deadline = time.Now().Add(time.Second)
+	}
+	if err := unixConn.SetDeadline(deadline); err != nil {
+		_ = conn.Close()
+		return nil, err
 	}
 
 	helloBody, err := json.Marshal(helloRequest{ProtocolMin: protocolVersion, ProtocolMax: protocolVersion, ClientVersion: clientVersion})
@@ -99,6 +114,10 @@ func Dial(socketPath, clientVersion string) (*Client, error) {
 			ServerVersion:  hello.ServerVersion,
 		}
 	}
+	if err := unixConn.SetDeadline(time.Time{}); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
 
 	go client.readLoop()
 	return client, nil
@@ -107,7 +126,13 @@ func Dial(socketPath, clientVersion string) (*Client, error) {
 // Close closes the underlying connection. In-flight calls fail with the
 // connection error once the read loop observes the close.
 func (c *Client) Close() error {
-	return c.conn.Close()
+	c.closeOnce.Do(func() {
+		c.closeErr = c.conn.Close()
+		if errors.Is(c.closeErr, net.ErrClosed) {
+			c.closeErr = nil
+		}
+	})
+	return c.closeErr
 }
 
 func (c *Client) readLoop() {

@@ -11,6 +11,7 @@ import (
 type Config struct {
 	Project          string                 `yaml:"project"`
 	Version          string                 `yaml:"version,omitempty"`
+	Runtime          RuntimeConfig          `yaml:"runtime,omitempty"`
 	UI               UIConfig               `yaml:"ui,omitempty"`
 	Defaults         Defaults               `yaml:"defaults,omitempty"`
 	Services         map[string]Service     `yaml:"services,omitempty"`
@@ -23,6 +24,11 @@ type Config struct {
 	WatchPaths       []string               `yaml:"-"`
 	dotenvEnv        map[string]string      `yaml:"-"`
 	explicitEnv      map[string]string      `yaml:"-"`
+}
+
+// RuntimeConfig controls the discoverable local runtime identity.
+type RuntimeConfig struct {
+	Name string `yaml:"name,omitempty"`
 }
 
 // UIConfig defines project-specific presentation defaults.

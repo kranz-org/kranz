@@ -1,4 +1,4 @@
-.PHONY: all build run install fmt-check test vet verify lint clean snapshot release-check homebrew-formula-check release-notes-check tag
+.PHONY: all build dev run install fmt-check test vet verify lint clean snapshot release-check homebrew-formula-check release-notes-check tag
 
 APP_NAME := kranz
 BIN_DIR := bin
@@ -18,6 +18,12 @@ all: build
 build:
 	@mkdir -p $(BIN_DIR)
 	$(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(APP_NAME) ./cmd/$(APP_NAME)
+
+# dev creates a deliberately separate executable so a released kranz binary
+# can stay installed while the current checkout is exercised end to end.
+dev:
+	@mkdir -p $(BIN_DIR)
+	$(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(APP_NAME)-dev ./cmd/$(APP_NAME)
 
 run: build
 	./$(BIN_DIR)/$(APP_NAME)

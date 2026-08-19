@@ -126,6 +126,9 @@ func mergeConfig(base, override *Config) error {
 	if override.Version != "" {
 		base.Version = override.Version
 	}
+	if override.Runtime.Name != "" {
+		base.Runtime.Name = override.Runtime.Name
+	}
 	if override.UI.Theme != "" {
 		base.UI.Theme = override.UI.Theme
 	}

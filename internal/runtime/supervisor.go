@@ -37,6 +37,7 @@ type Supervisor struct {
 
 	stopWatch chan struct{}
 	watchDone chan struct{}
+	watching  atomic.Bool
 
 	connWG sync.WaitGroup
 
@@ -81,6 +82,7 @@ func (s *Supervisor) Serve() error {
 	if s.listener == nil {
 		return errors.New("runtime: Serve called before Listen")
 	}
+	s.watching.Store(true)
 	go s.runReloadWatcher()
 
 	for {
@@ -115,7 +117,9 @@ func (s *Supervisor) Close() error {
 	if s.listener != nil {
 		err = s.listener.Close()
 	}
-	<-s.watchDone
+	if s.watching.Load() {
+		<-s.watchDone
+	}
 	return err
 }
 

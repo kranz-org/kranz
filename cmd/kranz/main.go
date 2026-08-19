@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -9,6 +10,8 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"text/tabwriter"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -49,6 +52,12 @@ func execute(args []string, stdout, stderr io.Writer) int {
 	if invocation.Command() == "version" {
 		return writeVersion(stdout, stderr, invocation.Globals.Output)
 	}
+	if invocation.Command() == "ps" {
+		if len(invocation.Args) != 0 {
+			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, &kranzcli.Error{Code: "invalid_arguments", Message: "ps does not accept arguments", ExitCode: kranzcli.ExitUsage})
+		}
+		return runPS(invocation.Globals, stdout, stderr)
+	}
 	if invocation.Command() != "" {
 		err := &kranzcli.Error{
 			Code: "not_implemented", Message: fmt.Sprintf("command %q is not implemented yet", invocation.Command()),
@@ -76,6 +85,62 @@ func execute(args []string, stdout, stderr io.Writer) int {
 		return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
 	}
 	return 0
+}
+
+func runPS(options kranzcli.GlobalOptions, stdout, stderr io.Writer) int {
+	registry, err := kranzruntime.DefaultRegistry()
+	if err != nil {
+		return kranzcli.WriteError(stdout, stderr, options.Output, err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	records, err := registry.List(ctx, version)
+	if err != nil {
+		return kranzcli.WriteError(stdout, stderr, options.Output, err)
+	}
+	if options.Project != "" {
+		filtered := records[:0]
+		for _, record := range records {
+			if record.Name == options.Project || record.ID == options.Project || strings.HasPrefix(record.ID, options.Project) {
+				filtered = append(filtered, record)
+			}
+		}
+		records = filtered
+	}
+	if options.Output == kranzcli.OutputJSON {
+		if err := kranzcli.WriteJSON(stdout, records); err != nil {
+			return kranzcli.WriteError(stdout, stderr, options.Output, err)
+		}
+		return 0
+	}
+	w := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(w, "ID\tNAME\tPROJECT\tMODE\tSERVICES\tSTATE\tUPTIME")
+	for _, record := range records {
+		services := "-"
+		if record.Services != nil {
+			services = fmt.Sprint(*record.Services)
+		}
+		id := record.ID
+		if len(id) > 8 {
+			id = id[:8]
+		}
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", id, record.Name, record.Project, record.Mode, services, record.State, shortDuration(time.Since(record.StartedAt)))
+	}
+	if err := w.Flush(); err != nil {
+		return kranzcli.WriteError(stdout, stderr, options.Output, err)
+	}
+	return 0
+}
+
+func shortDuration(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	d = d.Round(time.Second)
+	if d < time.Minute {
+		return d.String()
+	}
+	return d.Round(time.Minute).String()
 }
 
 func writeVersion(stdout, stderr io.Writer, format kranzcli.OutputFormat) int {
@@ -123,6 +188,27 @@ func runTUI(options kranzcli.GlobalOptions) (runErr error) {
 	if err != nil {
 		return &kranzcli.Error{Code: "invalid_config", Message: "load configuration", ExitCode: kranzcli.ExitConfig, Cause: err}
 	}
+	directory, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("resolve runtime directory: %w", err)
+	}
+	registry, err := kranzruntime.DefaultRegistry()
+	if err != nil {
+		return fmt.Errorf("open runtime registry: %w", err)
+	}
+	session, err := registry.Acquire(cfg.RuntimeName())
+	if err != nil {
+		var conflict *kranzruntime.SessionConflictError
+		if errors.As(err, &conflict) {
+			return &kranzcli.Error{Code: "runtime_conflict", Message: conflict.Error(), Hint: "Use `kranz -p " + cfg.RuntimeName() + " attach` or `kranz -p " + cfg.RuntimeName() + " down`.", ExitCode: kranzcli.ExitConflict}
+		}
+		return fmt.Errorf("acquire runtime session: %w", err)
+	}
+	defer func() { runErr = errors.Join(runErr, session.Close()) }()
+	metadata, err := session.Prepare(cfg.Project, version, "tui", directory)
+	if err != nil {
+		return fmt.Errorf("prepare runtime session: %w", err)
+	}
 
 	settingsPath, settingsPathErr := settings.DefaultPath()
 	if settingsPathErr != nil {
@@ -135,21 +221,16 @@ func runTUI(options kranzcli.GlobalOptions) (runErr error) {
 	}
 
 	// The runtime always speaks the socket protocol, even for an ordinary
-	// foreground `kranz` with no other client: this is the one place that
-	// constructs a Supervisor, so a future `up -d`/`attach` pair reuses this
-	// same wiring instead of a separate in-process path that could drift
-	// from it. поток 4 replaces this throwaway per-run directory with the
-	// session registry's stable path.
-	_, socketPath, cleanupSocketDir, err := kranzruntime.NewSocketDir()
-	if err != nil {
-		return fmt.Errorf("create runtime socket: %w", err)
-	}
-	defer cleanupSocketDir()
-
+	// foreground `kranz` with no other client. The published registry session
+	// lets ps and later attach/down clients discover this same supervisor.
 	local := app.NewLocal(cfg, cfgPaths, app.Options{})
 	supervisor := kranzruntime.NewSupervisor(local)
-	if err := supervisor.Listen(socketPath); err != nil {
+	if err := supervisor.Listen(metadata.Socket); err != nil {
 		return fmt.Errorf("start runtime supervisor: %w", err)
+	}
+	if err := session.Publish(); err != nil {
+		_ = supervisor.Close()
+		return fmt.Errorf("publish runtime session: %w", err)
 	}
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- supervisor.Serve() }()
@@ -160,10 +241,27 @@ func runTUI(options kranzcli.GlobalOptions) (runErr error) {
 		}
 	}()
 
-	client, err := kranzruntime.Dial(socketPath, version)
+	client, err := kranzruntime.Dial(metadata.Socket, version)
 	if err != nil {
 		return fmt.Errorf("connect to runtime: %w", err)
 	}
+	defer func() { runErr = errors.Join(runErr, client.Close()) }()
+	stopOwnership := make(chan struct{})
+	ownershipDone := make(chan struct{})
+	go func() {
+		defer close(ownershipDone)
+		ticker := time.NewTicker(250 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			_ = session.UpdateOwnership(client.Services())
+			select {
+			case <-ticker.C:
+			case <-stopOwnership:
+				return
+			}
+		}
+	}()
+	defer func() { close(stopOwnership); <-ownershipDone }()
 
 	darkBackground := lipgloss.HasDarkBackground()
 	model := ui.NewModelWithOptions(cfg, version, ui.ModelOptions{
