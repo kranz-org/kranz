@@ -10,8 +10,16 @@ import (
 	"time"
 
 	"github.com/kranz-org/kranz/internal/config"
+	"github.com/kranz-org/kranz/internal/health"
 	"github.com/kranz-org/kranz/internal/service"
 )
+
+// ResolveCheckTarget re-exports health.ResolveCheckTarget: it resolves a
+// dynamic-port health check against a service's currently detected ports. It
+// is a pure function over config values, not runtime state, but a delivery
+// surface still reaches it through app rather than importing internal/health
+// itself, to keep the boundary a single, checkable rule.
+var ResolveCheckTarget = health.ResolveCheckTarget
 
 // ActionResult, ActionStatus, ReloadResult, and PortConflictError are already
 // plain value types in internal/service. Aliasing them here (rather than

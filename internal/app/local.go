@@ -353,3 +353,33 @@ func (l *Local) SetPortChecker(checker port.Checker) {
 	l.portMu.Unlock()
 	l.manager.SetPortChecker(checker)
 }
+
+func (l *Local) SetServiceStatusForTest(name string, status config.ServiceStatus) {
+	if svc, ok := l.manager.GetService(name); ok {
+		svc.SetStatus(status)
+	}
+}
+
+func (l *Local) SetServiceStateForTest(name string, state config.ServiceState) {
+	if svc, ok := l.manager.GetService(name); ok {
+		svc.SetState(state)
+	}
+}
+
+func (l *Local) SetServiceDesiredRunningForTest(name string, desiredRunning bool) {
+	if svc, ok := l.manager.GetService(name); ok {
+		svc.SetDesiredRunning(desiredRunning)
+	}
+}
+
+func (l *Local) AppendLogForTest(name, line string) {
+	if svc, ok := l.manager.GetService(name); ok {
+		svc.AppendLog(line)
+	}
+}
+
+func (l *Local) AppendLogAtForTest(name string, timestamp time.Time, line string) {
+	if svc, ok := l.manager.GetService(name); ok {
+		svc.AppendLogAt(timestamp, line)
+	}
+}

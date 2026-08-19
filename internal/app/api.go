@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"os/exec"
+	"time"
 
 	"github.com/kranz-org/kranz/internal/config"
 	"github.com/kranz-org/kranz/internal/port"
@@ -23,6 +24,11 @@ type API interface {
 	// changed since the last successful load (or unconditionally, if
 	// force is true), and reconciles it into the running services.
 	Reload(force bool) (ReloadResult, error)
+	// AcknowledgeExternalWrite re-stamps the watched configuration paths
+	// without reloading. Call it right after writing to one of them (for
+	// example, saving a theme to the project file) so the next Reload does
+	// not treat that write as an external change worth reconciling.
+	AcknowledgeExternalWrite()
 
 	// Services returns every configured service in stable declaration
 	// order.
@@ -114,4 +120,15 @@ type API interface {
 	// need a deterministic port checker; production callers should not
 	// need it.
 	SetPortChecker(checker port.Checker)
+
+	// The three methods below exist for tests that need a service in a
+	// specific runtime state, or with specific log content, without
+	// spawning and observing a real process. Production delivery surfaces
+	// should never call them: state changes production code, from a
+	// TUI or a CLI, always earns by going through the lifecycle methods.
+	SetServiceStatusForTest(name string, status config.ServiceStatus)
+	SetServiceStateForTest(name string, state config.ServiceState)
+	SetServiceDesiredRunningForTest(name string, desiredRunning bool)
+	AppendLogForTest(name, line string)
+	AppendLogAtForTest(name string, timestamp time.Time, line string)
 }

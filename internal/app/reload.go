@@ -27,6 +27,10 @@ const reloadDebounce = time.Second
 // in flight is a no-op, reported as (ReloadResult{}, nil).
 func (l *Local) Reload(force bool) (ReloadResult, error) {
 	l.cfgMu.Lock()
+	if len(l.configPaths) == 0 {
+		l.cfgMu.Unlock()
+		return ReloadResult{}, nil
+	}
 	if l.reloadBusy {
 		l.cfgMu.Unlock()
 		return ReloadResult{}, nil
@@ -82,6 +86,13 @@ func (l *Local) Reload(force bool) (ReloadResult, error) {
 		l.recordReloadStamps(stamps)
 	}
 	return result, nil
+}
+
+// AcknowledgeExternalWrite implements API.AcknowledgeExternalWrite.
+func (l *Local) AcknowledgeExternalWrite() {
+	if stamps, err := readConfigStamps(l.watchPathsSnapshot()); err == nil {
+		l.recordReloadStamps(stamps)
+	}
 }
 
 func (l *Local) watchPathsSnapshot() []string {
