@@ -1,11 +1,20 @@
 package config
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 )
 
 var runtimeSlugSeparators = regexp.MustCompile(`[^a-z0-9_.-]+`)
+var runtimeNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]{0,62}$`)
+
+func ValidateRuntimeName(name string) error {
+	if !runtimeNamePattern.MatchString(name) {
+		return fmt.Errorf("runtime name must match [a-z0-9][a-z0-9_.-]{0,62}, got %q", name)
+	}
+	return nil
+}
 
 // RuntimeName returns the explicit runtime name or a stable slug derived from
 // the project title. Validate guarantees explicit names already use the

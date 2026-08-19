@@ -115,6 +115,25 @@ func TestSupervisorClientDriveARealServiceLifecycle(t *testing.T) {
 	}
 }
 
+func TestStartedServiceOutlivesCompletedRPCRequest(t *testing.T) {
+	cfg := &config.Config{Project: "RPC lifetime", Services: map[string]config.Service{
+		"worker": {Command: "sleep 60"},
+	}}
+	client, cleanup := startTestSupervisor(t, cfg, nil)
+	defer cleanup()
+	if err := client.StartServicesContext(context.Background(), []string{"worker"}); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	worker, ok := client.Service("worker")
+	if !ok || worker.State.Status != config.StatusRunning || worker.State.PID <= 0 {
+		t.Fatalf("service after completed start RPC = %+v, exists=%v", worker, ok)
+	}
+	if err := client.StopAll(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSupervisorClientRunNonInteractiveAction(t *testing.T) {
 	cfg := &config.Config{
 		Project: "RPC Actions",

@@ -12,8 +12,10 @@ func Validate(cfg *Config) error {
 	if cfg.Project == "" {
 		return fmt.Errorf("field 'project' is required")
 	}
-	if cfg.Runtime.Name != "" && !regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]{0,62}$`).MatchString(cfg.Runtime.Name) {
-		return fmt.Errorf("runtime.name must match [a-z0-9][a-z0-9_.-]{0,62}, got %q", cfg.Runtime.Name)
+	if cfg.Runtime.Name != "" {
+		if err := ValidateRuntimeName(cfg.Runtime.Name); err != nil {
+			return fmt.Errorf("runtime.name: %w", err)
+		}
 	}
 	switch cfg.UI.Background {
 	case "", UIBackgroundTerminal, UIBackgroundTheme:

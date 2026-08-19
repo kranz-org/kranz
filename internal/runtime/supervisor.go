@@ -41,8 +41,14 @@ type Supervisor struct {
 
 	connWG sync.WaitGroup
 
-	closeOnce sync.Once
-	closed    chan struct{}
+	closeOnce                 sync.Once
+	closed                    chan struct{}
+	shutdownOnce              sync.Once
+	shutdownRequested         chan struct{}
+	applicationShutdownOnce   sync.Once
+	applicationShutdownDone   chan struct{}
+	applicationShutdownResult any
+	applicationShutdownErr    error
 }
 
 // NewSupervisor wraps local. local must not be driven by any other caller
@@ -51,12 +57,19 @@ type Supervisor struct {
 // services.
 func NewSupervisor(local *app.Local) *Supervisor {
 	return &Supervisor{
-		local:     local,
-		stopWatch: make(chan struct{}),
-		watchDone: make(chan struct{}),
-		closed:    make(chan struct{}),
+		local:                   local,
+		stopWatch:               make(chan struct{}),
+		watchDone:               make(chan struct{}),
+		closed:                  make(chan struct{}),
+		shutdownRequested:       make(chan struct{}),
+		applicationShutdownDone: make(chan struct{}),
 	}
 }
+
+// ShutdownRequested closes after a successful remote Shutdown RPC response
+// has been written. The process owner uses it to tear down the listener and
+// registry entry after the application layer has stopped its services.
+func (s *Supervisor) ShutdownRequested() <-chan struct{} { return s.shutdownRequested }
 
 // Serve binds socketPath, starts the background reload watcher, and accepts
 // connections until Close is called or the listener otherwise fails. It
@@ -302,7 +315,18 @@ func (s *Supervisor) dispatch(ctx context.Context, c *codec, msg envelope, lease
 		_ = c.send(envelope{Type: messageError, ID: msg.ID, Body: body})
 		return
 	}
-	result, err := entry(ctx, s.local, msg.Body)
+	var result any
+	var err error
+	if msg.Method == methodShutdown {
+		s.applicationShutdownOnce.Do(func() {
+			s.applicationShutdownResult, s.applicationShutdownErr = entry(context.Background(), s.local, msg.Body)
+			close(s.applicationShutdownDone)
+		})
+		<-s.applicationShutdownDone
+		result, err = s.applicationShutdownResult, s.applicationShutdownErr
+	} else {
+		result, err = entry(ctx, s.local, msg.Body)
+	}
 	if err != nil {
 		body, marshalErr := json.Marshal(encodeError(err))
 		if marshalErr != nil {
@@ -322,7 +346,9 @@ func (s *Supervisor) dispatch(ctx context.Context, c *codec, msg envelope, lease
 		_ = c.send(envelope{Type: messageError, ID: msg.ID, Body: body})
 		return
 	}
-	_ = c.send(envelope{Type: messageResponse, ID: msg.ID, Body: body})
+	if err := c.send(envelope{Type: messageResponse, ID: msg.ID, Body: body}); err == nil && msg.Method == methodShutdown {
+		s.shutdownOnce.Do(func() { close(s.shutdownRequested) })
+	}
 }
 
 func validateInteractiveLease(msg envelope, leases *connectionLeases) error {

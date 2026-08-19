@@ -102,6 +102,21 @@ func (e *SessionConflictError) Error() string {
 	return fmt.Sprintf("runtime %q is already active", e.Name)
 }
 
+type SessionNotFoundError struct{ Reference string }
+
+func (e *SessionNotFoundError) Error() string {
+	return fmt.Sprintf("runtime %q was not found", e.Reference)
+}
+
+type AmbiguousSessionError struct {
+	Reference string
+	Matches   []string
+}
+
+func (e *AmbiguousSessionError) Error() string {
+	return fmt.Sprintf("runtime reference %q is ambiguous (%s)", e.Reference, strings.Join(e.Matches, ", "))
+}
+
 type SessionHandle struct {
 	registry      *Registry
 	lock          *os.File
@@ -343,6 +358,36 @@ func (r *Registry) List(ctx context.Context, clientVersion string) ([]SessionRec
 	}
 	sort.Slice(records, func(i, j int) bool { return records[i].Name < records[j].Name })
 	return records, nil
+}
+
+// Resolve accepts an exact NAME, a full ID, or a unique ID prefix.
+func (r *Registry) Resolve(ctx context.Context, reference, clientVersion string) (SessionRecord, error) {
+	records, err := r.List(ctx, clientVersion)
+	if err != nil {
+		return SessionRecord{}, err
+	}
+	for _, record := range records {
+		if record.Name == reference || record.ID == reference {
+			return record, nil
+		}
+	}
+	matches := make([]SessionRecord, 0)
+	for _, record := range records {
+		if strings.HasPrefix(record.ID, reference) {
+			matches = append(matches, record)
+		}
+	}
+	if len(matches) == 1 {
+		return matches[0], nil
+	}
+	if len(matches) == 0 {
+		return SessionRecord{}, &SessionNotFoundError{Reference: reference}
+	}
+	names := make([]string, len(matches))
+	for i, match := range matches {
+		names[i] = match.ID[:8] + " (" + match.Name + ")"
+	}
+	return SessionRecord{}, &AmbiguousSessionError{Reference: reference, Matches: names}
 }
 
 func (r *Registry) isLocked(name string) (bool, error) {

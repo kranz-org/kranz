@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"text/tabwriter"
 	"time"
@@ -57,6 +58,36 @@ func execute(args []string, stdout, stderr io.Writer) int {
 			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, &kranzcli.Error{Code: "invalid_arguments", Message: "ps does not accept arguments", ExitCode: kranzcli.ExitUsage})
 		}
 		return runPS(invocation.Globals, stdout, stderr)
+	}
+	if invocation.Command() == "up" {
+		if invocation.Globals.Output != kranzcli.OutputText {
+			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, &kranzcli.Error{Code: "invalid_output", Message: "foreground up requires text output", ExitCode: kranzcli.ExitUsage})
+		}
+		if err := runUp(invocation.Globals, invocation.Args, stdout); err != nil {
+			var requested requestedExitError
+			if errors.As(err, &requested) {
+				return requested.code
+			}
+			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
+		}
+		return 0
+	}
+	if invocation.Command() == "status" {
+		if err := runStatus(invocation.Globals, invocation.Args, stdout); err != nil {
+			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
+		}
+		return 0
+	}
+	if invocation.Command() == "down" {
+		if err := runDown(invocation.Globals, invocation.Args); err != nil {
+			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
+		}
+		if invocation.Globals.Output == kranzcli.OutputJSON {
+			if err := kranzcli.WriteJSON(stdout, struct{}{}); err != nil {
+				return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
+			}
+		}
+		return 0
 	}
 	if invocation.Command() != "" {
 		err := &kranzcli.Error{
@@ -268,7 +299,12 @@ func runTUI(options kranzcli.GlobalOptions) (runErr error) {
 		Settings: userSettings, SettingsPath: settingsPath, ConfigPaths: cfgPaths,
 		DarkBackground: &darkBackground, App: client,
 	})
-	defer func() { runErr = errors.Join(runErr, model.Shutdown()) }()
+	var remoteDown atomic.Bool
+	defer func() {
+		if !remoteDown.Load() {
+			runErr = errors.Join(runErr, model.Shutdown())
+		}
+	}()
 
 	program := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithReportFocus())
 	signals := make(chan os.Signal, 1)
@@ -279,6 +315,9 @@ func runTUI(options kranzcli.GlobalOptions) (runErr error) {
 	go func() {
 		select {
 		case <-signals:
+			program.Quit()
+		case <-supervisor.ShutdownRequested():
+			remoteDown.Store(true)
 			program.Quit()
 		case <-runDone:
 		}

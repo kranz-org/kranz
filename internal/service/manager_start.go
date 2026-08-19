@@ -93,7 +93,16 @@ func (m *Manager) startService(ctx context.Context, name string, recovery bool) 
 		return fmt.Errorf("service %q has no start capability", name)
 	}
 
-	pid, err := pm.Start(ctx, start.Command, start.Dir, start.Env, start.Shell)
+	// ctx bounds the start operation (prerequisites and dependency gates), not
+	// the lifetime of the managed process. RPC handlers cancel their request
+	// context after sending the response; tying exec.CommandContext to it would
+	// kill every successfully started service as soon as `start` returned.
+	if err := ctx.Err(); err != nil {
+		svc.SetDesiredRunning(false)
+		svc.SetStatus(config.StatusStopped)
+		return err
+	}
+	pid, err := pm.Start(context.Background(), start.Command, start.Dir, start.Env, start.Shell)
 	if err != nil {
 		svc.SetDesiredRunning(false)
 		svc.SetStatus(config.StatusStopped)

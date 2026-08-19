@@ -2,9 +2,19 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
+
+	kranzruntime "github.com/kranz-org/kranz/internal/runtime"
 )
 
 func TestVersionTextAndJSON(t *testing.T) {
@@ -31,6 +41,130 @@ func TestVersionTextAndJSON(t *testing.T) {
 	data := envelope["data"].(map[string]any)
 	if data["version"] != "1.2.3" || data["commit"] != "abc123" {
 		t.Fatalf("version envelope = %#v", envelope)
+	}
+}
+
+func TestForegroundHelperProcess(t *testing.T) {
+	if os.Getenv("KRANZ_TEST_FOREGROUND_HELPER") != "1" {
+		return
+	}
+	directory := os.Getenv("KRANZ_TEST_PROJECT_DIR")
+	os.Exit(execute([]string{"-C", directory, "up", "--no-start"}, os.Stdout, os.Stderr))
+}
+
+func TestForegroundRuntimeStatusAndRemoteDown(t *testing.T) {
+	directory := t.TempDir()
+	name := fmt.Sprintf("test-foreground-%d", os.Getpid())
+	configText := fmt.Sprintf("project: Test Foreground\nruntime:\n  name: %s\nservices:\n  sleeper:\n    command: sleep 60\n    env:\n      TOKEN: top-secret-value\n", name)
+	if err := os.WriteFile(filepath.Join(directory, "kranz.yaml"), []byte(configText), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command(os.Args[0], "-test.run=^TestForegroundHelperProcess$")
+	command.Env = append(os.Environ(), "KRANZ_TEST_FOREGROUND_HELPER=1", "KRANZ_TEST_PROJECT_DIR="+directory)
+	command.Stdout = io.Discard
+	var childStderr bytes.Buffer
+	command.Stderr = &childStderr
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if command.ProcessState == nil {
+			_ = command.Process.Kill()
+		}
+	})
+
+	registry, err := kranzruntime.DefaultRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		_, err = registry.Resolve(ctx, name, "test")
+		cancel()
+		if err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("runtime did not appear: %v; stderr=%s", err, childStderr.String())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	var stdout, stderr bytes.Buffer
+	if code := execute([]string{"-p", name, "status", "--output=json"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("status exit=%d stderr=%s", code, stderr.String())
+	}
+	if !json.Valid(stdout.Bytes()) || strings.Contains(stdout.String(), "top-secret-value") || strings.Contains(stdout.String(), "TOKEN") {
+		t.Fatalf("unsafe status JSON: %s", stdout.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := execute([]string{"-p", name, "down"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("down exit=%d stderr=%s", code, stderr.String())
+	}
+	done := make(chan error, 1)
+	go func() { done <- command.Wait() }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("foreground owner exit: %v; stderr=%s", err, childStderr.String())
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("foreground owner did not exit after remote down")
+	}
+}
+
+func TestForegroundSignalsPreserveSignalDeath(t *testing.T) {
+	for _, sig := range []syscall.Signal{syscall.SIGINT, syscall.SIGTERM} {
+		t.Run(sig.String(), func(t *testing.T) {
+			directory := t.TempDir()
+			name := fmt.Sprintf("test-signal-%d-%d", os.Getpid(), sig)
+			configText := fmt.Sprintf("project: Test Signal\nruntime:\n  name: %s\nservices:\n  sleeper:\n    command: sleep 60\n", name)
+			if err := os.WriteFile(filepath.Join(directory, "kranz.yaml"), []byte(configText), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			command := exec.Command(os.Args[0], "-test.run=^TestForegroundHelperProcess$")
+			command.Env = append(os.Environ(), "KRANZ_TEST_FOREGROUND_HELPER=1", "KRANZ_TEST_PROJECT_DIR="+directory)
+			command.Stdout, command.Stderr = io.Discard, io.Discard
+			if err := command.Start(); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				if command.ProcessState == nil {
+					_ = command.Process.Kill()
+				}
+			})
+			registry, err := kranzruntime.DefaultRegistry()
+			if err != nil {
+				t.Fatal(err)
+			}
+			deadline := time.Now().Add(5 * time.Second)
+			for {
+				ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+				_, err = registry.Resolve(ctx, name, "test")
+				cancel()
+				if err == nil {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatalf("runtime did not appear: %v", err)
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+			if err := command.Process.Signal(sig); err != nil {
+				t.Fatal(err)
+			}
+			err = command.Wait()
+			exitError, ok := err.(*exec.ExitError)
+			if !ok {
+				t.Fatalf("Wait = %T %v, want signal exit", err, err)
+			}
+			status, ok := exitError.Sys().(syscall.WaitStatus)
+			if !ok || !status.Signaled() || status.Signal() != sig {
+				t.Fatalf("wait status = %#v, want %s", exitError.Sys(), sig)
+			}
+		})
 	}
 }
 
