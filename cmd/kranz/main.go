@@ -15,6 +15,7 @@ import (
 
 	"github.com/kranz-org/kranz/internal/app"
 	"github.com/kranz-org/kranz/internal/config"
+	kranzruntime "github.com/kranz-org/kranz/internal/runtime"
 	"github.com/kranz-org/kranz/internal/settings"
 	"github.com/kranz-org/kranz/internal/ui"
 )
@@ -72,11 +73,41 @@ func run() (runErr error) {
 		userSettings = settings.Settings{}
 	}
 
+	// The runtime always speaks the socket protocol, even for an ordinary
+	// foreground `kranz` with no other client: this is the one place that
+	// constructs a Supervisor, so a future `up -d`/`attach` pair reuses this
+	// same wiring instead of a separate in-process path that could drift
+	// from it. поток 4 replaces this throwaway per-run directory with the
+	// session registry's stable path.
+	_, socketPath, cleanupSocketDir, err := kranzruntime.NewSocketDir()
+	if err != nil {
+		return fmt.Errorf("create runtime socket: %w", err)
+	}
+	defer cleanupSocketDir()
+
+	local := app.NewLocal(cfg, cfgPaths, app.Options{})
+	supervisor := kranzruntime.NewSupervisor(local)
+	if err := supervisor.Listen(socketPath); err != nil {
+		return fmt.Errorf("start runtime supervisor: %w", err)
+	}
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- supervisor.Serve() }()
+	defer func() {
+		runErr = errors.Join(runErr, supervisor.Close())
+		if err := <-serveErr; err != nil {
+			runErr = errors.Join(runErr, err)
+		}
+	}()
+
+	client, err := kranzruntime.Dial(socketPath, version)
+	if err != nil {
+		return fmt.Errorf("connect to runtime: %w", err)
+	}
+
 	darkBackground := lipgloss.HasDarkBackground()
-	application := app.NewLocal(cfg, cfgPaths, app.Options{})
 	model := ui.NewModelWithOptions(cfg, version, ui.ModelOptions{
 		Settings: userSettings, SettingsPath: settingsPath, ConfigPaths: cfgPaths,
-		DarkBackground: &darkBackground, App: application,
+		DarkBackground: &darkBackground, App: client,
 	})
 	defer func() {
 		runErr = errors.Join(runErr, model.Shutdown())
