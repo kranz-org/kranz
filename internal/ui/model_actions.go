@@ -187,14 +187,28 @@ func (m *Model) toggleFocusedAction() (tea.Cmd, bool) {
 // the command owns the terminal until it exits, and the outcome is recorded
 // like any other action.
 func (m *Model) runInteractiveAction(id config.ActionID) tea.Cmd {
-	command, finish, err := m.app.PrepareInteractiveAction(id)
+	action, lease, err := m.app.AcquireInteractiveAction(id)
 	if err != nil {
 		m.addNotification("action", id.Name+": "+err.Error(), config.LogError)
 		return nil
 	}
+	command := app.BuildInteractiveCommand(action)
 	m.addNotification("action", "Handing the terminal to "+id.Name, config.LogInfo)
 	return tea.ExecProcess(command, func(execErr error) tea.Msg {
-		result := finish(execErr)
+		// The application layer never ran this command — it may not even
+		// live in this process — so this caller is the only one that can
+		// read the exit code and PID it observed.
+		exitCode, pid := 0, 0
+		if command.ProcessState != nil {
+			exitCode = command.ProcessState.ExitCode()
+			if command.Process != nil {
+				pid = command.Process.Pid
+			}
+		}
+		result, completeErr := m.app.CompleteInteractiveAction(id, lease, execErr, exitCode, pid)
+		if execErr == nil {
+			execErr = completeErr
+		}
 		return actionResultMsg{id: id, result: result, err: execErr}
 	})
 }

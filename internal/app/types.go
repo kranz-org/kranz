@@ -7,6 +7,9 @@
 package app
 
 import (
+	"fmt"
+	"os"
+	"os/exec"
 	"time"
 
 	"github.com/kranz-org/kranz/internal/config"
@@ -90,6 +93,28 @@ func ServiceStartPlanned(svc *ServiceSnapshot) bool {
 		return svc.DesiredRunning
 	}
 	return svc.State.Status != config.StatusStopped || svc.DesiredRunning
+}
+
+// BuildInteractiveCommand constructs the *exec.Cmd for an interactive action,
+// deterministically from its resolved configuration. Every delivery surface
+// that acquires an interactive lease builds and runs this command itself —
+// the runtime cannot own the process, since only the caller holding the
+// terminal can hand it over. It mirrors
+// internal/service/action_interactive.go's interactiveCommand exactly,
+// including setting no process group, so Ctrl+C reaches the command the user
+// is looking at.
+func BuildInteractiveCommand(action config.Action) *exec.Cmd {
+	shell := action.Shell
+	if shell == "" {
+		shell = "sh"
+	}
+	command := exec.Command(shell, "-c", action.Command)
+	command.Dir = action.Dir
+	command.Env = os.Environ()
+	for name, value := range action.Env {
+		command.Env = append(command.Env, fmt.Sprintf("%s=%s", name, value))
+	}
+	return command
 }
 
 // ProjectSnapshot describes the currently loaded configuration and the

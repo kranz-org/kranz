@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"sync"
 	"time"
 
@@ -280,8 +279,12 @@ func (l *Local) CancelAction(id config.ActionID) bool {
 	return l.manager.CancelAction(id)
 }
 
-func (l *Local) PrepareInteractiveAction(id config.ActionID) (*exec.Cmd, func(error) ActionResult, error) {
-	return l.manager.PrepareInteractiveAction(id)
+func (l *Local) AcquireInteractiveAction(id config.ActionID) (config.Action, string, error) {
+	return l.manager.AcquireInteractiveAction(id)
+}
+
+func (l *Local) CompleteInteractiveAction(id config.ActionID, lease string, execErr error, exitCode, pid int) (ActionResult, error) {
+	return l.manager.CompleteInteractiveAction(id, lease, exitCode, pid, execErr)
 }
 
 func (l *Local) Logs(name string) []config.LogEntry {

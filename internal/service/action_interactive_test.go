@@ -127,6 +127,105 @@ func TestPrepareInteractiveRejectsCapturedActions(t *testing.T) {
 	}
 }
 
+func TestAcquireInteractiveTracksSuccessfulRunWithoutOwningTheCommand(t *testing.T) {
+	manager, id := interactiveTestManager(t, config.Action{
+		Command: "exit 0", Shell: "/bin/sh", Interactive: boolPointer(true),
+	})
+
+	action, lease, err := manager.AcquireInteractiveAction(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if action.Command != "exit 0" {
+		t.Fatalf("resolved action = %#v", action)
+	}
+	if state, _ := manager.ActionState(id); state.Status != ActionRunning {
+		t.Fatalf("state during handoff = %s, want running", state.Status)
+	}
+
+	// The caller, not the runner, runs the command: it observes exit code and
+	// PID itself and reports them back.
+	command := interactiveCommand(action)
+	if err := command.Run(); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := manager.CompleteInteractiveAction(id, lease, command.ProcessState.ExitCode(), 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != ActionSucceeded || result.ExitCode != 0 {
+		t.Fatalf("finished result = %#v", result)
+	}
+	if result.Duration <= 0 {
+		t.Fatalf("duration was not measured: %#v", result)
+	}
+	state, _ := manager.ActionState(id)
+	if state.Status != ActionSucceeded {
+		t.Fatalf("state after handoff = %s, want succeeded", state.Status)
+	}
+}
+
+func TestCompleteInteractiveRecordsFailureExitCode(t *testing.T) {
+	manager, id := interactiveTestManager(t, config.Action{
+		Command: "exit 3", Shell: "/bin/sh", Interactive: boolPointer(true),
+	})
+	_, lease, err := manager.AcquireInteractiveAction(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := manager.CompleteInteractiveAction(id, lease, 3, 4242, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != ActionFailed || result.ExitCode != 3 || result.PID != 4242 {
+		t.Fatalf("failed result = %#v", result)
+	}
+	if result.Error == "" {
+		t.Fatal("a failed interactive action must retain a reason")
+	}
+}
+
+func TestCompleteInteractiveRejectsAMismatchedOrUnknownLease(t *testing.T) {
+	manager, id := interactiveTestManager(t, config.Action{
+		Command: "exit 0", Shell: "/bin/sh", Interactive: boolPointer(true),
+	})
+	if _, err := manager.CompleteInteractiveAction(id, "not-a-real-lease", 0, 0, nil); err == nil {
+		t.Fatal("completing an unknown lease must fail")
+	}
+	_, lease, err := manager.AcquireInteractiveAction(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.CompleteInteractiveAction(id, "wrong-lease", 0, 0, nil); err == nil {
+		t.Fatal("completing with the wrong lease token must fail")
+	}
+	// The genuine lease must still be completable after a mismatched attempt.
+	if _, err := manager.CompleteInteractiveAction(id, lease, 0, 0, nil); err != nil {
+		t.Fatalf("completing the genuine lease failed: %v", err)
+	}
+}
+
+func TestAcquireInteractiveSerializesPerOwner(t *testing.T) {
+	manager, id := interactiveTestManager(t, config.Action{
+		Command: "exit 0", Shell: "/bin/sh", Interactive: boolPointer(true),
+	})
+	_, lease, err := manager.AcquireInteractiveAction(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var busy *ActionBusyError
+	if _, _, err := manager.AcquireInteractiveAction(id); !errors.As(err, &busy) {
+		t.Fatalf("second handoff error = %v, want ActionBusyError", err)
+	}
+	if _, err := manager.CompleteInteractiveAction(id, lease, 0, 0, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := manager.AcquireInteractiveAction(id); err != nil {
+		t.Fatalf("handoff after completion was refused: %v", err)
+	}
+}
+
 func TestInteractiveCommandCarriesExecutionContext(t *testing.T) {
 	directory := t.TempDir()
 	command := interactiveCommand(config.Action{
