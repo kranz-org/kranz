@@ -1,4 +1,4 @@
-//go:build darwin
+//go:build darwin && !cgo
 
 package main
 
@@ -9,6 +9,7 @@ import (
 
 type userSignalAction struct {
 	handler uintptr
+	tramp   uintptr
 	mask    uint32
 	flags   int32
 }
