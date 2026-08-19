@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -103,6 +104,10 @@ type activeAction struct {
 	// cannot wait for it during shutdown: only the caller that handed the
 	// terminal over can observe the command finishing.
 	interactive bool
+	// lease identifies an AcquireInteractive reservation so a later
+	// CompleteInteractive call can be matched to the reservation it is
+	// finishing, not to whatever now occupies the same owner slot.
+	lease string
 }
 
 // ActionRunner executes normalized non-interactive actions and retains their
@@ -115,6 +120,7 @@ type ActionRunner struct {
 	active       map[actionOwner]*activeAction
 	logBufSize   int
 	shuttingDown bool
+	leaseSeq     atomic.Uint64
 }
 
 // NewActionRunner creates an action runner for one loaded project config.
