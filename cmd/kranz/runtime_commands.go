@@ -148,6 +148,9 @@ func runUp(options kranzcli.GlobalOptions, args []string, stdout io.Writer) erro
 	if noStart && len(selectors) > 0 {
 		return &kranzcli.Error{Code: "invalid_arguments", Message: "--no-start cannot be combined with selectors", ExitCode: kranzcli.ExitUsage}
 	}
+	signals := make(chan os.Signal, 2)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(signals)
 	host, cfg, err := startRuntime(options, "foreground")
 	if err != nil {
 		return classifyRuntimeError(err)
@@ -161,10 +164,6 @@ func runUp(options kranzcli.GlobalOptions, args []string, stdout io.Writer) erro
 		return host.Close()
 	}
 	defer func() { _ = closeHost() }()
-	signals := make(chan os.Signal, 2)
-	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
-	defer signal.Stop(signals)
-
 	if !noStart {
 		if len(selectors) == 0 {
 			for _, name := range cfg.ServiceOrder {
@@ -254,6 +253,9 @@ func terminateForegroundWithSignal(host *runtimeHost, closeHost func() error, si
 	unixSignal, ok := sig.(syscall.Signal)
 	if !ok {
 		return fmt.Errorf("unsupported signal %v", sig)
+	}
+	if err := forceDefaultSignal(unixSignal); err != nil {
+		return fmt.Errorf("restore default %s disposition: %w", sig, err)
 	}
 	if err := syscall.Kill(os.Getpid(), unixSignal); err != nil {
 		return err

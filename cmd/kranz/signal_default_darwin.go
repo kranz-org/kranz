@@ -1,0 +1,23 @@
+//go:build darwin
+
+package main
+
+import (
+	"syscall"
+	"unsafe"
+)
+
+type userSignalAction struct {
+	handler uintptr
+	mask    uint32
+	flags   int32
+}
+
+func forceDefaultSignal(sig syscall.Signal) error {
+	action := userSignalAction{}
+	_, _, errno := syscall.RawSyscall(syscall.SYS_SIGACTION, uintptr(sig), uintptr(unsafe.Pointer(&action)), 0)
+	if errno != 0 {
+		return errno
+	}
+	return nil
+}

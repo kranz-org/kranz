@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -127,9 +128,12 @@ func TestForegroundSignalsPreserveSignalDeath(t *testing.T) {
 			command := exec.Command(os.Args[0], "-test.run=^TestForegroundHelperProcess$")
 			command.Env = append(os.Environ(), "KRANZ_TEST_FOREGROUND_HELPER=1", "KRANZ_TEST_PROJECT_DIR="+directory)
 			command.Stdout, command.Stderr = io.Discard, io.Discard
+			signal.Ignore(sig)
 			if err := command.Start(); err != nil {
+				signal.Reset(sig)
 				t.Fatal(err)
 			}
+			signal.Reset(sig)
 			t.Cleanup(func() {
 				if command.ProcessState == nil {
 					_ = command.Process.Kill()
