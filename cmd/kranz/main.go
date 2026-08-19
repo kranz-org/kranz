@@ -89,6 +89,19 @@ func execute(args []string, stdout, stderr io.Writer) int {
 		}
 		return 0
 	}
+	if invocation.Command() == "attach" {
+		if invocation.Globals.Output != kranzcli.OutputText {
+			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, &kranzcli.Error{Code: "invalid_output", Message: "attach requires text output", ExitCode: kranzcli.ExitUsage})
+		}
+		if err := runAttach(invocation.Globals, invocation.Args); err != nil {
+			var requested requestedExitError
+			if errors.As(err, &requested) {
+				return requested.code
+			}
+			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
+		}
+		return 0
+	}
 	if invocation.Command() != "" {
 		err := &kranzcli.Error{
 			Code: "not_implemented", Message: fmt.Sprintf("command %q is not implemented yet", invocation.Command()),
@@ -219,13 +232,32 @@ func runTUI(options kranzcli.GlobalOptions) (runErr error) {
 	if err != nil {
 		return &kranzcli.Error{Code: "invalid_config", Message: "load configuration", ExitCode: kranzcli.ExitConfig, Cause: err}
 	}
-	directory, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("resolve runtime directory: %w", err)
-	}
 	registry, err := kranzruntime.DefaultRegistry()
 	if err != nil {
 		return fmt.Errorf("open runtime registry: %w", err)
+	}
+	lookupCtx, cancelLookup := context.WithTimeout(context.Background(), 2*time.Second)
+	record, lookupErr := registry.Resolve(lookupCtx, cfg.RuntimeName(), version)
+	cancelLookup()
+	if lookupErr == nil {
+		client, dialErr := kranzruntime.Dial(record.Socket, version)
+		if dialErr != nil {
+			return classifyRuntimeError(dialErr)
+		}
+		defer func() { runErr = errors.Join(runErr, client.Close()) }()
+		activeConfig := client.Config()
+		if activeConfig == nil {
+			return errors.New("runtime returned no effective configuration")
+		}
+		return runAttachedTUI(client, activeConfig)
+	}
+	var missingRuntime *kranzruntime.SessionNotFoundError
+	if !errors.As(lookupErr, &missingRuntime) {
+		return classifyRuntimeError(lookupErr)
+	}
+	directory, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("resolve runtime directory: %w", err)
 	}
 	session, err := registry.Acquire(cfg.RuntimeName())
 	if err != nil {

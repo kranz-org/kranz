@@ -126,6 +126,8 @@ type SessionHandle struct {
 	closed        bool
 }
 
+func (h *SessionHandle) Metadata() SessionMetadata { return h.meta }
+
 type OwnershipSnapshot struct {
 	Version   int            `json:"ownership_version"`
 	SessionID string         `json:"session_id"`

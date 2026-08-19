@@ -22,7 +22,9 @@ func (m *Model) Shutdown() error {
 		if m.operationCancel != nil {
 			m.operationCancel()
 		}
-		m.shutdownErr = m.app.Shutdown()
+		if !m.detachOnExit {
+			m.shutdownErr = m.app.Shutdown()
+		}
 	})
 	return m.shutdownErr
 }

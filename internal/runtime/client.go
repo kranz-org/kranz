@@ -39,6 +39,8 @@ type Client struct {
 	readErr   atomic.Value // error
 	closeOnce sync.Once
 	closeErr  error
+	done      chan struct{}
+	doneOnce  sync.Once
 }
 
 // Dial connects to a Supervisor listening on socketPath and performs the
@@ -64,6 +66,7 @@ func DialContext(ctx context.Context, socketPath, clientVersion string) (*Client
 		conn:    unixConn,
 		c:       newCodec(unixConn),
 		pending: make(map[uint64]chan envelope),
+		done:    make(chan struct{}),
 	}
 	deadline, hasDeadline := ctx.Deadline()
 	if !hasDeadline {
@@ -132,10 +135,14 @@ func (c *Client) Close() error {
 			c.closeErr = nil
 		}
 	})
+	c.doneOnce.Do(func() { close(c.done) })
 	return c.closeErr
 }
 
+func (c *Client) Done() <-chan struct{} { return c.done }
+
 func (c *Client) readLoop() {
+	defer c.doneOnce.Do(func() { close(c.done) })
 	for {
 		msg, err := c.c.receive()
 		if err != nil {

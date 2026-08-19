@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -15,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	kranzcli "github.com/kranz-org/kranz/internal/cli"
 	kranzruntime "github.com/kranz-org/kranz/internal/runtime"
 )
 
@@ -51,6 +54,78 @@ func TestForegroundHelperProcess(t *testing.T) {
 	}
 	directory := os.Getenv("KRANZ_TEST_PROJECT_DIR")
 	os.Exit(execute([]string{"-C", directory, "up", "--no-start"}, os.Stdout, os.Stderr))
+}
+
+func TestBackgroundHelperProcess(t *testing.T) {
+	if os.Getenv("KRANZ_TEST_BACKGROUND_HELPER") != "1" {
+		return
+	}
+	data, err := base64.StdEncoding.DecodeString(os.Getenv("KRANZ_TEST_BACKGROUND_ARGS"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var args []string
+	if err := json.Unmarshal(data, &args); err != nil {
+		t.Fatal(err)
+	}
+	os.Exit(execute(args, os.Stdout, os.Stderr))
+}
+
+func TestBackgroundRuntimeReadinessConflictAndDown(t *testing.T) {
+	directory := t.TempDir()
+	name := fmt.Sprintf("test-background-%d", os.Getpid())
+	configText := fmt.Sprintf("project: Test Background\nruntime:\n  name: %s\nservices:\n  sleeper:\n    command: sleep 60\n", name)
+	if err := os.WriteFile(filepath.Join(directory, "kranz.yaml"), []byte(configText), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	previousFactory := newBackgroundCommand
+	newBackgroundCommand = func(_ string, args ...string) *exec.Cmd {
+		data, _ := json.Marshal(args)
+		command := exec.Command(os.Args[0], "-test.run=^TestBackgroundHelperProcess$")
+		command.Env = append(os.Environ(), "KRANZ_TEST_BACKGROUND_HELPER=1", "KRANZ_TEST_BACKGROUND_ARGS="+base64.StdEncoding.EncodeToString(data))
+		return command
+	}
+	defer func() { newBackgroundCommand = previousFactory }()
+	var stdout, stderr bytes.Buffer
+	if code := execute([]string{"-C", directory, "up", "-d", "--no-start"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("up -d exit=%d stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Started "+name) {
+		t.Fatalf("readiness output = %q", stdout.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := execute([]string{"-C", directory, "up", "-d", "--no-start"}, &stdout, &stderr); code != kranzcli.ExitConflict {
+		t.Fatalf("duplicate exit=%d stderr=%s", code, stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := execute([]string{"-p", name, "status", "--output=json"}, &stdout, &stderr); code != 0 || !json.Valid(stdout.Bytes()) {
+		t.Fatalf("status exit=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := execute([]string{"-p", name, "down"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("down exit=%d stderr=%s", code, stderr.String())
+	}
+	registry, err := kranzruntime.DefaultRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		_, err = registry.Resolve(ctx, name, "test")
+		cancel()
+		var missing *kranzruntime.SessionNotFoundError
+		if errors.As(err, &missing) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("background runtime remained after down: %v", err)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
 
 func TestForegroundRuntimeStatusAndRemoteDown(t *testing.T) {

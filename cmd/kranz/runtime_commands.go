@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -131,13 +133,14 @@ func (h *runtimeHost) Close() error {
 
 func runUp(options kranzcli.GlobalOptions, args []string, stdout io.Writer) error {
 	noStart := false
+	detached := false
 	selectors := make([]string, 0, len(args))
 	for _, arg := range args {
 		switch arg {
 		case "--no-start":
 			noStart = true
 		case "-d", "--detach":
-			return &kranzcli.Error{Code: "not_implemented", Message: "background mode is not implemented in this build", ExitCode: kranzcli.ExitUsage}
+			detached = true
 		default:
 			if strings.HasPrefix(arg, "-") {
 				return &kranzcli.Error{Code: "unknown_option", Message: "unknown up option " + arg, ExitCode: kranzcli.ExitUsage}
@@ -147,6 +150,13 @@ func runUp(options kranzcli.GlobalOptions, args []string, stdout io.Writer) erro
 	}
 	if noStart && len(selectors) > 0 {
 		return &kranzcli.Error{Code: "invalid_arguments", Message: "--no-start cannot be combined with selectors", ExitCode: kranzcli.ExitUsage}
+	}
+	if detached {
+		if os.Getenv("KRANZ_INTERNAL_BACKGROUND") == "1" {
+			_ = os.Unsetenv("KRANZ_INTERNAL_BACKGROUND")
+			return runBackgroundChild(options, selectors, noStart)
+		}
+		return spawnBackground(options, selectors, noStart, stdout)
 	}
 	signals := make(chan os.Signal, 2)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
@@ -187,6 +197,10 @@ func runUp(options kranzcli.GlobalOptions, args []string, stdout io.Writer) erro
 			if err != nil {
 				_ = host.client.Shutdown()
 				return err
+			}
+			if err := host.session.UpdateOwnership(host.client.Services()); err != nil {
+				_ = host.client.Shutdown()
+				return fmt.Errorf("record runtime ownership: %w", err)
 			}
 		case sig := <-signals:
 			cancelStart()
@@ -240,6 +254,221 @@ func runUp(options kranzcli.GlobalOptions, args []string, stdout io.Writer) erro
 			}
 		}
 	}
+}
+
+type backgroundReady struct {
+	OK       bool   `json:"ok"`
+	ID       string `json:"id,omitempty"`
+	Name     string `json:"name,omitempty"`
+	PID      int    `json:"pid,omitempty"`
+	Error    string `json:"error,omitempty"`
+	Code     string `json:"code,omitempty"`
+	Hint     string `json:"hint,omitempty"`
+	ExitCode int    `json:"exit_code,omitempty"`
+}
+
+var newBackgroundCommand = func(executable string, args ...string) *exec.Cmd { return exec.Command(executable, args...) }
+
+func spawnBackground(options kranzcli.GlobalOptions, selectors []string, noStart bool, stdout io.Writer) error {
+	executable, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = reader.Close() }()
+	args := []string{"-C", options.Directory}
+	for _, path := range options.ConfigPaths {
+		args = append(args, "-f", path)
+	}
+	if options.Project != "" {
+		args = append(args, "-p", options.Project)
+	}
+	args = append(args, "up", "-d")
+	if noStart {
+		args = append(args, "--no-start")
+	} else {
+		args = append(args, selectors...)
+	}
+	command := newBackgroundCommand(executable, args...)
+	if command.Env == nil {
+		command.Env = os.Environ()
+	}
+	command.Env = append(command.Env, "KRANZ_INTERNAL_BACKGROUND=1")
+	command.ExtraFiles = []*os.File{writer}
+	command.SysProcAttr = backgroundProcessAttributes()
+	command.Stdout, command.Stderr = io.Discard, io.Discard
+	devNull, err := os.Open(os.DevNull)
+	if err != nil {
+		_ = writer.Close()
+		return err
+	}
+	defer func() { _ = devNull.Close() }()
+	command.Stdin = devNull
+	if err := command.Start(); err != nil {
+		_ = writer.Close()
+		return err
+	}
+	_ = writer.Close()
+	readyResult := make(chan struct {
+		ready backgroundReady
+		err   error
+	}, 1)
+	go func() {
+		var ready backgroundReady
+		decodeErr := json.NewDecoder(reader).Decode(&ready)
+		readyResult <- struct {
+			ready backgroundReady
+			err   error
+		}{ready, decodeErr}
+	}()
+	select {
+	case result := <-readyResult:
+		if result.err != nil {
+			waitErr := command.Wait()
+			return fmt.Errorf("background runtime exited before readiness: %w", errors.Join(result.err, waitErr))
+		}
+		if !result.ready.OK {
+			_ = command.Wait()
+			exitCode := result.ready.ExitCode
+			if exitCode == 0 {
+				exitCode = kranzcli.ExitInternal
+			}
+			code := result.ready.Code
+			if code == "" {
+				code = "background_start"
+			}
+			return &kranzcli.Error{Code: code, Message: result.ready.Error, Hint: result.ready.Hint, ExitCode: exitCode}
+		}
+		if err := command.Process.Release(); err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(stdout, "Started %s (%s), PID %d.\n", result.ready.Name, shortID(result.ready.ID), result.ready.PID)
+		return err
+	case <-time.After(60 * time.Second):
+		_ = command.Process.Signal(syscall.SIGTERM)
+		waitDone := make(chan error, 1)
+		go func() { waitDone <- command.Wait() }()
+		select {
+		case <-waitDone:
+		case <-time.After(10 * time.Second):
+			_ = command.Process.Kill()
+			<-waitDone
+		}
+		return &kranzcli.Error{Code: "background_timeout", Message: "background runtime did not become ready within 1m", ExitCode: kranzcli.ExitUnavailable}
+	}
+}
+
+func runBackgroundChild(options kranzcli.GlobalOptions, selectors []string, noStart bool) error {
+	readyFile := os.NewFile(3, "kranz-readiness")
+	if readyFile == nil {
+		return errors.New("background readiness descriptor is missing")
+	}
+	syscall.CloseOnExec(3)
+	defer func() { _ = readyFile.Close() }()
+	sendReady := func(ready backgroundReady) error { return json.NewEncoder(readyFile).Encode(ready) }
+	signals := make(chan os.Signal, 2)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(signals)
+	host, cfg, err := startRuntime(options, "background")
+	if err != nil {
+		classified := kranzcli.AsError(classifyRuntimeError(err))
+		_ = sendReady(backgroundReady{Error: classified.Error(), Code: classified.Code, Hint: classified.Hint, ExitCode: classified.ExitCode})
+		return err
+	}
+	closed := false
+	closeHost := func() error {
+		if closed {
+			return nil
+		}
+		closed = true
+		return host.Close()
+	}
+	defer func() { _ = closeHost() }()
+	if !noStart {
+		if len(selectors) == 0 {
+			for _, name := range cfg.ServiceOrder {
+				if !cfg.Services[name].Disabled {
+					selectors = append(selectors, name)
+				}
+			}
+		}
+		for _, name := range selectors {
+			if _, ok := cfg.Services[name]; !ok {
+				_ = host.client.Shutdown()
+				commandErr := &kranzcli.Error{Code: "service_not_found", Message: fmt.Sprintf("service %q was not found", name), ExitCode: kranzcli.ExitNotFound}
+				_ = sendReady(backgroundReady{Error: commandErr.Error(), Code: commandErr.Code, ExitCode: commandErr.ExitCode})
+				return commandErr
+			}
+		}
+		startCtx, cancelStart := context.WithCancel(context.Background())
+		startDone := make(chan error, 1)
+		go func() { startDone <- host.client.StartServicesContext(startCtx, selectors) }()
+		select {
+		case err = <-startDone:
+			cancelStart()
+		case <-signals:
+			cancelStart()
+			<-startDone
+			_ = host.client.Shutdown()
+			return closeHost()
+		}
+		if err != nil {
+			_ = host.client.Shutdown()
+			commandErr := kranzcli.AsError(err)
+			_ = sendReady(backgroundReady{Error: commandErr.Error(), Code: commandErr.Code, ExitCode: commandErr.ExitCode})
+			return err
+		}
+		if err := host.session.UpdateOwnership(host.client.Services()); err != nil {
+			_ = host.client.Shutdown()
+			commandErr := kranzcli.AsError(fmt.Errorf("record runtime ownership: %w", err))
+			_ = sendReady(backgroundReady{Error: commandErr.Error(), Code: commandErr.Code, ExitCode: commandErr.ExitCode})
+			return err
+		}
+	}
+	metadata := host.session.Metadata()
+	select {
+	case <-signals:
+		_ = host.client.Shutdown()
+		return closeHost()
+	default:
+	}
+	if err := sendReady(backgroundReady{OK: true, ID: metadata.ID, Name: metadata.Name, PID: metadata.PID}); err != nil {
+		_ = host.client.Shutdown()
+		return err
+	}
+	_ = readyFile.Close()
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-host.supervisor.ShutdownRequested():
+			return closeHost()
+		case <-signals:
+			_ = host.client.Shutdown()
+			return closeHost()
+		case <-ticker.C:
+			if requested, code := host.client.ProjectExitRequested(); requested {
+				_ = host.client.Shutdown()
+				if err := closeHost(); err != nil {
+					return err
+				}
+				if code != 0 {
+					return requestedExitError{code: code}
+				}
+				return nil
+			}
+		}
+	}
+}
+
+func shortID(id string) string {
+	if len(id) > 8 {
+		return id[:8]
+	}
+	return id
 }
 
 func terminateForegroundWithSignal(host *runtimeHost, closeHost func() error, signals chan os.Signal, sig os.Signal) error {

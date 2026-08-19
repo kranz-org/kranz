@@ -203,7 +203,11 @@ func TestClientCloseIsIdempotentAfterPeerCloses(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-done
-	time.Sleep(10 * time.Millisecond)
+	select {
+	case <-client.Done():
+	case <-time.After(time.Second):
+		t.Fatal("client Done did not close after peer disconnect")
+	}
 	if err := client.Close(); err != nil {
 		t.Fatalf("first Close: %v", err)
 	}

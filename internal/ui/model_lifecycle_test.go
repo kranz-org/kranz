@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,23 @@ import (
 	"github.com/kranz-org/kranz/internal/app"
 	"github.com/kranz-org/kranz/internal/config"
 )
+
+func TestDetachOnExitLeavesRuntimeUsable(t *testing.T) {
+	cfg := &config.Config{Project: "Attached", Services: map[string]config.Service{"worker": {Command: "sleep 60"}}}
+	local := app.NewLocal(cfg, nil, app.Options{})
+	model := NewModelWithOptions(cfg, "test", ModelOptions{App: local, DetachOnExit: true})
+	if err := model.Shutdown(); err != nil {
+		t.Fatal(err)
+	}
+	if err := local.StartServicesContext(context.Background(), []string{"worker"}); err != nil {
+		t.Fatalf("runtime was shut down by detach: %v", err)
+	}
+	defer func() { _ = local.Shutdown() }()
+	worker, ok := local.Service("worker")
+	if !ok || worker.State.Status != config.StatusRunning {
+		t.Fatalf("worker after detach = %+v", worker)
+	}
+}
 
 // Tests for service lifecycle actions driven from the dashboard.
 

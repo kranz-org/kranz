@@ -270,6 +270,7 @@ type Model struct {
 
 	shutdownOnce sync.Once
 	shutdownErr  error
+	detachOnExit bool
 }
 
 // ModelOptions supplies user-level preferences and their persistence path.
@@ -284,6 +285,9 @@ type ModelOptions struct {
 	// is constructed from cfg and ConfigPaths with production defaults —
 	// the shape every existing caller and test relies on.
 	App app.API
+	// DetachOnExit makes q/Ctrl+C close only this delivery surface. The
+	// background runtime remains owned by its supervisor process.
+	DetachOnExit bool
 }
 
 // NewModel creates a model with default user settings and terminal detection.
@@ -314,6 +318,7 @@ func NewModelWithOptions(cfg *config.Config, version string, options ModelOption
 		version:             version,
 		workingDirectory:    workingDirectory,
 		app:                 application,
+		detachOnExit:        options.DetachOnExit,
 		services:            services,
 		allServices:         services,
 		portDetails:         make(map[int]*config.PortInfo),
