@@ -94,6 +94,10 @@ func execute(args []string, stdout, stderr io.Writer) int {
 		return 0
 	case "doctor":
 		if err := runDoctor(invocation.Globals, stdout); err != nil {
+			var requested requestedExitError
+			if errors.As(err, &requested) {
+				return requested.code
+			}
 			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
 		}
 		return 0
@@ -177,9 +181,6 @@ func execute(args []string, stdout, stderr io.Writer) int {
 		return runPS(invocation.Globals, stdout, stderr)
 	}
 	if invocation.Command() == "up" {
-		if invocation.Globals.Output != kranzcli.OutputText {
-			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, &kranzcli.Error{Code: "invalid_output", Message: "foreground up requires text output", ExitCode: kranzcli.ExitUsage})
-		}
 		if err := runUp(invocation.Globals, invocation.Args, stdout); err != nil {
 			var requested requestedExitError
 			if errors.As(err, &requested) {
@@ -199,21 +200,11 @@ func execute(args []string, stdout, stderr io.Writer) int {
 		if err := runLifecycle(invocation.Globals, command, invocation.Args, stdout); err != nil {
 			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
 		}
-		if invocation.Globals.Output == kranzcli.OutputJSON {
-			if err := kranzcli.WriteJSON(stdout, struct{}{}); err != nil {
-				return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
-			}
-		}
 		return 0
 	}
 	if invocation.Command() == "down" {
 		if err := runDown(invocation.Globals, invocation.Args, stdout); err != nil {
 			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
-		}
-		if invocation.Globals.Output == kranzcli.OutputJSON {
-			if err := kranzcli.WriteJSON(stdout, struct{}{}); err != nil {
-				return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
-			}
 		}
 		return 0
 	}

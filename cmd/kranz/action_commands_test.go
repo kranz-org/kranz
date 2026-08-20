@@ -85,6 +85,9 @@ func TestActionInfoOnABareNameTeachesTheShape(t *testing.T) {
 	if !strings.Contains(stderr.String(), "OWNER/ACTION") {
 		t.Errorf("error does not teach the shape: %q", stderr.String())
 	}
+	if !strings.Contains(stderr.String(), "kranz action info api/seed") {
+		t.Errorf("error does not use a real project action as its example: %q", stderr.String())
+	}
 }
 
 // An interactive action needs a terminal handed to it under a supervisor lease.

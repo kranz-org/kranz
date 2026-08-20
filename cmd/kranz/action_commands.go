@@ -96,7 +96,12 @@ func resolveActionID(cfg *config.Config, reference string) (config.ActionID, con
 	case 0:
 		hint := "Run `kranz action list` to see every action this project defines."
 		if !strings.Contains(reference, "/") {
-			hint = fmt.Sprintf("Actions are named OWNER/ACTION, for example `api/%s`.", reference)
+			hint = "Actions are named OWNER/ACTION."
+			if ids := cfg.ActionIDs(); len(ids) > 0 {
+				hint += fmt.Sprintf(" For example: `kranz action info %s`.", actionIDString(ids[0]))
+			} else {
+				hint += " Run `kranz action list` to see what this project defines."
+			}
 		}
 		return config.ActionID{}, config.Action{}, &kranzcli.Error{
 			Code:     "action_not_found",
@@ -159,23 +164,21 @@ func runActionRun(options kranzcli.GlobalOptions, args []string, stdout io.Write
 	if len(args) != 1 {
 		return &kranzcli.Error{Code: "invalid_arguments", Message: "action run takes exactly one OWNER/ACTION", ExitCode: kranzcli.ExitUsage}
 	}
-	cfg, _, err := loadProject(options)
-	if err != nil {
-		return err
-	}
-	id, action, err := resolveActionID(cfg, args[0])
-	if err != nil {
-		return err
-	}
-	// An interactive action needs the real terminal handed to it under a
-	// supervisor lease. Refusing it plainly is better than running it with no
-	// terminal, where it would block forever on a prompt nobody can answer.
-	if action.Interactive != nil && *action.Interactive {
-		return &kranzcli.Error{
-			Code:     "interactive_action",
-			Message:  fmt.Sprintf("action %q is interactive and cannot be run by this command yet", actionIDString(id)),
-			Hint:     "Run it from the TUI with `kranz attach`.",
-			ExitCode: kranzcli.ExitUsage,
+	// In the ordinary project-local workflow, reject an interactive action
+	// before looking for a runtime so the user gets the useful TUI instruction.
+	// With an explicit -p, the selected runtime is authoritative and may belong
+	// to a different directory, so its configuration is resolved after dialing.
+	if options.Project == "" {
+		cfg, _, err := loadProject(options)
+		if err != nil {
+			return err
+		}
+		id, action, err := resolveActionID(cfg, args[0])
+		if err != nil {
+			return err
+		}
+		if err := rejectInteractiveAction(id, action); err != nil {
+			return err
 		}
 	}
 
@@ -188,6 +191,14 @@ func runActionRun(options kranzcli.GlobalOptions, args []string, stdout io.Write
 		return classifyRuntimeError(err)
 	}
 	defer func() { _ = client.Close() }()
+
+	id, action, err := resolveActionID(client.Config(), args[0])
+	if err != nil {
+		return err
+	}
+	if err := rejectInteractiveAction(id, action); err != nil {
+		return err
+	}
 
 	result, err := client.RunAction(context.Background(), id)
 	if err != nil {
@@ -203,7 +214,7 @@ func runActionRun(options kranzcli.GlobalOptions, args []string, stdout io.Write
 			Stdout   []string `json:"stdout"`
 			Stderr   []string `json:"stderr"`
 			Error    string   `json:"error"`
-		}{actionIDString(id), result.Status.String(), result.ExitCode, result.Duration.String(), result.Stdout, result.Stderr, result.Error}); err != nil {
+		}{actionIDString(id), result.Status.String(), result.ExitCode, result.Duration.String(), emptyIfNil(result.Stdout), emptyIfNil(result.Stderr), result.Error}); err != nil {
 			return err
 		}
 	} else {
@@ -231,4 +242,19 @@ func runActionRun(options kranzcli.GlobalOptions, args []string, stdout io.Write
 		}
 	}
 	return nil
+}
+
+// An interactive action needs the real terminal handed to it under a
+// supervisor lease. Refusing it plainly is better than running it with no
+// terminal, where it would block forever on a prompt nobody can answer.
+func rejectInteractiveAction(id config.ActionID, action config.Action) error {
+	if action.Interactive == nil || !*action.Interactive {
+		return nil
+	}
+	return &kranzcli.Error{
+		Code:     "interactive_action",
+		Message:  fmt.Sprintf("action %q is interactive and cannot be run by this command yet", actionIDString(id)),
+		Hint:     "Run it from the TUI with `kranz attach`.",
+		ExitCode: kranzcli.ExitUsage,
+	}
 }

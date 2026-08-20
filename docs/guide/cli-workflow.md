@@ -30,19 +30,23 @@ supervisor.
 ```console
 $ kranz ps
 ID        NAME      PROJECT  MODE        SERVICES  STATE    UPTIME
-7fa21c8d  shop-dev  Shop     background  4         running  18m
-91bc430a  billing   Billing  tui         3         running  6m
+7fa21c8d  shop-dev  Shop     background  4/4       running  18m
+91bc430a  billing   Billing  tui         3/3       running  6m
 ```
 
 `status` describes the services of one runtime:
 
 ```console
 $ kranz status
-NAME     STATE    PID    READY
-migrate  stopped  0      -
-api      running  26078  true
-worker   running  26085  true
+NAME     STATE    HEALTH  UPTIME  PID    PORTS
+migrate  stopped  -       -       -      -
+api      running  ready   18m     26078  3000
+worker   running  -       18m     26085  -
 ```
+
+`HEALTH` is `-` when no readiness or liveness probe is configured. Kranz does
+not turn the internal assumption that a missing probe permits startup into a
+false claim that a probe passed.
 
 ## Act on services
 
@@ -131,8 +135,9 @@ Wave 3:
 
 ## Scripting
 
-Every command takes `--output json` and answers with a versioned envelope, so a
-script never parses prose:
+Non-interactive commands that return a result take `--output json` and answer
+with a versioned envelope, so a script never parses prose. The interactive TUI,
+help text, and generated completion scripts remain text:
 
 ```bash
 if ! kranz doctor --output json > report.json; then
@@ -140,8 +145,14 @@ if ! kranz doctor --output json > report.json; then
   exit 1
 fi
 
-kranz status --output json | jq -r '.data[] | select(.state != "running") | .name'
+kranz status --output json |
+  jq -r '.data.services[] | select(.state != "running") | .name'
 ```
+
+Mutation results carry what changed. For example,
+`restart api --output json` returns the full service expansion, and
+`reload --output json` returns the added, removed, restarted, and updated
+sets. `up -d --output json` returns the runtime's full ID, name, PID, and mode.
 
 Exit codes distinguish the failures worth branching on: `2` is your command
 being wrong, `3` is the configuration being wrong, `4` is something not

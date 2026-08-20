@@ -201,12 +201,29 @@ The Linux packages install these already.
 
 ## Machine-readable output
 
-`--output json` wraps every successful result in a versioned envelope:
+`--output json` wraps every successful non-interactive result in a versioned
+envelope:
 
 ```console
 $ kranz ps --output json
 {"schema_version":1,"data":[]}
 ```
+
+Commands report the result they produced rather than an empty success marker:
+
+```console
+$ kranz restart api --output json
+{"schema_version":1,"data":{"command":"restart","services":["api","web"]}}
+
+$ kranz reload --output json
+{"schema_version":1,"data":{"command":"reload","runtime":"shop-dev","changed":false,"added":[],"removed":[],"restarted":[],"updated":[]}}
+```
+
+`init --output json` omits the human preview and reports the absolute path it
+wrote, the project, services, action count, and suggested next commands.
+`up -d --output json` reports the new runtime's full ID, name, PID, and mode.
+Foreground `up` and `attach` require a terminal; help and completion output
+are text artifacts rather than data envelopes.
 
 Failures use the same envelope with an `error` object, and stdout stays valid
 JSON so a script never has to parse prose:
@@ -216,7 +233,16 @@ $ kranz list --output json
 {"schema_version":1,"error":{"code":"no_project","message":"no Kranz configuration was found in this directory","hint":"Run from a project directory or pass -f PATH."}}
 ```
 
+Commands that completed their work but found an unsuccessful outcome keep the
+useful result in `data` and signal failure with the exit code. In particular, a
+failed `doctor` returns `findings`, `services_checked`, `problems`, and
+`warnings` in one envelope with exit `3`; a failed action returns its captured
+output and exits `1`. They never append a second envelope.
+
 `kranz logs --follow --output json` emits one envelope per event as it arrives.
+For `status`, services are under `.data.services[]`; `.data.session` carries
+the runtime identity. Unconfigured readiness and liveness probes are `null`,
+not successful booleans.
 
 ## Exit codes
 

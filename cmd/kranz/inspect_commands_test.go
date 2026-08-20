@@ -114,6 +114,30 @@ func TestPlanRejectsAnUnknownSelector(t *testing.T) {
 	}
 }
 
+func TestDoctorJSONKeepsAFailedPreflightToOneUsefulEnvelope(t *testing.T) {
+	directory := t.TempDir()
+	project := "project: Broken\nservices:\n  api:\n    command: sleep 60\n    shell: /definitely/missing/shell\n"
+	if err := os.WriteFile(filepath.Join(directory, "kranz.yaml"), []byte(project), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	if code := execute([]string{"-C", directory, "--output=json", "doctor"}, &stdout, &stderr); code != kranzcli.ExitConfig {
+		t.Fatalf("exit = %d, stdout = %q, stderr = %q", code, stdout.String(), stderr.String())
+	}
+	if stderr.Len() != 0 || !json.Valid(stdout.Bytes()) {
+		t.Fatalf("stdout/stderr = %q/%q", stdout.String(), stderr.String())
+	}
+	var envelope struct {
+		Data doctorResult `json:"data"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Data.ServicesChecked != 1 || envelope.Data.Problems != 1 || len(envelope.Data.Findings) < 3 {
+		t.Fatalf("doctor result = %#v", envelope.Data)
+	}
+}
+
 func TestInfoDescribesProjectAndService(t *testing.T) {
 	directory := inspectionDirectory(t)
 
@@ -225,10 +249,71 @@ func TestInfoReportsLiveStateWhenARuntimeIsRunning(t *testing.T) {
 	})
 
 	output := runInspection(t, directory, "info", "api")
-	for _, want := range []string{"Right now", "running", "4242", "ready", "65501"} {
+	for _, want := range []string{"Right now", "running", "4242", "Health:    -", "65501"} {
 		if !strings.Contains(output, want) {
 			t.Errorf("info omits %q:\n%s", want, output)
 		}
+	}
+}
+
+func TestHealthLabelDistinguishesConfiguredProbesFromAssumedHealth(t *testing.T) {
+	readiness := &config.CheckConfig{Type: config.CheckCommand, Command: "true"}
+	liveness := &config.CheckConfig{Type: config.CheckCommand, Command: "true"}
+	for _, test := range []struct {
+		name     string
+		snapshot *app.ServiceSnapshot
+		want     string
+	}{
+		{
+			name:     "no probes",
+			snapshot: &app.ServiceSnapshot{Health: app.HealthSnapshot{Observed: true, Ready: true, Alive: true}},
+			want:     "-",
+		},
+		{
+			name: "ready log is reflected by lifecycle state, not probe health",
+			snapshot: &app.ServiceSnapshot{
+				Config: config.Service{ReadyLogLine: "ready"},
+				Health: app.HealthSnapshot{Observed: true, Ready: true, Alive: true},
+			},
+			want: "-",
+		},
+		{
+			name: "readiness checking",
+			snapshot: &app.ServiceSnapshot{
+				Config: config.Service{HealthCheck: &config.HealthCheckConfig{Readiness: readiness}},
+			},
+			want: "checking",
+		},
+		{
+			name: "readiness ready",
+			snapshot: &app.ServiceSnapshot{
+				Config: config.Service{HealthCheck: &config.HealthCheckConfig{Readiness: readiness}},
+				Health: app.HealthSnapshot{Observed: true, Ready: true, Alive: true},
+			},
+			want: "ready",
+		},
+		{
+			name: "liveness failed",
+			snapshot: &app.ServiceSnapshot{
+				Config: config.Service{HealthCheck: &config.HealthCheckConfig{Liveness: liveness}},
+				Health: app.HealthSnapshot{Observed: true, Ready: true, Alive: false},
+			},
+			want: "unhealthy",
+		},
+		{
+			name: "liveness alive",
+			snapshot: &app.ServiceSnapshot{
+				Config: config.Service{HealthCheck: &config.HealthCheckConfig{Liveness: liveness}},
+				Health: app.HealthSnapshot{Observed: true, Ready: true, Alive: true},
+			},
+			want: "alive",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := healthLabel(test.snapshot); got != test.want {
+				t.Fatalf("healthLabel() = %q, want %q", got, test.want)
+			}
+		})
 	}
 }
 

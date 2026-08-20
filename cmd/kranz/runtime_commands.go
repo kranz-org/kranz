@@ -149,6 +149,9 @@ func runUp(options kranzcli.GlobalOptions, args []string, stdout io.Writer) erro
 			selectors = append(selectors, arg)
 		}
 	}
+	if !detached && options.Output != kranzcli.OutputText {
+		return &kranzcli.Error{Code: "invalid_output", Message: "foreground up requires text output", Hint: "Use `kranz up -d --output json` for a machine-readable background start.", ExitCode: kranzcli.ExitUsage}
+	}
 	if noStart && len(selectors) > 0 {
 		return &kranzcli.Error{Code: "invalid_arguments", Message: "--no-start cannot be combined with selectors", ExitCode: kranzcli.ExitUsage}
 	}
@@ -268,6 +271,13 @@ type backgroundReady struct {
 	ExitCode int    `json:"exit_code,omitempty"`
 }
 
+type backgroundStartResult struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	PID  int    `json:"pid"`
+	Mode string `json:"mode"`
+}
+
 var newBackgroundCommand = func(executable string, args ...string) *exec.Cmd { return exec.Command(executable, args...) }
 
 func spawnBackground(options kranzcli.GlobalOptions, selectors []string, noStart bool, stdout io.Writer) error {
@@ -345,6 +355,11 @@ func spawnBackground(options kranzcli.GlobalOptions, selectors []string, noStart
 		}
 		if err := command.Process.Release(); err != nil {
 			return err
+		}
+		if options.Output == kranzcli.OutputJSON {
+			return kranzcli.WriteJSON(stdout, backgroundStartResult{
+				ID: result.ready.ID, Name: result.ready.Name, PID: result.ready.PID, Mode: "background",
+			})
 		}
 		_, err = fmt.Fprintf(stdout, "Started %s (%s), PID %d.\n", result.ready.Name, shortID(result.ready.ID), result.ready.PID)
 		return err
@@ -611,11 +626,15 @@ func runStatus(options kranzcli.GlobalOptions, args []string, stdout io.Writer) 
 		safe := make([]statusService, 0, len(services))
 		for _, service := range services {
 			var ready, alive *bool
-			if service.Health.Observed {
-				readyValue, aliveValue := service.Health.Ready, service.Health.Alive
-				ready, alive = &readyValue, &aliveValue
+			if service.Health.Observed && hasReadinessProbe(service) {
+				readyValue := service.Health.Ready
+				ready = &readyValue
 			}
-			safe = append(safe, statusService{Name: service.Name, State: service.State.Status.String(), PID: service.State.PID, Ready: ready, Alive: alive, DetectedPorts: service.DetectedPorts})
+			if service.Health.Observed && hasLivenessProbe(service) {
+				aliveValue := service.Health.Alive
+				alive = &aliveValue
+			}
+			safe = append(safe, statusService{Name: service.Name, State: service.State.Status.String(), PID: service.State.PID, Ready: ready, Alive: alive, DetectedPorts: emptyIntsIfNil(service.DetectedPorts)})
 		}
 		return kranzcli.WriteJSON(stdout, struct {
 			Session  kranzruntime.SessionMetadata `json:"session"`
@@ -647,16 +666,35 @@ func runStatus(options kranzcli.GlobalOptions, args []string, stdout io.Writer) 
 	return nil
 }
 
-// healthLabel reports readiness in words. A bare true/false column made a
-// service with no health check look like a failing one.
+// healthLabel reports configured probe state in words. Internally, missing
+// probes count as successful so they do not gate startup; presenting that
+// assumption as an observed "ready" result would give users a false green.
 func healthLabel(service *app.ServiceSnapshot) string {
-	if !service.Health.Observed {
+	hasReadiness, hasLiveness := hasReadinessProbe(service), hasLivenessProbe(service)
+	if !hasReadiness && !hasLiveness {
 		return "-"
 	}
-	if service.Health.Ready {
-		return "ready"
+	if !service.Health.Observed {
+		return "checking"
 	}
-	return "not ready"
+	if hasLiveness && !service.Health.Alive {
+		return "unhealthy"
+	}
+	if hasReadiness {
+		if service.Health.Ready {
+			return "ready"
+		}
+		return "not ready"
+	}
+	return "alive"
+}
+
+func hasReadinessProbe(service *app.ServiceSnapshot) bool {
+	return service.Config.HealthCheck != nil && service.Config.HealthCheck.Readiness != nil
+}
+
+func hasLivenessProbe(service *app.ServiceSnapshot) bool {
+	return service.Config.HealthCheck != nil && service.Config.HealthCheck.Liveness != nil
 }
 
 // pidLabel hides the zero a detached or stopped service reports. Printing 0 as
@@ -697,8 +735,7 @@ func runLifecycle(options kranzcli.GlobalOptions, command string, args []string,
 		if reloadErr != nil {
 			return reloadErr
 		}
-		reportReload(stdout, options, record.Name, result)
-		return nil
+		return reportReload(stdout, options, record.Name, result)
 	}
 	names, err := resolveServiceSelectors(client.Config(), args)
 	if err != nil {
@@ -726,8 +763,7 @@ func runLifecycle(options kranzcli.GlobalOptions, command string, args []string,
 	// A command that changes something says what it changed. Silence is
 	// indistinguishable from a no-op, and a selector that expands to dependents
 	// changes more than the user named.
-	reportLifecycle(stdout, options, command, names)
-	return nil
+	return reportLifecycle(stdout, options, command, names)
 }
 
 // expandToDependents returns the services a stop or restart will actually
@@ -753,23 +789,45 @@ func expandToDependents(client *kranzruntime.Client, names []string) []string {
 
 var lifecyclePastTense = map[string]string{"start": "Started", "stop": "Stopped", "restart": "Restarted"}
 
-func reportLifecycle(stdout io.Writer, options kranzcli.GlobalOptions, command string, names []string) {
-	if options.Output == kranzcli.OutputJSON {
-		return
-	}
-	_, _ = fmt.Fprintf(stdout, "%s %s.\n", lifecyclePastTense[command], strings.Join(names, ", "))
+type lifecycleCommandResult struct {
+	Command  string   `json:"command"`
+	Services []string `json:"services"`
 }
 
-func reportReload(stdout io.Writer, options kranzcli.GlobalOptions, name string, result app.ReloadResult) {
+func reportLifecycle(stdout io.Writer, options kranzcli.GlobalOptions, command string, names []string) error {
 	if options.Output == kranzcli.OutputJSON {
-		return
+		return kranzcli.WriteJSON(stdout, lifecycleCommandResult{Command: command, Services: emptyIfNil(names)})
 	}
+	_, err := fmt.Fprintf(stdout, "%s %s.\n", lifecyclePastTense[command], strings.Join(names, ", "))
+	return err
+}
+
+type reloadCommandResult struct {
+	Command   string   `json:"command"`
+	Runtime   string   `json:"runtime"`
+	Changed   bool     `json:"changed"`
+	Added     []string `json:"added"`
+	Removed   []string `json:"removed"`
+	Restarted []string `json:"restarted"`
+	Updated   []string `json:"updated"`
+}
+
+func reportReload(stdout io.Writer, options kranzcli.GlobalOptions, name string, result app.ReloadResult) error {
 	changed := len(result.Added) + len(result.Removed) + len(result.Restarted) + len(result.Updated)
-	if changed == 0 {
-		_, _ = fmt.Fprintf(stdout, "Reloaded %s. Nothing changed.\n", name)
-		return
+	if options.Output == kranzcli.OutputJSON {
+		return kranzcli.WriteJSON(stdout, reloadCommandResult{
+			Command: "reload", Runtime: name, Changed: changed > 0,
+			Added: emptyIfNil(result.Added), Removed: emptyIfNil(result.Removed),
+			Restarted: emptyIfNil(result.Restarted), Updated: emptyIfNil(result.Updated),
+		})
 	}
-	_, _ = fmt.Fprintf(stdout, "Reloaded %s.\n", name)
+	if changed == 0 {
+		_, err := fmt.Fprintf(stdout, "Reloaded %s. Nothing changed.\n", name)
+		return err
+	}
+	if _, err := fmt.Fprintf(stdout, "Reloaded %s.\n", name); err != nil {
+		return err
+	}
 	// Ordered explicitly: a map would print the same reload differently on
 	// consecutive runs.
 	for _, group := range []struct {
@@ -782,9 +840,12 @@ func reportReload(stdout io.Writer, options kranzcli.GlobalOptions, name string,
 		{"updated", result.Updated},
 	} {
 		if len(group.services) > 0 {
-			_, _ = fmt.Fprintf(stdout, "  %s: %s\n", group.label, strings.Join(group.services, ", "))
+			if _, err := fmt.Fprintf(stdout, "  %s: %s\n", group.label, strings.Join(group.services, ", ")); err != nil {
+				return err
+			}
 		}
 	}
+	return nil
 }
 
 func resolveServiceSelectors(cfg *config.Config, selectors []string) ([]string, error) {
@@ -847,8 +908,7 @@ func runDown(options kranzcli.GlobalOptions, args []string, stdout io.Writer) er
 		if err := client.Shutdown(); err != nil {
 			return err
 		}
-		reportDown(stdout, options, record.Name, shortID(record.ID), false)
-		return nil
+		return reportDown(stdout, options, record.Name, record.ID, false)
 	}
 	if !force {
 		return classifyRuntimeError(dialErr)
@@ -862,22 +922,29 @@ func runDown(options kranzcli.GlobalOptions, args []string, stdout io.Writer) er
 	if err := registry.ForceDown(forceCtx, record); err != nil {
 		return classifyRuntimeError(err)
 	}
-	reportDown(stdout, options, record.Name, shortID(record.ID), true)
-	return nil
+	return reportDown(stdout, options, record.Name, record.ID, true)
 }
 
 // reportDown names the runtime that stopped. A bare prompt after `down` leaves
 // the user checking `ps` to find out whether anything happened, and a forced
 // stop is worth distinguishing from an orderly one.
-func reportDown(stdout io.Writer, options kranzcli.GlobalOptions, name, id string, forced bool) {
+type downCommandResult struct {
+	Command string `json:"command"`
+	Runtime string `json:"runtime"`
+	ID      string `json:"id"`
+	Forced  bool   `json:"forced"`
+}
+
+func reportDown(stdout io.Writer, options kranzcli.GlobalOptions, name, id string, forced bool) error {
 	if options.Output == kranzcli.OutputJSON {
-		return
+		return kranzcli.WriteJSON(stdout, downCommandResult{Command: "down", Runtime: name, ID: id, Forced: forced})
 	}
 	if forced {
-		_, _ = fmt.Fprintf(stdout, "Force-stopped %s (%s). Services it owned may have survived; check with `kranz ps`.\n", name, id)
-		return
+		_, err := fmt.Fprintf(stdout, "Force-stopped %s (%s). Services it owned may have survived; check with `kranz ps`.\n", name, shortID(id))
+		return err
 	}
-	_, _ = fmt.Fprintf(stdout, "Stopped %s (%s).\n", name, id)
+	_, err := fmt.Fprintf(stdout, "Stopped %s (%s).\n", name, shortID(id))
+	return err
 }
 
 func classifyRuntimeError(err error) error {

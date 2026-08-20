@@ -42,28 +42,41 @@ workflow; generated binaries are never checked into the repository.
    make verify
    make lint
    make release-check
-   make snapshot
+   make snapshot RELEASE_VERSION=0.8.0 # use the release being prepared
    ./dist/kranz_darwin_arm64_v8.0/kranz --version # choose the local platform build
+   make packages-verify
+   PACKAGE_ARCH=arm64 make packages-verify
    ```
+
+   `RELEASE_VERSION` gives an unpublished snapshot the exact version that the
+   future tag will produce. Without it, GoReleaser derives a `-next` version
+   from the latest existing tag, which is useful for ordinary development but
+   does not verify release metadata. The package checks require Docker or
+   Podman and pin each container to the architecture of the package under test.
 
 4. Create an annotated tag without pushing it automatically:
 
    ```bash
-   make tag RELEASE_VERSION=0.6.1
-   git show v0.6.1
-   git push origin v0.6.1
+   make tag RELEASE_VERSION=0.8.0 # use the release being published
+   git show v0.8.0
+   git push origin v0.8.0
    ```
 
 ## Verify the published release
 
-The workflow must publish four Darwin/Linux archives, `checksums.txt`, and
-`kranz.rb`. It replaces generated commit notes with the matching version section
-from `CHANGELOG.md`, so squash merges cannot produce an empty release body.
-Verify the release before announcing it:
+The workflow must publish four Darwin/Linux archives, four Linux packages
+(`.deb` and `.rpm` for amd64 and arm64), `checksums.txt`, and `kranz.rb`. It
+replaces generated commit notes with the matching version section from
+`CHANGELOG.md`, so squash merges cannot produce an empty release body. Verify
+the release before announcing it:
 
 ```bash
-gh release view v0.6.1
-gh release download v0.6.1 --pattern 'checksums.txt' --pattern '*.tar.gz'
+gh release view v0.8.0
+gh release download v0.8.0 \
+  --pattern 'checksums.txt' \
+  --pattern '*.tar.gz' \
+  --pattern '*.deb' \
+  --pattern '*.rpm'
 shasum -a 256 -c checksums.txt
 ```
 

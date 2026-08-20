@@ -4,6 +4,8 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-08-21
+
 ### Added
 
 - A complete command-line workflow over one project runtime. `kranz up -d`
@@ -28,11 +30,16 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
   by owner and name together, and a failed action fails the command.
 - `kranz completion` for bash, zsh, and fish, generated from the command tree so
   a shell cannot offer a command the binary does not have.
-- `--output json` on every command, wrapping results and failures in one
-  versioned envelope, with exit codes that distinguish usage, configuration,
-  missing, conflicting, and unavailable.
+- `--output json` on non-interactive result commands, wrapping results and
+  failures in one versioned envelope, with exit codes that distinguish usage,
+  configuration, missing, conflicting, and unavailable. Mutation results name
+  the runtime and services they changed; `init` and `up -d` report the
+  resources they created, and failed diagnostics remain one valid result
+  envelope with a non-zero exit code.
 - Linux `.deb` and `.rpm` packages for amd64 and arm64, installing the binary,
-  the shell completions, and the documentation.
+  the shell completions, and the documentation. Package verification pins the
+  container platform to the package architecture, so it also works from an
+  Apple Silicon release machine; set `PACKAGE_ARCH=arm64` to test arm64.
 
 ### Changed
 
@@ -44,6 +51,9 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 - `kranz status` reports health, uptime, and detected ports, and shows `-`
   rather than `0` for a service that has no process of its own. `kranz ps`
   reports running and total services instead of a bare total.
+- A service with no configured readiness or liveness probe now shows `-`
+  instead of the misleading `ready`; JSON uses `null` for unconfigured
+  probes.
 - `kranz info SERVICE` adds what the service is doing right now when a runtime
   is up.
 - `start`, `stop`, `restart`, `reload`, and `down` say what they changed. A stop
@@ -314,7 +324,8 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 - Explicit global-user and project-config save destinations in the live theme picker.
 - Native compatibility for common Process Compose configurations.
 
-[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.7.2...HEAD
+[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/kranz-org/kranz/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/kranz-org/kranz/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/kranz-org/kranz/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/kranz-org/kranz/compare/v0.6.1...v0.7.0

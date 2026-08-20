@@ -1,4 +1,4 @@
-.PHONY: all build dev run install fmt-check test vet verify lint clean snapshot release-check homebrew-formula-check release-notes-check packages-verify tag
+.PHONY: all build dev run install fmt-check test vet verify lint clean snapshot release-check homebrew-formula-check release-notes-check packages-script-check packages-verify tag
 
 APP_NAME := kranz
 BIN_DIR := bin
@@ -40,7 +40,7 @@ test:
 vet:
 	$(GO) vet ./...
 
-verify: fmt-check vet test build homebrew-formula-check release-notes-check
+verify: fmt-check vet test build homebrew-formula-check release-notes-check packages-script-check
 
 lint:
 	$(GOLANGCI_LINT) run ./...
@@ -54,8 +54,11 @@ homebrew-formula-check:
 release-notes-check:
 	./scripts/test-extract-release-notes.sh
 
+packages-script-check:
+	./scripts/test-verify-linux-packages.sh
+
 snapshot:
-	$(GORELEASER) release --snapshot --clean
+	SNAPSHOT_VERSION="$(RELEASE_VERSION)" $(GORELEASER) release --snapshot --clean
 
 # packages-verify installs the built .deb and .rpm in stock images and removes
 # them again. It needs a container runtime, so it is not part of `verify`.

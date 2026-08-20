@@ -55,6 +55,28 @@ the web listener automatically and shows both services' state and logs.
 Already using a supported `process-compose.yaml`? Run `kranz` beside it. Use
 native `kranz.yaml` when you need the complete lifecycle model.
 
+## Command line
+
+The TUI is optional. Kranz 0.8 adds a complete CLI for starting a project in
+the background, inspecting it from another terminal, acting on services, and
+returning stable JSON to scripts:
+
+```bash
+kranz init --from Procfile
+kranz config check
+kranz up -d
+kranz status
+kranz logs api --tail 20
+kranz restart api
+kranz down
+```
+
+Use `kranz --help` to discover commands, `kranz COMMAND --help` for command
+options, and `--output json` for the versioned machine-readable envelope. See
+[Working from the command line](https://kranz-org.github.io/kranz/guide/cli-workflow)
+for a complete session and the [CLI reference](https://kranz-org.github.io/kranz/reference/cli)
+for every command, option, output contract, and exit code.
+
 ## What it handles
 
 - Dependency-aware startup and reverse-order shutdown
@@ -71,6 +93,7 @@ native `kranz.yaml` when you need the complete lifecycle model.
 ## Documentation
 
 - [Getting started](https://kranz-org.github.io/kranz/guide/getting-started)
+- [Working from the command line](https://kranz-org.github.io/kranz/guide/cli-workflow)
 - [Configuration and lifecycle](https://kranz-org.github.io/kranz/guide/configuration)
 - [Configuration reference](https://kranz-org.github.io/kranz/reference/configuration)
 - [Annotated kranz.yaml](https://kranz-org.github.io/kranz/reference/kranz-yaml)

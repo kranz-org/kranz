@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,6 +49,42 @@ func TestInitWritesAValidConfigurationFromFlags(t *testing.T) {
 	}
 	if cfg.Services["api"].Command != "sleep 60" {
 		t.Errorf("api command = %q", cfg.Services["api"].Command)
+	}
+}
+
+func TestInitJSONWritesOneUsefulEnvelopeWithoutHumanPreview(t *testing.T) {
+	withoutTerminal(t)
+	directory := t.TempDir()
+	var stdout, stderr bytes.Buffer
+	if code := execute([]string{
+		"-C", directory, "--output=json", "init",
+		"--project", "Demo", "--service", "api", "--command", "sleep 60", "--yes",
+	}, &stdout, &stderr); code != 0 {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr.String())
+	}
+	if stderr.Len() != 0 || !json.Valid(stdout.Bytes()) {
+		t.Fatalf("stdout/stderr = %q/%q", stdout.String(), stderr.String())
+	}
+	var envelope struct {
+		SchemaVersion int        `json:"schema_version"`
+		Data          initResult `json:"data"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.SchemaVersion != kranzcli.SchemaVersion ||
+		!envelope.Data.Written ||
+		envelope.Data.Project != "Demo" ||
+		len(envelope.Data.Services) != 1 ||
+		envelope.Data.Services[0] != "api" ||
+		envelope.Data.Actions != 0 {
+		t.Fatalf("init envelope = %#v", envelope)
+	}
+	if envelope.Data.Path != filepath.Join(directory, "kranz.yaml") {
+		t.Errorf("path = %q, want absolute target", envelope.Data.Path)
+	}
+	if strings.Contains(stdout.String(), "----------") || strings.Contains(stdout.String(), "Wrote kranz.yaml") {
+		t.Errorf("JSON contains human preview: %s", stdout.String())
 	}
 }
 

@@ -36,11 +36,11 @@ type Command struct {
 // change, which is what moves the command into the working help section.
 func DefaultTree() *Command {
 	return &Command{Name: "kranz", Summary: "a local service orchestrator", Children: []*Command{
-		{Name: "init", Summary: "create a Kranz configuration", Usage: "kranz init [--from PATH] [--project NAME] [--service NAME] [--command COMMAND] [-o PATH] [--yes]"},
+		{Name: "init", Summary: "create a Kranz configuration", Usage: "kranz init [--from PATH] [--project NAME] [--service NAME] [--command COMMAND] [-o PATH] [-y|--yes]"},
 		{Name: "config", Summary: "inspect effective configuration", Default: "show", Children: []*Command{
 			{Name: "check", Summary: "load and validate configuration"},
 			{Name: "show", Summary: "print redacted effective configuration", Usage: "kranz config show [--provenance]"},
-			{Name: "explain", Summary: "show field provenance", Usage: "kranz config explain [SERVICE]"},
+			{Name: "explain", Summary: "show field provenance", Usage: "kranz config explain [SERVICE] [--all]"},
 		}},
 		{Name: "doctor", Summary: "run project preflight checks"},
 		{Name: "ps", Summary: "list active project runtimes"},
@@ -53,12 +53,12 @@ func DefaultTree() *Command {
 		{Name: "port", Summary: "inspect a local port", Default: "inspect", Children: []*Command{
 			{Name: "inspect", Summary: "identify a port listener", Usage: "kranz port inspect PORT"},
 		}},
-		{Name: "up", Summary: "create a project runtime", Usage: "kranz up [SELECTOR ...]"},
+		{Name: "up", Summary: "create a project runtime", Usage: "kranz up [SELECTOR ...] [-d|--detach]\n  kranz up --no-start [-d|--detach]"},
 		{Name: "start", Summary: "start services", Usage: "kranz start SELECTOR ..."},
 		{Name: "stop", Summary: "stop services", Usage: "kranz stop SELECTOR ..."},
 		{Name: "restart", Summary: "restart services", Usage: "kranz restart SELECTOR ..."},
 		{Name: "reload", Summary: "reload runtime configuration"},
-		{Name: "down", Summary: "stop a project runtime"},
+		{Name: "down", Summary: "stop a project runtime", Usage: "kranz down [--force]"},
 		{Name: "attach", Summary: "open the TUI for an active runtime"},
 		{Name: "logs", Summary: "show service logs", Usage: "kranz logs [SELECTOR ...] [--tail N | --all] [--since D] [--follow]"},
 		{Name: "action", Summary: "inspect and run actions", Default: "list", Children: []*Command{

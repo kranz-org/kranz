@@ -103,7 +103,12 @@ checksum:
   algorithm: sha256
 
 snapshot:
-  version_template: "{{ incpatch .Version }}-next"
+  version_template: >-
+    {{- if index .Env "SNAPSHOT_VERSION" -}}
+    {{ .Env.SNAPSHOT_VERSION }}
+    {{- else -}}
+    {{ incpatch .Version }}-next
+    {{- end -}}
 
 changelog:
   use: git

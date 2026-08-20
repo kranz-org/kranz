@@ -120,7 +120,7 @@ func runConfigCheck(options kranzcli.GlobalOptions, stdout io.Writer) error {
 			Services    int      `json:"services"`
 			Actions     int      `json:"actions"`
 			Diagnostics []string `json:"diagnostics"`
-		}{cfg.Project, cfg.RuntimeName(), paths, len(cfg.Services), len(cfg.ActionIDs()), cfg.Diagnostics})
+		}{cfg.Project, cfg.RuntimeName(), paths, len(cfg.Services), len(cfg.ActionIDs()), emptyIfNil(cfg.Diagnostics)})
 	}
 	_, _ = fmt.Fprintf(stdout, "Configuration is valid.\n\nProject:  %s\nRuntime:  %s\nServices: %d\nActions:  %d\n", cfg.Project, cfg.RuntimeName(), len(cfg.Services), len(cfg.ActionIDs()))
 	_, _ = fmt.Fprintf(stdout, "\nLayers:\n")
@@ -766,16 +766,24 @@ func protocolOf(info *config.PortInfo) string {
 // runDoctor runs preflight checks that do not start anything. It reports every
 // finding rather than stopping at the first, because a preflight that hides
 // the second problem behind the first costs another run to discover it.
+type doctorFinding struct {
+	Check   string `json:"check"`
+	Subject string `json:"subject"`
+	Status  string `json:"status"`
+	Detail  string `json:"detail"`
+}
+
+type doctorResult struct {
+	Findings        []doctorFinding `json:"findings"`
+	ServicesChecked int             `json:"services_checked"`
+	Problems        int             `json:"problems"`
+	Warnings        int             `json:"warnings"`
+}
+
 func runDoctor(options kranzcli.GlobalOptions, stdout io.Writer) error {
-	type finding struct {
-		Check   string `json:"check"`
-		Subject string `json:"subject"`
-		Status  string `json:"status"`
-		Detail  string `json:"detail"`
-	}
-	var findings []finding
+	var findings []doctorFinding
 	record := func(check, subject, status, detail string) {
-		findings = append(findings, finding{check, subject, status, detail})
+		findings = append(findings, doctorFinding{check, subject, status, detail})
 	}
 
 	cfg, paths, err := loadProject(options)
@@ -861,7 +869,10 @@ func runDoctor(options kranzcli.GlobalOptions, stdout io.Writer) error {
 	}
 
 	if options.Output == kranzcli.OutputJSON {
-		if err := kranzcli.WriteJSON(stdout, findings); err != nil {
+		if err := kranzcli.WriteJSON(stdout, doctorResult{
+			Findings: emptyIfNil(findings), ServicesChecked: len(cfg.Services),
+			Problems: failed, Warnings: warned,
+		}); err != nil {
 			return err
 		}
 	} else {
@@ -887,6 +898,9 @@ func runDoctor(options kranzcli.GlobalOptions, stdout io.Writer) error {
 		}
 	}
 	if failed > 0 {
+		if options.Output == kranzcli.OutputJSON {
+			return requestedExitError{code: kranzcli.ExitConfig}
+		}
 		return &kranzcli.Error{Code: "preflight_failed", Message: fmt.Sprintf("%d preflight check(s) failed", failed), ExitCode: kranzcli.ExitConfig}
 	}
 	return nil
@@ -980,9 +994,9 @@ func without(values []string, exclude string) []string {
 
 // emptyIfNil and emptyIntsIfNil keep JSON arrays as arrays. A consumer that
 // iterates a list should not have to special-case null for "nothing here".
-func emptyIfNil(values []string) []string {
+func emptyIfNil[T any](values []T) []T {
 	if values == nil {
-		return []string{}
+		return []T{}
 	}
 	return values
 }

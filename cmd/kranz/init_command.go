@@ -44,6 +44,15 @@ type initOptions struct {
 	assumeYes  bool
 }
 
+type initResult struct {
+	Path         string   `json:"path"`
+	Written      bool     `json:"written"`
+	Project      string   `json:"project"`
+	Services     []string `json:"services"`
+	Actions      int      `json:"actions"`
+	NextCommands []string `json:"next_commands"`
+}
+
 func parseInitOptions(args []string) (initOptions, error) {
 	options := initOptions{outputPath: "kranz.yaml"}
 	value := func(index *int, name string) (string, error) {
@@ -131,7 +140,11 @@ func runInit(globals kranzcli.GlobalOptions, args []string, stdout io.Writer) er
 	}
 
 	prompt := bufio.NewReader(stdin)
-	interactive := isTerminal() && !options.assumeYes
+	// JSON is a machine contract: prompts and the human-readable preview would
+	// corrupt the single envelope. With JSON selected, init follows the same
+	// deterministic non-interactive path as a pipe and reports any missing
+	// inputs as a structured error.
+	interactive := globals.Output == kranzcli.OutputText && isTerminal() && !options.assumeYes
 
 	document, err := buildInitDocument(directory, options, interactive, prompt, stdout)
 	if err != nil {
@@ -142,10 +155,12 @@ func runInit(globals kranzcli.GlobalOptions, args []string, stdout io.Writer) er
 		return err
 	}
 
-	// The preview is the point of the wizard: the user approves a file they
-	// have actually read, not a description of one.
-	_, _ = fmt.Fprintf(stdout, "\n%s\n%s\n", relativeTo(directory, target), strings.Repeat("-", len(relativeTo(directory, target))))
-	_, _ = fmt.Fprint(stdout, rendered)
+	if globals.Output == kranzcli.OutputText {
+		// The preview is the point of the wizard: the user approves a file they
+		// have actually read, not a description of one.
+		_, _ = fmt.Fprintf(stdout, "\n%s\n%s\n", relativeTo(directory, target), strings.Repeat("-", len(relativeTo(directory, target))))
+		_, _ = fmt.Fprint(stdout, rendered)
+	}
 
 	if _, err := os.Stat(target); err == nil {
 		if !options.assumeYes {
@@ -184,13 +199,28 @@ func runInit(globals kranzcli.GlobalOptions, args []string, stdout io.Writer) er
 	}
 	// A written file that does not load is worse than no file, so success is
 	// only reported after the loader has accepted what was just written.
-	if _, err := config.LoadFiles([]string{target}); err != nil {
+	cfg, err := config.LoadFiles([]string{target})
+	if err != nil {
 		return &kranzcli.Error{
 			Code:     "invalid_config",
 			Message:  fmt.Sprintf("%s was written but does not load", relativeTo(directory, target)),
 			ExitCode: kranzcli.ExitConfig,
 			Cause:    err,
 		}
+	}
+	if globals.Output == kranzcli.OutputJSON {
+		reportedPath := target
+		if absolute, absoluteErr := filepath.Abs(target); absoluteErr == nil {
+			reportedPath = absolute
+		}
+		return kranzcli.WriteJSON(stdout, initResult{
+			Path:         reportedPath,
+			Written:      true,
+			Project:      cfg.Project,
+			Services:     cfg.ServiceNames(),
+			Actions:      len(cfg.ActionIDs()),
+			NextCommands: []string{"kranz config check", "kranz up"},
+		})
 	}
 	_, _ = fmt.Fprintf(stdout, "\nWrote %s.\nNext: `kranz config check`, then `kranz up`.\n", relativeTo(directory, target))
 	return nil

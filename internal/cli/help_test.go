@@ -103,3 +103,25 @@ func TestReleaseSurfaceHasNoPlannedCommands(t *testing.T) {
 		t.Errorf("help still shows a planned section:\n%s", output)
 	}
 }
+
+func TestHelpDocumentsLifecycleOptionsThatChangeCommandMeaning(t *testing.T) {
+	for _, test := range []struct {
+		command []string
+		want    []string
+	}{
+		{[]string{"init"}, []string{"-y|--yes"}},
+		{[]string{"config", "explain"}, []string{"--all"}},
+		{[]string{"up"}, []string{"-d|--detach", "--no-start"}},
+		{[]string{"down"}, []string{"--force"}},
+	} {
+		output, err := Help(DefaultTree(), test.command)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range test.want {
+			if !strings.Contains(output, want) {
+				t.Errorf("help %v omits %q:\n%s", test.command, want, output)
+			}
+		}
+	}
+}
