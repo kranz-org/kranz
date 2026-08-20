@@ -107,6 +107,23 @@ func execute(args []string, stdout, stderr io.Writer) int {
 			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
 		}
 		return 0
+	case "completion":
+		if len(invocation.Args) != 1 {
+			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, &kranzcli.Error{
+				Code:     "invalid_arguments",
+				Message:  "completion takes exactly one shell",
+				Hint:     "Run `kranz completion bash`, `kranz completion zsh`, or `kranz completion fish`.",
+				ExitCode: kranzcli.ExitUsage,
+			})
+		}
+		script, err := kranzcli.Completion(tree, invocation.Args[0])
+		if err != nil {
+			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
+		}
+		if _, err := fmt.Fprint(stdout, script); err != nil {
+			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
+		}
+		return 0
 	case "action list":
 		if err := runActionList(invocation.Globals, invocation.Args, stdout); err != nil {
 			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)

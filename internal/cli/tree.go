@@ -60,7 +60,7 @@ func DefaultTree() *Command {
 			{Name: "info", Summary: "show action details", Usage: "kranz action info OWNER/ACTION"},
 			{Name: "run", Summary: "run an action", Usage: "kranz action run OWNER/ACTION"},
 		}},
-		{Name: "completion", Summary: "generate shell completion", Usage: "kranz completion bash|zsh|fish", Planned: true},
+		{Name: "completion", Summary: "generate shell completion", Usage: "kranz completion bash|zsh|fish"},
 		{Name: "help", Summary: "show command help", Usage: "kranz help [COMMAND]"},
 		{Name: "version", Summary: "show version and build metadata"},
 	}}
