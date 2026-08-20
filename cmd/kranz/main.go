@@ -50,6 +50,21 @@ func execute(args []string, stdout, stderr io.Writer) int {
 		}
 		return 0
 	}
+	// A command whose grammar is reserved but whose execution a later feature
+	// stream still has to attach is refused from the tree itself, so help and
+	// dispatch can never disagree about what this build supports.
+	if len(invocation.CommandPath) > 0 {
+		if command, resolveErr := tree.Resolve(invocation.CommandPath); resolveErr == nil && command.IsPlanned() {
+			err := &kranzcli.Error{
+				Code:     "not_implemented",
+				Message:  fmt.Sprintf("command %q is not implemented yet", invocation.Command()),
+				Hint:     "It is planned for v0.8.0. Run `kranz --help` for the commands this build supports.",
+				ExitCode: kranzcli.ExitUsage,
+			}
+			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
+		}
+	}
+
 	if invocation.Command() == "version" {
 		return writeVersion(stdout, stderr, invocation.Globals.Output)
 	}
