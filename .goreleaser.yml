@@ -2,6 +2,16 @@ version: 2
 
 project_name: kranz
 
+# The completion scripts shipped in the Linux packages are generated from the
+# binary's own command tree, so an installed completion can never offer a
+# command the installed binary does not have.
+before:
+  hooks:
+    - mkdir -p completions
+    - sh -c 'go run ./cmd/kranz completion bash > completions/kranz.bash'
+    - sh -c 'go run ./cmd/kranz completion zsh > completions/_kranz'
+    - sh -c 'go run ./cmd/kranz completion fish > completions/kranz.fish'
+
 builds:
   - id: kranz
     main: ./cmd/kranz
@@ -36,6 +46,57 @@ archives:
       - LICENSE
       - README.md
       - CHANGELOG.md
+
+nfpms:
+  - id: packages
+    ids:
+      - kranz
+    package_name: kranz
+    file_name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_
+      {{- if eq .Arch "amd64" }}amd64{{ else }}{{ .Arch }}{{ end }}
+    vendor: Kranz
+    homepage: https://github.com/kranz-org/kranz
+    maintainer: Kranz maintainers <noreply@github.com>
+    description: |-
+      Keyboard-first local service orchestrator with a terminal UI.
+      Kranz starts, supervises, and inspects the services of one project
+      from a single configuration file.
+    license: MIT
+    section: utils
+    priority: optional
+    formats:
+      - deb
+      - rpm
+    bindir: /usr/bin
+    # Kranz supervises processes the invoking user owns and stores its runtime
+    # state under that user's directories, so nothing here needs a system
+    # account, a unit file, or a post-install service start.
+    contents:
+      - src: ./completions/kranz.bash
+        dst: /usr/share/bash-completion/completions/kranz
+        file_info:
+          mode: 0644
+      - src: ./completions/_kranz
+        dst: /usr/share/zsh/site-functions/_kranz
+        file_info:
+          mode: 0644
+      - src: ./completions/kranz.fish
+        dst: /usr/share/fish/vendor_completions.d/kranz.fish
+        file_info:
+          mode: 0644
+      - src: ./LICENSE
+        dst: /usr/share/doc/kranz/LICENSE
+        file_info:
+          mode: 0644
+      - src: ./README.md
+        dst: /usr/share/doc/kranz/README.md
+        file_info:
+          mode: 0644
+      - src: ./CHANGELOG.md
+        dst: /usr/share/doc/kranz/CHANGELOG.md
+        file_info:
+          mode: 0644
 
 checksum:
   name_template: checksums.txt

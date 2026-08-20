@@ -34,3 +34,6 @@ docs/.vitepress/dist/
 
 # Example runtime markers
 examples/*/.kranz-demo/
+
+# Generated shell completions for packaging
+completions/

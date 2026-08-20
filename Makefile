@@ -1,4 +1,4 @@
-.PHONY: all build dev run install fmt-check test vet verify lint clean snapshot release-check homebrew-formula-check release-notes-check tag
+.PHONY: all build dev run install fmt-check test vet verify lint clean snapshot release-check homebrew-formula-check release-notes-check packages-verify tag
 
 APP_NAME := kranz
 BIN_DIR := bin
@@ -56,6 +56,11 @@ release-notes-check:
 
 snapshot:
 	$(GORELEASER) release --snapshot --clean
+
+# packages-verify installs the built .deb and .rpm in stock images and removes
+# them again. It needs a container runtime, so it is not part of `verify`.
+packages-verify:
+	./scripts/verify-linux-packages.sh
 
 tag:
 	@test -n "$(RELEASE_VERSION)" || (echo "usage: make tag RELEASE_VERSION=0.1.0" >&2; exit 2)
