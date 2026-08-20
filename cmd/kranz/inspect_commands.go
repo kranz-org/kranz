@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -10,10 +11,12 @@ import (
 	"strconv"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	kranzcli "github.com/kranz-org/kranz/internal/cli"
 	"github.com/kranz-org/kranz/internal/config"
 	"github.com/kranz-org/kranz/internal/port"
+	kranzruntime "github.com/kranz-org/kranz/internal/runtime"
 	"github.com/kranz-org/kranz/internal/service"
 )
 
@@ -531,58 +534,118 @@ func runPorts(options kranzcli.GlobalOptions, args []string, stdout io.Writer) e
 	if err != nil {
 		return err
 	}
+
+	// A port a service picked at runtime is the one the user actually needs,
+	// and it exists only in the running runtime. Reading the configuration
+	// alone would answer a question nobody asked: what the file says, rather
+	// than what is listening.
+	detected := detectedPorts(options)
+
 	type entry struct {
 		Service string `json:"service"`
 		Port    int    `json:"port"`
+		Origin  string `json:"origin"`
 		State   string `json:"state"`
 		PID     int    `json:"pid"`
 		Process string `json:"process"`
 	}
-	var wanted []int
-	owners := make(map[int]string)
+	type wanted struct {
+		service string
+		port    int
+		origin  string
+	}
+
+	var requested []wanted
+	seen := make(map[string]bool)
 	for _, name := range selected {
 		for _, number := range cfg.Services[name].Ports {
-			wanted = append(wanted, number)
-			owners[number] = name
+			key := fmt.Sprintf("%s/%d", name, number)
+			seen[key] = true
+			requested = append(requested, wanted{name, number, "declared"})
+		}
+		for _, number := range detected[name] {
+			key := fmt.Sprintf("%s/%d", name, number)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			requested = append(requested, wanted{name, number, "detected"})
 		}
 	}
-	checker := port.NewChecker()
+
+	numbers := make([]int, 0, len(requested))
+	for _, item := range requested {
+		numbers = append(numbers, item.port)
+	}
 	listeners := map[int]*config.PortInfo{}
-	if len(wanted) > 0 {
-		listeners, err = checker.CheckPorts(wanted)
+	if len(numbers) > 0 {
+		listeners, err = port.NewChecker().CheckPorts(numbers)
 		if err != nil {
 			return err
 		}
 	}
-	entries := make([]entry, 0, len(wanted))
-	for _, name := range selected {
-		for _, number := range cfg.Services[name].Ports {
-			item := entry{Service: name, Port: number, State: "free"}
-			if info := listeners[number]; info != nil {
-				item.State = "listening"
-				item.PID = info.PID
-				item.Process = info.Process
-			}
-			entries = append(entries, item)
+
+	entries := make([]entry, 0, len(requested))
+	for _, item := range requested {
+		row := entry{Service: item.service, Port: item.port, Origin: item.origin, State: "free"}
+		if info := listeners[item.port]; info != nil {
+			row.State = "listening"
+			row.PID = info.PID
+			row.Process = info.Process
 		}
+		entries = append(entries, row)
 	}
+
 	if options.Output == kranzcli.OutputJSON {
 		return kranzcli.WriteJSON(stdout, entries)
 	}
 	if len(entries) == 0 {
-		_, _ = fmt.Fprintln(stdout, "No service declares a port.")
+		_, _ = fmt.Fprintln(stdout, "No ports to report.")
+		_, _ = fmt.Fprintln(stdout, "No selected service declares a port, and no running runtime has detected one.")
+		if detected == nil {
+			_, _ = fmt.Fprintln(stdout, "Start the project with `kranz up -d` to see ports detected at runtime.")
+		}
 		return nil
 	}
 	w := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "SERVICE\tPORT\tSTATE\tPID\tPROCESS")
+	_, _ = fmt.Fprintln(w, "SERVICE\tPORT\tORIGIN\tSTATE\tPID\tPROCESS")
 	for _, item := range entries {
 		pid := "-"
 		if item.PID != 0 {
 			pid = strconv.Itoa(item.PID)
 		}
-		_, _ = fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\n", item.Service, item.Port, item.State, pid, orDash(item.Process))
+		_, _ = fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\t%s\n", item.Service, item.Port, item.Origin, item.State, pid, orDash(item.Process))
 	}
 	return w.Flush()
+}
+
+// detectedPorts is a variable so a test can exercise the merge of declared and
+// detected ports without standing up a runtime that opens real sockets.
+var detectedPorts = detectedPortsByService
+
+// detectedPortsByService asks the running runtime which ports its services
+// actually opened. A project that is not running is the ordinary case here, not
+// a failure, so every way of not reaching a runtime returns nil rather than an
+// error: `kranz ports` must still answer from the configuration alone.
+func detectedPortsByService(options kranzcli.GlobalOptions) map[string][]int {
+	record, err := resolveSession(options)
+	if err != nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	client, err := kranzruntime.DialContext(ctx, record.Socket, version)
+	if err != nil {
+		return nil
+	}
+	defer func() { _ = client.Close() }()
+	ports := make(map[string][]int)
+	for _, snapshot := range client.Services() {
+		if len(snapshot.DetectedPorts) > 0 {
+			ports[snapshot.Name] = snapshot.DetectedPorts
+		}
+	}
+	return ports
 }
 
 func runPortInspect(options kranzcli.GlobalOptions, args []string, stdout io.Writer) error {
