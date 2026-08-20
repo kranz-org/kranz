@@ -117,9 +117,20 @@ func setMappingString(mapping *yaml.Node, key, value string) {
 	)
 }
 
+// WriteFileAtomically writes a project configuration so a reader never observes
+// a half-written file: the content lands in a temporary file in the same
+// directory and is renamed over the target. A file that does not exist yet is
+// created with the usual configuration permissions, which is what `kranz init`
+// needs; an existing file keeps the permissions it already had.
+func WriteFileAtomically(path string, data []byte) error {
+	return replaceFileAtomically(path, data)
+}
+
 func replaceFileAtomically(path string, data []byte) error {
-	info, err := os.Stat(path)
-	if err != nil {
+	mode := os.FileMode(0o644)
+	if info, err := os.Stat(path); err == nil {
+		mode = info.Mode().Perm()
+	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("stat project configuration %s: %w", path, err)
 	}
 	directory := filepath.Dir(path)
@@ -129,7 +140,7 @@ func replaceFileAtomically(path string, data []byte) error {
 	}
 	temporaryPath := temporary.Name()
 	defer os.Remove(temporaryPath)
-	if err := temporary.Chmod(info.Mode().Perm()); err != nil {
+	if err := temporary.Chmod(mode); err != nil {
 		_ = temporary.Close()
 		return fmt.Errorf("preserve project configuration permissions: %w", err)
 	}

@@ -30,7 +30,7 @@ type Command struct {
 // change, which is what moves the command into the working help section.
 func DefaultTree() *Command {
 	return &Command{Name: "kranz", Summary: "a local service orchestrator", Children: []*Command{
-		{Name: "init", Summary: "create a Kranz configuration", Usage: "kranz init [OPTIONS]", Planned: true},
+		{Name: "init", Summary: "create a Kranz configuration", Usage: "kranz init [--from PATH] [--project NAME] [--service NAME] [--command COMMAND] [-o PATH] [--yes]"},
 		{Name: "config", Summary: "inspect effective configuration", Children: []*Command{
 			{Name: "check", Summary: "load and validate configuration"},
 			{Name: "show", Summary: "print redacted effective configuration", Usage: "kranz config show [--provenance]"},

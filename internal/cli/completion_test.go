@@ -15,12 +15,28 @@ func TestCompletionOffersOnlyRunnableCommands(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", shell, err)
 		}
-		for _, name := range []string{"ps", "status", "up", "list", "plan", "doctor", "logs", "action"} {
+		for _, name := range []string{"ps", "status", "up", "list", "plan", "doctor", "logs", "action", "init"} {
 			if !strings.Contains(script, name) {
 				t.Errorf("%s completion omits %q", shell, name)
 			}
 		}
-		for _, name := range []string{"init"} {
+	}
+}
+
+// A planned command must stay out of the generated script: completing to
+// something that only answers "not implemented yet" wastes the keystroke
+// completion saved. DefaultTree has none left, so the rule is checked against
+// a tree that does.
+func TestCompletionSkipsPlannedCommands(t *testing.T) {
+	for _, shell := range CompletionShells() {
+		script, err := Completion(plannedTree(), shell)
+		if err != nil {
+			t.Fatalf("%s: %v", shell, err)
+		}
+		if !strings.Contains(script, "ps") {
+			t.Errorf("%s completion omits a working command", shell)
+		}
+		for _, name := range []string{"logs", "remote"} {
 			if strings.Contains(script, " "+name+" ") || strings.Contains(script, "-a "+name+" ") {
 				t.Errorf("%s completion offers planned command %q", shell, name)
 			}
