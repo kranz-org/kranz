@@ -46,8 +46,8 @@ func TestPlannedGroupsReportPlanned(t *testing.T) {
 			t.Errorf("%s has an implemented subcommand but reports as planned", name)
 		}
 	}
-	if !tree.Child("config").Child("show").Planned {
-		t.Error("config show is not implemented but does not say so")
+	if !tree.Child("init").Planned {
+		t.Error("init is not implemented but does not say so")
 	}
 }
 

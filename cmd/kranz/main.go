@@ -77,6 +77,16 @@ func execute(args []string, stdout, stderr io.Writer) int {
 			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
 		}
 		return 0
+	case "config show":
+		if err := runConfigShow(invocation.Globals, invocation.Args, stdout); err != nil {
+			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
+		}
+		return 0
+	case "config explain":
+		if err := runConfigExplain(invocation.Globals, invocation.Args, stdout); err != nil {
+			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
+		}
+		return 0
 	case "doctor":
 		if err := runDoctor(invocation.Globals, stdout); err != nil {
 			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)

@@ -33,8 +33,8 @@ func DefaultTree() *Command {
 		{Name: "init", Summary: "create a Kranz configuration", Usage: "kranz init [OPTIONS]", Planned: true},
 		{Name: "config", Summary: "inspect effective configuration", Children: []*Command{
 			{Name: "check", Summary: "load and validate configuration"},
-			{Name: "show", Summary: "print redacted effective configuration", Planned: true},
-			{Name: "explain", Summary: "show field provenance", Usage: "kranz config explain [SERVICE]", Planned: true},
+			{Name: "show", Summary: "print redacted effective configuration", Usage: "kranz config show [--provenance]"},
+			{Name: "explain", Summary: "show field provenance", Usage: "kranz config explain [SERVICE]"},
 		}},
 		{Name: "doctor", Summary: "run project preflight checks"},
 		{Name: "ps", Summary: "list active project runtimes"},
