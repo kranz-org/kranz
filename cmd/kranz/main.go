@@ -107,6 +107,25 @@ func execute(args []string, stdout, stderr io.Writer) int {
 			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
 		}
 		return 0
+	case "action list":
+		if err := runActionList(invocation.Globals, invocation.Args, stdout); err != nil {
+			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
+		}
+		return 0
+	case "action info":
+		if err := runActionInfo(invocation.Globals, invocation.Args, stdout); err != nil {
+			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
+		}
+		return 0
+	case "action run":
+		if err := runActionRun(invocation.Globals, invocation.Args, stdout); err != nil {
+			var requested requestedExitError
+			if errors.As(err, &requested) {
+				return requested.code
+			}
+			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
+		}
+		return 0
 	case "port inspect":
 		if err := runPortInspect(invocation.Globals, invocation.Args, stdout); err != nil {
 			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)

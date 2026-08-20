@@ -56,9 +56,9 @@ func DefaultTree() *Command {
 		{Name: "attach", Summary: "open the TUI for an active runtime"},
 		{Name: "logs", Summary: "show service logs", Usage: "kranz logs [SELECTOR ...]", Planned: true},
 		{Name: "action", Summary: "inspect and run actions", Children: []*Command{
-			{Name: "list", Summary: "list actions", Usage: "kranz action list [OWNER]", Planned: true},
-			{Name: "info", Summary: "show action details", Usage: "kranz action info OWNER/ACTION", Planned: true},
-			{Name: "run", Summary: "run an action", Usage: "kranz action run OWNER/ACTION", Planned: true},
+			{Name: "list", Summary: "list actions", Usage: "kranz action list [OWNER]"},
+			{Name: "info", Summary: "show action details", Usage: "kranz action info OWNER/ACTION"},
+			{Name: "run", Summary: "run an action", Usage: "kranz action run OWNER/ACTION"},
 		}},
 		{Name: "completion", Summary: "generate shell completion", Usage: "kranz completion bash|zsh|fish", Planned: true},
 		{Name: "help", Summary: "show command help", Usage: "kranz help [COMMAND]"},
