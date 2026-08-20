@@ -4,6 +4,49 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### Added
+
+- A complete command-line workflow over one project runtime. `kranz up -d`
+  leaves a project running in the background; `kranz ps`, `status`, `logs`,
+  `start`, `stop`, `restart`, `reload`, `attach`, and `down` drive it from any
+  terminal, and `down --force` recovers a session that has stopped answering.
+- `kranz init` creates a configuration, as a wizard when there is a terminal
+  and from flags when there is not. It converts an existing Kranz, Process
+  Compose, or Procfile source, offers `package.json` scripts as actions without
+  running them, previews the file before writing it, never replaces an existing
+  file without consent, and reloads what it wrote before reporting success.
+- Project inspection that needs no running runtime: `config check`,
+  `config show` with secrets redacted, `config explain` for per-field
+  provenance, `doctor`, `list`, `info`, `plan`, `graph`, `ports`, and
+  `port inspect`. `plan` prints the same dependency waves the supervisor gates
+  readiness on.
+- `kranz logs` with selectors, `--tail`, `--since`, and `--follow`. Log entries
+  carry a source and a monotonic sequence, both preserved across a hot reload,
+  so following resumes from a cursor instead of reprinting. A stopped service
+  keeps its buffer.
+- `kranz action list`, `action info`, and `action run`. An action is identified
+  by owner and name together, and a failed action fails the command.
+- `kranz completion` for bash, zsh, and fish, generated from the command tree so
+  a shell cannot offer a command the binary does not have.
+- `--output json` on every command, wrapping results and failures in one
+  versioned envelope, with exit codes that distinguish usage, configuration,
+  missing, conflicting, and unavailable.
+- Linux `.deb` and `.rpm` packages for amd64 and arm64, installing the binary,
+  the shell completions, and the documentation.
+
+### Changed
+
+- The positional configuration form is removed. `kranz prod.yaml` becomes
+  `kranz -f prod.yaml`, and the old shape is recognised and answered with that
+  correction. Bare `kranz` still opens the TUI and every existing configuration
+  file loads unchanged.
+- `-p` is optional for every command. Without it, the target runtime is the one
+  the working directory's configuration names; with it, the explicit value
+  always wins, including from a directory that has a project of its own.
+  Previously `status` resolved the runtime from the directory while `start`,
+  `stop`, `restart`, `reload`, and `down` required `-p`, so a service the tool
+  had just listed could not be acted on without naming the project again.
+
 ## [0.7.2] - 2026-08-18
 
 ### Fixed

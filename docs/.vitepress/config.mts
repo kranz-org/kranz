@@ -32,6 +32,7 @@ export default defineConfig({
           { text: 'What is Kranz?', link: '/guide/what-is-kranz' },
           { text: 'Getting started', link: '/guide/getting-started' },
           { text: 'Core concepts', link: '/guide/core-concepts' },
+          { text: 'Working from the command line', link: '/guide/cli-workflow' },
           { text: 'Installation', link: '/guide/installation' },
           { text: 'Configuration', link: '/guide/configuration' },
           { text: 'Lifecycle', link: '/guide/lifecycle' },
