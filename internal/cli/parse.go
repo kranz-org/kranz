@@ -91,12 +91,21 @@ func Parse(tree *Command, args []string) (Invocation, error) {
 			continue
 		}
 		if len(current.Children) > 0 && len(invocation.Args) == 0 && !strings.HasPrefix(arg, "-") {
-			child := current.Child(arg)
-			if child == nil {
+			if child := current.Child(arg); child != nil {
+				invocation.CommandPath = append(invocation.CommandPath, arg)
+				current = child
+				continue
+			}
+			// The token is not a subcommand. A group with a default takes it as
+			// that subcommand's argument, so `kranz port 8080` works; the
+			// default then reports what is wrong with the token if anything is.
+			fallback := current.Child(current.Default)
+			if fallback == nil {
 				return Invocation{}, usageError("unknown_subcommand", fmt.Sprintf("unknown command %q for %q", arg, invocation.Command()))
 			}
-			invocation.CommandPath = append(invocation.CommandPath, arg)
-			current = child
+			invocation.CommandPath = append(invocation.CommandPath, fallback.Name)
+			current = fallback
+			invocation.Args = append(invocation.Args, arg)
 			continue
 		}
 		invocation.Args = append(invocation.Args, arg)
@@ -114,7 +123,12 @@ func Parse(tree *Command, args []string) (Invocation, error) {
 		return invocation, nil
 	}
 	if len(current.Children) > 0 && commandStarted && !invocation.Help {
-		return Invocation{}, usageError("missing_subcommand", fmt.Sprintf("command %q requires a subcommand", invocation.Command()))
+		child := current.Child(current.Default)
+		if child == nil {
+			return Invocation{}, usageError("missing_subcommand", fmt.Sprintf("command %q requires a subcommand", invocation.Command()))
+		}
+		invocation.CommandPath = append(invocation.CommandPath, child.Name)
+		current = child
 	}
 	if invocation.Command() == "version" && len(invocation.Args) > 0 {
 		return Invocation{}, usageError("invalid_arguments", "version does not accept additional arguments")

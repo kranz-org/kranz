@@ -16,6 +16,12 @@ type Command struct {
 	Usage    string
 	Children []*Command
 
+	// Default names the subcommand to run when a group is invoked bare. A group
+	// exists to organize related commands, but one of them is usually the
+	// obvious thing the user meant, and demanding it be spelled out turns a
+	// natural request into a usage error.
+	Default string
+
 	// Planned marks a command whose grammar is reserved but whose execution a
 	// later feature stream still has to attach. Help lists planned commands
 	// apart from working ones and the dispatcher refuses them, so the tree
@@ -31,7 +37,7 @@ type Command struct {
 func DefaultTree() *Command {
 	return &Command{Name: "kranz", Summary: "a local service orchestrator", Children: []*Command{
 		{Name: "init", Summary: "create a Kranz configuration", Usage: "kranz init [--from PATH] [--project NAME] [--service NAME] [--command COMMAND] [-o PATH] [--yes]"},
-		{Name: "config", Summary: "inspect effective configuration", Children: []*Command{
+		{Name: "config", Summary: "inspect effective configuration", Default: "show", Children: []*Command{
 			{Name: "check", Summary: "load and validate configuration"},
 			{Name: "show", Summary: "print redacted effective configuration", Usage: "kranz config show [--provenance]"},
 			{Name: "explain", Summary: "show field provenance", Usage: "kranz config explain [SERVICE]"},
@@ -44,7 +50,7 @@ func DefaultTree() *Command {
 		{Name: "plan", Summary: "show the resolved start plan", Usage: "kranz plan [SELECTOR ...]"},
 		{Name: "graph", Summary: "print the dependency graph", Usage: "kranz graph [--format text|json|dot]"},
 		{Name: "ports", Summary: "list configured and detected ports", Usage: "kranz ports [SELECTOR ...]"},
-		{Name: "port", Summary: "inspect a local port", Children: []*Command{
+		{Name: "port", Summary: "inspect a local port", Default: "inspect", Children: []*Command{
 			{Name: "inspect", Summary: "identify a port listener", Usage: "kranz port inspect PORT"},
 		}},
 		{Name: "up", Summary: "create a project runtime", Usage: "kranz up [SELECTOR ...]"},
@@ -55,7 +61,7 @@ func DefaultTree() *Command {
 		{Name: "down", Summary: "stop a project runtime"},
 		{Name: "attach", Summary: "open the TUI for an active runtime"},
 		{Name: "logs", Summary: "show service logs", Usage: "kranz logs [SELECTOR ...] [--tail N] [--since D] [--follow]"},
-		{Name: "action", Summary: "inspect and run actions", Children: []*Command{
+		{Name: "action", Summary: "inspect and run actions", Default: "list", Children: []*Command{
 			{Name: "list", Summary: "list actions", Usage: "kranz action list [OWNER]"},
 			{Name: "info", Summary: "show action details", Usage: "kranz action info OWNER/ACTION"},
 			{Name: "run", Summary: "run an action", Usage: "kranz action run OWNER/ACTION"},

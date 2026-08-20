@@ -43,10 +43,57 @@ func TestPositionalConfigurationGetsDirectedHint(t *testing.T) {
 }
 
 func TestParseRejectsMissingSubcommandAndInvalidOutput(t *testing.T) {
-	for _, args := range [][]string{{"config"}, {"--output", "xml", "ps"}, {"version", "extra"}} {
+	// A group without a default still has to be told which subcommand to run.
+	grouped := &Command{Name: "kranz", Children: []*Command{
+		{Name: "remote", Summary: "control a remote runtime", Children: []*Command{
+			{Name: "add", Summary: "register a remote"},
+		}},
+	}}
+	if _, err := Parse(grouped, []string{"remote"}); err == nil {
+		t.Fatal("Parse([remote]) succeeded without a default subcommand")
+	}
+	for _, args := range [][]string{{"--output", "xml", "ps"}, {"version", "extra"}} {
 		if _, err := Parse(DefaultTree(), args); err == nil {
 			t.Fatalf("Parse(%v) succeeded", args)
 		}
+	}
+}
+
+// A group exists to organize commands, but one of them is usually what the user
+// meant. `kranz config` asking which subcommand to use turned "show me the
+// configuration" into a usage error.
+func TestGroupsRunTheirDefaultSubcommand(t *testing.T) {
+	for group, want := range map[string]string{
+		"config": "config show",
+		"action": "action list",
+		"port":   "port inspect",
+	} {
+		invocation, err := Parse(DefaultTree(), []string{group})
+		if err != nil {
+			t.Errorf("Parse([%s]) = %v", group, err)
+			continue
+		}
+		if invocation.Command() != want {
+			t.Errorf("Parse([%s]) resolved to %q, want %q", group, invocation.Command(), want)
+		}
+	}
+
+	// An explicit subcommand still wins over the default.
+	invocation, err := Parse(DefaultTree(), []string{"config", "check"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if invocation.Command() != "config check" {
+		t.Errorf("explicit subcommand resolved to %q", invocation.Command())
+	}
+
+	// Arguments reach the default subcommand.
+	invocation, err = Parse(DefaultTree(), []string{"port", "8080"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if invocation.Command() != "port inspect" || len(invocation.Args) != 1 || invocation.Args[0] != "8080" {
+		t.Errorf("port 8080 resolved to %q with args %v", invocation.Command(), invocation.Args)
 	}
 }
 
