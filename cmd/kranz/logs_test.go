@@ -84,3 +84,36 @@ func TestLogLevelNamesCoverEveryLevel(t *testing.T) {
 		}
 	}
 }
+
+// A bare `kranz logs` used to print every line in every service's buffer —
+// thousands of lines on a project with a few services — when what was asked for
+// was "what happened recently".
+func TestLogOptionsCapAnUnqualifiedRequest(t *testing.T) {
+	options, err := parseLogOptions(nil)
+	if err != nil {
+		t.Fatalf("parse = %v", err)
+	}
+	if !options.tailSet || options.tail != defaultLogTail {
+		t.Errorf("bare logs tail = %d (set %t), want %d", options.tail, options.tailSet, defaultLogTail)
+	}
+}
+
+// Narrowing by time is already a deliberate limit, so it must not be silently
+// narrowed further by a line cap the user did not ask for.
+func TestLogOptionsDoNotCapAnExplicitWindow(t *testing.T) {
+	for _, args := range [][]string{{"--since", "5m"}, {"--all"}, {"--tail", "500"}} {
+		options, err := parseLogOptions(args)
+		if err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+		if options.tailSet && options.tail == defaultLogTail {
+			t.Errorf("%v was capped at the default tail", args)
+		}
+	}
+}
+
+func TestLogOptionsRejectAllWithTail(t *testing.T) {
+	if _, err := parseLogOptions([]string{"--all", "--tail", "5"}); err == nil {
+		t.Error("--all --tail was accepted")
+	}
+}

@@ -18,10 +18,17 @@ import (
 	kranzruntime "github.com/kranz-org/kranz/internal/runtime"
 )
 
+// defaultLogTail bounds a bare `kranz logs`. Every service keeps a thousand
+// lines, so a project with four of them answers an unqualified request with
+// thousands of lines the user has to scroll past to reach the recent ones they
+// were asking about. --all still returns everything.
+const defaultLogTail = 50
+
 type logOptions struct {
 	selectors []string
 	tail      int
 	tailSet   bool
+	all       bool
 	follow    bool
 	since     time.Duration
 	sinceSet  bool
@@ -105,6 +112,8 @@ func parseLogOptions(args []string) (logOptions, error) {
 		switch {
 		case arg == "--follow" || arg == "-f":
 			options.follow = true
+		case arg == "--all":
+			options.all = true
 		case arg == "--tail":
 			if index+1 >= len(args) {
 				return logOptions{}, &kranzcli.Error{Code: "missing_option_value", Message: "--tail requires a value", ExitCode: kranzcli.ExitUsage}
@@ -138,10 +147,19 @@ func parseLogOptions(args []string) (logOptions, error) {
 			}
 			options.since, options.sinceSet = duration, true
 		case strings.HasPrefix(arg, "-"):
-			return logOptions{}, &kranzcli.Error{Code: "unknown_option", Message: "unknown logs option " + arg, ExitCode: kranzcli.ExitUsage}
+			return logOptions{}, &kranzcli.Error{Code: "unknown_option", Message: fmt.Sprintf("unknown logs option %q", arg), Hint: "logs accepts --tail N, --since D, --all, and --follow.", ExitCode: kranzcli.ExitUsage}
 		default:
 			options.selectors = append(options.selectors, arg)
 		}
+	}
+	if options.all && options.tailSet {
+		return logOptions{}, &kranzcli.Error{Code: "invalid_arguments", Message: "--all and --tail contradict each other", ExitCode: kranzcli.ExitUsage}
+	}
+	// An unqualified request means "the recent lines", not "everything ever
+	// captured". Narrowing by time is already a deliberate limit, so --since
+	// does not additionally get the default cap.
+	if !options.tailSet && !options.all && !options.sinceSet {
+		options.tail, options.tailSet = defaultLogTail, true
 	}
 	return options, nil
 }
