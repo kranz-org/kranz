@@ -55,3 +55,26 @@ func TestLogEntriesKeepTimestampsAlignedAcrossOverflowAndClear(t *testing.T) {
 		t.Fatal("ClearLogs left text or timestamp metadata")
 	}
 }
+
+func TestLogEntriesPreserveSourceSequenceAndHotReloadHistory(t *testing.T) {
+	first := time.Date(2026, 8, 19, 10, 0, 0, 0, time.UTC)
+	previous := NewService("worker", config.Service{}, 3)
+	previous.AppendLogAtSource(first, "stdout", "one")
+	previous.AppendLogAtSource(first.Add(time.Second), "stderr", "two")
+	replacement := NewService("worker", config.Service{}, 3)
+	replacement.CopyLogHistoryFrom(previous)
+	replacement.AppendLogAtSource(first.Add(2*time.Second), "stdout", "three")
+	entries := replacement.LogEntries()
+	if len(entries) != 3 {
+		t.Fatalf("entries = %d, want 3", len(entries))
+	}
+	for index, want := range []struct {
+		source   string
+		sequence uint64
+		raw      string
+	}{{"stdout", 1, "one"}, {"stderr", 2, "two"}, {"stdout", 3, "three"}} {
+		if entries[index].Source != want.source || entries[index].Sequence != want.sequence || entries[index].Raw != want.raw {
+			t.Fatalf("entry %d = %+v, want %+v", index, entries[index], want)
+		}
+	}
+}

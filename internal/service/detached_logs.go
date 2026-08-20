@@ -37,10 +37,10 @@ func (m *Manager) followDetachedLogs(ctx context.Context, svc *Service, action c
 	stdoutOffset, stderrOffset := 0, 0
 	appendSnapshot := func(result ActionResult) {
 		for ; stdoutOffset < len(result.Stdout); stdoutOffset++ {
-			svc.AppendLog(result.Stdout[stdoutOffset])
+			svc.AppendLogAtSource(time.Now(), "stdout", result.Stdout[stdoutOffset])
 		}
 		for ; stderrOffset < len(result.Stderr); stderrOffset++ {
-			svc.AppendLog("[stderr] " + result.Stderr[stderrOffset])
+			svc.AppendLogAtSource(time.Now(), "stderr", result.Stderr[stderrOffset])
 		}
 	}
 	for {

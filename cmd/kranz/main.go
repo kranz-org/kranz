@@ -107,6 +107,11 @@ func execute(args []string, stdout, stderr io.Writer) int {
 			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
 		}
 		return 0
+	case "logs":
+		if err := runLogs(invocation.Globals, invocation.Args, stdout); err != nil {
+			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
+		}
+		return 0
 	case "completion":
 		if len(invocation.Args) != 1 {
 			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, &kranzcli.Error{

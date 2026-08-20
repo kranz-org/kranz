@@ -18,11 +18,14 @@ type Service struct {
 	State   config.ServiceState
 	stateMu sync.RWMutex
 
-	Logs         *ringbuffer.RingBuffer
-	logMu        sync.RWMutex
-	logTimes     []time.Time
-	logTimeWrite int
-	logTimeCount int
+	Logs            *ringbuffer.RingBuffer
+	logMu           sync.RWMutex
+	logTimes        []time.Time
+	logSources      []string
+	logSequences    []uint64
+	logTimeWrite    int
+	logTimeCount    int
+	nextLogSequence uint64
 
 	// HealthHistory is bounded separately from process output.
 	HealthHistory *ringbuffer.RingBuffer
@@ -121,6 +124,8 @@ func NewService(name string, cfg config.Service, logBufSize int) *Service {
 		Config:        cfg,
 		Logs:          ringbuffer.New(logBufSize),
 		logTimes:      make([]time.Time, logBufSize),
+		logSources:    make([]string, logBufSize),
+		logSequences:  make([]uint64, logBufSize),
 		HealthHistory: ringbuffer.New(50),
 		State: config.ServiceState{
 			Status: status,
@@ -284,14 +289,25 @@ func (s *Service) NewLogCount() int {
 
 // AppendLog captures one line with the current time and marks it unread.
 func (s *Service) AppendLog(line string) {
-	s.AppendLogAt(time.Now(), line)
+	s.AppendLogAtSource(time.Now(), "kranz", line)
 }
 
 // AppendLogAt records a log line with the time Kranz received it.
 func (s *Service) AppendLogAt(timestamp time.Time, line string) {
+	s.AppendLogAtSource(timestamp, "kranz", line)
+}
+
+// AppendLogAtSource records a source-aware line with a stable sequence cursor.
+func (s *Service) AppendLogAtSource(timestamp time.Time, source, line string) {
 	s.logMu.Lock()
+	if source == "" {
+		source = "unknown"
+	}
+	s.nextLogSequence++
 	s.Logs.Write(line)
 	s.logTimes[s.logTimeWrite] = timestamp
+	s.logSources[s.logTimeWrite] = source
+	s.logSequences[s.logTimeWrite] = s.nextLogSequence
 	s.logTimeWrite = (s.logTimeWrite + 1) % len(s.logTimes)
 	if s.logTimeCount < len(s.logTimes) {
 		s.logTimeCount++
@@ -305,20 +321,36 @@ func (s *Service) LogEntries() []config.LogEntry {
 	s.logMu.RLock()
 	defer s.logMu.RUnlock()
 	lines := s.Logs.Lines()
-	times := make([]time.Time, 0, s.logTimeCount)
-	if s.logTimeCount < len(s.logTimes) {
-		times = append(times, s.logTimes[:s.logTimeCount]...)
-	} else {
-		times = append(times, s.logTimes[s.logTimeWrite:]...)
-		times = append(times, s.logTimes[:s.logTimeWrite]...)
-	}
-	count := min(len(lines), len(times))
+	count := min(len(lines), s.logTimeCount)
 	entries := make([]config.LogEntry, 0, count)
+	// The metadata rings are written in lockstep with the text buffer, so one
+	// index walked back from the write cursor addresses all of them. Rebuilding
+	// a separate ordered copy per field invites the fields to disagree.
 	for index := range count {
-		line := lines[len(lines)-count+index]
-		entries = append(entries, config.LogEntry{Timestamp: times[len(times)-count+index], Raw: line})
+		metadataIndex := (s.logTimeWrite - count + index + len(s.logTimes)) % len(s.logTimes)
+		entries = append(entries, config.LogEntry{
+			Sequence:  s.logSequences[metadataIndex],
+			Timestamp: s.logTimes[metadataIndex],
+			Source:    s.logSources[metadataIndex],
+			Raw:       lines[len(lines)-count+index],
+		})
 	}
 	return entries
+}
+
+// CopyLogHistoryFrom preserves the logical service buffer across a hot reload.
+func (s *Service) CopyLogHistoryFrom(previous *Service) {
+	previous.logMu.RLock()
+	defer previous.logMu.RUnlock()
+	s.logMu.Lock()
+	defer s.logMu.Unlock()
+	s.Logs = previous.Logs
+	s.logTimes = append(s.logTimes[:0], previous.logTimes...)
+	s.logSources = append(s.logSources[:0], previous.logSources...)
+	s.logSequences = append(s.logSequences[:0], previous.logSequences...)
+	s.logTimeWrite = previous.logTimeWrite
+	s.logTimeCount = previous.logTimeCount
+	s.nextLogSequence = previous.nextLogSequence
 }
 
 // ClearLogs atomically clears both log text and its timestamp metadata.
@@ -326,6 +358,8 @@ func (s *Service) ClearLogs() {
 	s.logMu.Lock()
 	s.Logs.Clear()
 	clear(s.logTimes)
+	clear(s.logSources)
+	clear(s.logSequences)
 	s.logTimeWrite = 0
 	s.logTimeCount = 0
 	s.logMu.Unlock()

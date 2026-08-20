@@ -19,12 +19,12 @@ func TestHelpSeparatesPlannedCommands(t *testing.T) {
 		t.Fatalf("help does not list planned commands separately:\n%s", output)
 	}
 
-	for _, name := range []string{"ps", "status", "up", "down", "attach", "version", "list", "info", "plan", "graph", "ports", "doctor", "config", "port", "action", "completion"} {
+	for _, name := range []string{"ps", "status", "up", "down", "attach", "version", "list", "info", "plan", "graph", "ports", "doctor", "config", "port", "action", "completion", "logs"} {
 		if !strings.Contains(commands, "\n  "+name+" ") {
 			t.Errorf("working command %q is missing from the Commands section", name)
 		}
 	}
-	for _, name := range []string{"init", "logs"} {
+	for _, name := range []string{"init"} {
 		if strings.Contains(commands, "\n  "+name+" ") {
 			t.Errorf("planned command %q is advertised as available", name)
 		}
@@ -41,7 +41,7 @@ func TestPlannedGroupsReportPlanned(t *testing.T) {
 	tree := DefaultTree()
 	// A group with at least one working subcommand is not planned, even while
 	// its remaining subcommands are.
-	for _, name := range []string{"ps", "config", "port", "action", "completion"} {
+	for _, name := range []string{"ps", "config", "port", "action", "completion", "logs"} {
 		if tree.Child(name).IsPlanned() {
 			t.Errorf("%s has an implemented subcommand but reports as planned", name)
 		}
@@ -52,7 +52,7 @@ func TestPlannedGroupsReportPlanned(t *testing.T) {
 }
 
 func TestHelpForPlannedCommandSaysSo(t *testing.T) {
-	output, err := Help(DefaultTree(), []string{"logs"})
+	output, err := Help(DefaultTree(), []string{"init"})
 	if err != nil {
 		t.Fatalf("Help returned an error: %v", err)
 	}

@@ -195,6 +195,107 @@ func TestForceDownRecoversUnreachableBackgroundRuntime(t *testing.T) {
 	}
 }
 
+func TestLogsSnapshotFollowAndClientInterrupt(t *testing.T) {
+	directory := t.TempDir()
+	name := fmt.Sprintf("test-logs-%d", os.Getpid())
+	configText := fmt.Sprintf("project: Test Logs\nruntime:\n  name: %s\nservices:\n  emitter:\n    command: echo out-line; echo err-line >&2\n", name)
+	if err := os.WriteFile(filepath.Join(directory, "kranz.yaml"), []byte(configText), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	previousFactory := newBackgroundCommand
+	newBackgroundCommand = func(_ string, args ...string) *exec.Cmd {
+		data, _ := json.Marshal(args)
+		command := exec.Command(os.Args[0], "-test.run=^TestBackgroundHelperProcess$")
+		command.Env = append(os.Environ(), "KRANZ_TEST_BACKGROUND_HELPER=1", "KRANZ_TEST_BACKGROUND_ARGS="+base64.StdEncoding.EncodeToString(data))
+		return command
+	}
+	defer func() { newBackgroundCommand = previousFactory }()
+	var stdout, stderr bytes.Buffer
+	if code := execute([]string{"-C", directory, "up", "-d", "--no-start"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("up -d exit=%d stderr=%s", code, stderr.String())
+	}
+	t.Cleanup(func() { _ = execute([]string{"-p", name, "down"}, io.Discard, io.Discard) })
+	stdout.Reset()
+	stderr.Reset()
+	if code := execute([]string{"-p", name, "start", "emitter"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("start exit=%d stderr=%s", code, stderr.String())
+	}
+	registry, err := kranzruntime.DefaultRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	record, err := registry.Resolve(ctx, name, "test")
+	cancel()
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := kranzruntime.Dial(record.Socket, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		entries := client.Logs("emitter")
+		hasStdout, hasStderr := false, false
+		for _, entry := range entries {
+			hasStdout = hasStdout || entry.Source == "stdout"
+			hasStderr = hasStderr || entry.Source == "stderr"
+		}
+		if hasStdout && hasStderr {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("process streams were not captured: %+v", entries)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	_ = client.Close()
+	stdout.Reset()
+	stderr.Reset()
+	if code := execute([]string{"-p", name, "logs", "emitter"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("logs exit=%d stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "[emitter/stdout]") || !strings.Contains(stdout.String(), "[emitter/stderr]") {
+		t.Fatalf("text logs lost identity:\n%s", stdout.String())
+	}
+	stdout.Reset()
+	if code := execute([]string{"-p", name, "logs", "emitter", "--since=1h", "--output=json"}, &stdout, &stderr); code != 0 || !json.Valid(stdout.Bytes()) {
+		t.Fatalf("JSON logs exit=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+
+	data, _ := json.Marshal([]string{"-p", name, "logs", "emitter", "--follow", "--tail=0"})
+	follow := exec.Command(os.Args[0], "-test.run=^TestBackgroundHelperProcess$")
+	follow.Env = append(os.Environ(), "KRANZ_TEST_BACKGROUND_HELPER=1", "KRANZ_TEST_BACKGROUND_ARGS="+base64.StdEncoding.EncodeToString(data))
+	var followOut, followErr bytes.Buffer
+	follow.Stdout, follow.Stderr = &followOut, &followErr
+	if err := follow.Start(); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if code := execute([]string{"-p", name, "restart", "emitter"}, io.Discard, &stderr); code != 0 {
+		t.Fatalf("restart during follow exit=%d stderr=%s", code, stderr.String())
+	}
+	time.Sleep(300 * time.Millisecond)
+	if err := follow.Process.Signal(os.Interrupt); err != nil {
+		t.Fatal(err)
+	}
+	if err := follow.Wait(); err != nil {
+		t.Fatalf("follow interrupted with %v; stderr=%s", err, followErr.String())
+	}
+	if !strings.Contains(followOut.String(), "[emitter/") {
+		t.Fatalf("follow did not stream new events: %s", followOut.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := execute([]string{"-p", name, "status"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("runtime stopped with logs client: exit=%d stderr=%s", code, stderr.String())
+	}
+	if code := execute([]string{"-p", name, "down"}, io.Discard, &stderr); code != 0 {
+		t.Fatalf("down exit=%d stderr=%s", code, stderr.String())
+	}
+}
+
 func TestForegroundRuntimeStatusAndRemoteDown(t *testing.T) {
 	directory := t.TempDir()
 	name := fmt.Sprintf("test-foreground-%d", os.Getpid())

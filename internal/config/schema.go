@@ -515,10 +515,12 @@ const (
 
 // LogEntry stores one captured log line and its metadata.
 type LogEntry struct {
-	Timestamp time.Time
-	Level     LogLevel
-	Text      string
-	Raw       string
+	Sequence  uint64    `json:"sequence"`
+	Timestamp time.Time `json:"timestamp"`
+	Source    string    `json:"source"`
+	Level     LogLevel  `json:"level"`
+	Text      string    `json:"text"`
+	Raw       string    `json:"raw"`
 }
 
 // Notification is one entry in the in-memory notification center.

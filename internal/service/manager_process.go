@@ -125,10 +125,10 @@ func (m *Manager) ProjectExitRequested() (bool, int) {
 
 func (m *Manager) drainProcessLogs(svc *Service, pm *ProcessManager) {
 	for _, line := range pm.Stdout().Drain() {
-		svc.AppendLog(line)
+		svc.AppendLogAtSource(time.Now(), "stdout", line)
 	}
 	for _, line := range pm.Stderr().Drain() {
-		svc.AppendLog(line)
+		svc.AppendLogAtSource(time.Now(), "stderr", line)
 	}
 }
 

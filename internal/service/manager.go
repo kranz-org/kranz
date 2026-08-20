@@ -110,7 +110,7 @@ func (m *Manager) ApplyConfig(next *config.Config) (ReloadResult, error) {
 		// without cycling the external resource, while retaining observed state.
 		if svc.Config.IsDetached() && incoming.IsDetached() {
 			replacement := NewService(name, incoming, 1000)
-			replacement.Logs = svc.Logs
+			replacement.CopyLogHistoryFrom(svc)
 			replacement.HealthHistory = svc.HealthHistory
 			replacement.RestoreState(svc.GetState(), svc.DesiredRunning())
 			m.mu.Lock()
@@ -129,7 +129,7 @@ func (m *Manager) ApplyConfig(next *config.Config) (ReloadResult, error) {
 		replacement := NewService(name, incoming, 1000)
 		// Keep the visible history across a hot reload without mutating the
 		// configuration object observed by process-monitor goroutines.
-		replacement.Logs = svc.Logs
+		replacement.CopyLogHistoryFrom(svc)
 		replacement.HealthHistory = svc.HealthHistory
 		m.mu.Lock()
 		m.services[name] = replacement

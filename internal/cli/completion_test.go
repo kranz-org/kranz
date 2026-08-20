@@ -15,12 +15,12 @@ func TestCompletionOffersOnlyRunnableCommands(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", shell, err)
 		}
-		for _, name := range []string{"ps", "status", "up", "list", "plan", "doctor"} {
+		for _, name := range []string{"ps", "status", "up", "list", "plan", "doctor", "logs", "action"} {
 			if !strings.Contains(script, name) {
 				t.Errorf("%s completion omits %q", shell, name)
 			}
 		}
-		for _, name := range []string{"init", "logs"} {
+		for _, name := range []string{"init"} {
 			if strings.Contains(script, " "+name+" ") || strings.Contains(script, "-a "+name+" ") {
 				t.Errorf("%s completion offers planned command %q", shell, name)
 			}

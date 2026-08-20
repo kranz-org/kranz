@@ -54,7 +54,7 @@ func DefaultTree() *Command {
 		{Name: "reload", Summary: "reload runtime configuration"},
 		{Name: "down", Summary: "stop a project runtime"},
 		{Name: "attach", Summary: "open the TUI for an active runtime"},
-		{Name: "logs", Summary: "show service logs", Usage: "kranz logs [SELECTOR ...]", Planned: true},
+		{Name: "logs", Summary: "show service logs", Usage: "kranz logs [SELECTOR ...] [--tail N] [--since D] [--follow]"},
 		{Name: "action", Summary: "inspect and run actions", Children: []*Command{
 			{Name: "list", Summary: "list actions", Usage: "kranz action list [OWNER]"},
 			{Name: "info", Summary: "show action details", Usage: "kranz action info OWNER/ACTION"},
