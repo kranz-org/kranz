@@ -346,3 +346,104 @@ func TestUsageErrorWithJSONKeepsStderrClean(t *testing.T) {
 		t.Fatalf("stdout/stderr = %q/%q", stdout.String(), stderr.String())
 	}
 }
+
+// Lifecycle commands used to demand -p while status resolved the runtime from
+// the working directory, so `kranz status` listed services that `kranz stop`
+// then refused to touch. Every command now resolves the same way, and -p stays
+// available to aim a command at a different project from this one's directory.
+func TestLifecycleResolvesRuntimeFromDirectory(t *testing.T) {
+	directory := t.TempDir()
+	name := fmt.Sprintf("test-directory-%d", os.Getpid())
+	configText := fmt.Sprintf("project: Test Directory\nruntime:\n  name: %s\nservices:\n  sleeper:\n    command: sleep 60\n    tags: [workers]\n", name)
+	if err := os.WriteFile(filepath.Join(directory, "kranz.yaml"), []byte(configText), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// A second project directory that declares a runtime of its own, used to
+	// prove -p still wins over whatever the working directory names.
+	other := t.TempDir()
+	otherText := fmt.Sprintf("project: Test Other\nruntime:\n  name: %s-other\nservices:\n  sleeper:\n    command: sleep 60\n", name)
+	if err := os.WriteFile(filepath.Join(other, "kranz.yaml"), []byte(otherText), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	previousFactory := newBackgroundCommand
+	newBackgroundCommand = func(_ string, args ...string) *exec.Cmd {
+		data, _ := json.Marshal(args)
+		command := exec.Command(os.Args[0], "-test.run=^TestBackgroundHelperProcess$")
+		command.Env = append(os.Environ(), "KRANZ_TEST_BACKGROUND_HELPER=1", "KRANZ_TEST_BACKGROUND_ARGS="+base64.StdEncoding.EncodeToString(data))
+		return command
+	}
+	defer func() { newBackgroundCommand = previousFactory }()
+
+	var stdout, stderr bytes.Buffer
+	if code := execute([]string{"-C", directory, "up", "-d", "--no-start"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("up -d exit=%d stderr=%s", code, stderr.String())
+	}
+	defer func() {
+		var out, errOut bytes.Buffer
+		_ = execute([]string{"-p", name, "down"}, &out, &errOut)
+	}()
+
+	for _, command := range [][]string{
+		{"-C", directory, "status"},
+		{"-C", directory, "start", "workers"},
+		{"-C", directory, "restart", "sleeper"},
+		{"-C", directory, "stop", "sleeper"},
+		{"-C", directory, "reload"},
+	} {
+		stdout.Reset()
+		stderr.Reset()
+		if code := execute(command, &stdout, &stderr); code != 0 {
+			t.Fatalf("%v exit=%d stderr=%s", command, code, stderr.String())
+		}
+	}
+
+	// From a directory owning a different project, -p still selects this one.
+	stdout.Reset()
+	stderr.Reset()
+	if code := execute([]string{"-C", other, "-p", name, "status"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("-p override exit=%d stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "sleeper") {
+		t.Fatalf("-p override status = %q", stdout.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := execute([]string{"-C", directory, "down"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("down exit=%d stderr=%s", code, stderr.String())
+	}
+}
+
+// `kranz down SERVICE` answered "unknown down option SERVICE", calling a
+// positional selector an option and saying nothing about the command that does
+// what the user asked for.
+func TestDownRejectsServiceSelectorWithStopHint(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := execute([]string{"down", "im-core"}, &stdout, &stderr); code != kranzcli.ExitUsage {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr.String())
+	}
+	output := stderr.String()
+	if !strings.Contains(output, "does not take service selectors") {
+		t.Errorf("down rejection does not explain itself: %q", output)
+	}
+	if !strings.Contains(output, "kranz stop im-core") {
+		t.Errorf("down rejection does not point at stop: %q", output)
+	}
+}
+
+// Without -p the runtime comes from the working directory, so a directory that
+// is not a project has to say that rather than report a missing runtime.
+func TestLifecycleOutsideAProjectExplainsHowToAim(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := execute([]string{"-C", t.TempDir(), "stop", "api"}, &stdout, &stderr)
+	if code != kranzcli.ExitUsage {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "no Kranz configuration was found") {
+		t.Errorf("error does not name the real problem: %q", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "-p NAME_OR_ID") {
+		t.Errorf("error does not offer -p: %q", stderr.String())
+	}
+}

@@ -21,7 +21,7 @@ func runAttach(options kranzcli.GlobalOptions, args []string) (runErr error) {
 	if len(args) > 0 {
 		return &kranzcli.Error{Code: "invalid_arguments", Message: "attach does not accept arguments", ExitCode: kranzcli.ExitUsage}
 	}
-	record, err := resolveSession(options, true)
+	record, err := resolveSession(options)
 	if err != nil {
 		return err
 	}

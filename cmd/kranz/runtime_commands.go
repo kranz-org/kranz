@@ -489,32 +489,20 @@ func terminateForegroundWithSignal(host *runtimeHost, closeHost func() error, si
 	return fmt.Errorf("re-raising %s with default disposition did not terminate the process", sig)
 }
 
-func resolveSession(options kranzcli.GlobalOptions, requireProject bool) (kranzruntime.SessionRecord, error) {
+// resolveSession finds the runtime a command applies to. An explicit -p always
+// wins, including from a directory that has a Kranz project of its own, so any
+// command can be aimed at another project without leaving the current one.
+// Without -p the runtime is the one named by the configuration in the working
+// directory, so every command agrees about "the project I am standing in"
+// instead of some commands knowing it and others demanding it be spelled out.
+func resolveSession(options kranzcli.GlobalOptions) (kranzruntime.SessionRecord, error) {
 	reference := options.Project
 	if reference == "" {
-		if requireProject {
-			return kranzruntime.SessionRecord{}, &kranzcli.Error{Code: "missing_project", Message: "-p NAME_OR_ID is required", ExitCode: kranzcli.ExitUsage}
-		}
-		original, err := os.Getwd()
+		name, err := runtimeNameFromDirectory(options)
 		if err != nil {
 			return kranzruntime.SessionRecord{}, err
 		}
-		if err := os.Chdir(options.Directory); err != nil {
-			return kranzruntime.SessionRecord{}, err
-		}
-		defer func() { _ = os.Chdir(original) }() // best effort; command performs no work after resolution on failure
-		paths := options.ConfigPaths
-		if len(paths) == 0 {
-			paths, err = config.DiscoverFiles(".")
-			if err != nil {
-				return kranzruntime.SessionRecord{}, err
-			}
-		}
-		cfg, err := config.LoadFiles(paths)
-		if err != nil {
-			return kranzruntime.SessionRecord{}, err
-		}
-		reference = cfg.RuntimeName()
+		reference = name
 	}
 	registry, err := kranzruntime.DefaultRegistry()
 	if err != nil {
@@ -529,8 +517,41 @@ func resolveSession(options kranzcli.GlobalOptions, requireProject bool) (kranzr
 	return record, nil
 }
 
+// runtimeNameFromDirectory reads the runtime name the working directory
+// declares. A directory with no configuration is a usage problem rather than a
+// missing runtime, so it says how to aim the command instead of reporting that
+// some unnamed runtime could not be found.
+func runtimeNameFromDirectory(options kranzcli.GlobalOptions) (string, error) {
+	original, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	if err := os.Chdir(options.Directory); err != nil {
+		return "", err
+	}
+	defer func() { _ = os.Chdir(original) }() // best effort; command performs no work after resolution on failure
+	paths := options.ConfigPaths
+	if len(paths) == 0 {
+		paths, err = config.DiscoverFiles(".")
+		if err != nil {
+			return "", &kranzcli.Error{
+				Code:     "no_project",
+				Message:  "no Kranz configuration was found in this directory",
+				Hint:     "Run from a project directory, pass -f PATH, or name a runtime with -p NAME_OR_ID.",
+				ExitCode: kranzcli.ExitUsage,
+				Cause:    err,
+			}
+		}
+	}
+	cfg, err := config.LoadFiles(paths)
+	if err != nil {
+		return "", err
+	}
+	return cfg.RuntimeName(), nil
+}
+
 func runStatus(options kranzcli.GlobalOptions, args []string, stdout io.Writer) error {
-	record, err := resolveSession(options, false)
+	record, err := resolveSession(options)
 	if err != nil {
 		return err
 	}
@@ -587,9 +608,6 @@ func runStatus(options kranzcli.GlobalOptions, args []string, stdout io.Writer) 
 }
 
 func runLifecycle(options kranzcli.GlobalOptions, command string, args []string) error {
-	if options.Project == "" {
-		return &kranzcli.Error{Code: "missing_project", Message: "-p NAME_OR_ID is required", ExitCode: kranzcli.ExitUsage}
-	}
 	if command == "reload" {
 		if len(args) != 0 {
 			return &kranzcli.Error{Code: "invalid_arguments", Message: "reload does not accept selectors", ExitCode: kranzcli.ExitUsage}
@@ -597,7 +615,7 @@ func runLifecycle(options kranzcli.GlobalOptions, command string, args []string)
 	} else if len(args) == 0 {
 		return &kranzcli.Error{Code: "missing_selector", Message: command + " requires at least one service or tag selector", ExitCode: kranzcli.ExitUsage}
 	}
-	record, err := resolveSession(options, true)
+	record, err := resolveSession(options)
 	if err != nil {
 		return err
 	}
@@ -662,9 +680,19 @@ func runDown(options kranzcli.GlobalOptions, args []string) error {
 			force = true
 			continue
 		}
-		return &kranzcli.Error{Code: "unknown_option", Message: "unknown down option " + arg, ExitCode: kranzcli.ExitUsage}
+		if strings.HasPrefix(arg, "-") {
+			return &kranzcli.Error{Code: "unknown_option", Message: fmt.Sprintf("unknown down option %q", arg), ExitCode: kranzcli.ExitUsage}
+		}
+		// down is deliberately project-wide. A service name here is a
+		// misdirected stop, not a malformed flag, so it is answered as one.
+		return &kranzcli.Error{
+			Code:     "invalid_arguments",
+			Message:  "down stops the whole runtime and does not take service selectors",
+			Hint:     fmt.Sprintf("Stop one service with `kranz stop %s`, or stop everything with `kranz down`.", arg),
+			ExitCode: kranzcli.ExitUsage,
+		}
 	}
-	record, err := resolveSession(options, true)
+	record, err := resolveSession(options)
 	if err != nil {
 		return err
 	}
