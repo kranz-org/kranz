@@ -13,6 +13,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/kranz-org/kranz/internal/app"
 	kranzcli "github.com/kranz-org/kranz/internal/cli"
 	"github.com/kranz-org/kranz/internal/config"
 	"github.com/kranz-org/kranz/internal/port"
@@ -176,7 +177,7 @@ func listServices(cfg *config.Config, options kranzcli.GlobalOptions, stdout io.
 	entries := make([]entry, 0, len(cfg.Services))
 	for _, name := range cfg.ServiceNames() {
 		svc := cfg.Services[name]
-		entries = append(entries, entry{name, svc.Description, svc.Tags, svc.DependsOn, svc.Ports, svc.Disabled})
+		entries = append(entries, entry{name, svc.Description, emptyIfNil(svc.Tags), emptyIfNil(svc.DependsOn), emptyIntsIfNil(svc.Ports), svc.Disabled})
 	}
 	if options.Output == kranzcli.OutputJSON {
 		return kranzcli.WriteJSON(stdout, entries)
@@ -260,6 +261,15 @@ func actionIDString(id config.ActionID) string {
 	return id.Owner + "/" + id.Name
 }
 
+// joinProse separates a list the way a sentence does. Table columns stay
+// compact with joinOrDash; a line the user reads left to right does not.
+func joinProse(values []string) string {
+	if len(values) == 0 {
+		return "-"
+	}
+	return strings.Join(values, ", ")
+}
+
 func joinOrDash(values []string) string {
 	if len(values) == 0 {
 		return "-"
@@ -306,7 +316,7 @@ func runInfo(options kranzcli.GlobalOptions, args []string, stdout io.Writer) er
 			ExitCode: kranzcli.ExitNotFound,
 		}
 	}
-	return serviceInfo(cfg, name, svc, options, stdout)
+	return serviceInfo(cfg, name, svc, runtimeSnapshots(options)[name], options, stdout)
 }
 
 func projectInfo(cfg *config.Config, paths []string, options kranzcli.GlobalOptions, stdout io.Writer) error {
@@ -322,7 +332,7 @@ func projectInfo(cfg *config.Config, paths []string, options kranzcli.GlobalOpti
 		}{cfg.Project, cfg.RuntimeName(), string(cfg.Source), paths, cfg.ServiceNames(), projectTags(cfg), len(cfg.ActionIDs())})
 	}
 	_, _ = fmt.Fprintf(stdout, "Project:  %s\nRuntime:  %s\nSource:   %s\nServices: %s\nTags:     %s\nActions:  %d\n",
-		cfg.Project, cfg.RuntimeName(), cfg.Source, joinOrDash(cfg.ServiceNames()), joinOrDash(projectTags(cfg)), len(cfg.ActionIDs()))
+		cfg.Project, cfg.RuntimeName(), cfg.Source, joinProse(cfg.ServiceNames()), joinProse(projectTags(cfg)), len(cfg.ActionIDs()))
 	_, _ = fmt.Fprintf(stdout, "\nLayers:\n")
 	for _, path := range paths {
 		_, _ = fmt.Fprintf(stdout, "  %s\n", path)
@@ -345,27 +355,40 @@ func projectTags(cfg *config.Config) []string {
 	return tags
 }
 
-func serviceInfo(cfg *config.Config, name string, svc config.Service, options kranzcli.GlobalOptions, stdout io.Writer) error {
+func serviceInfo(cfg *config.Config, name string, svc config.Service, live *app.ServiceSnapshot, options kranzcli.GlobalOptions, stdout io.Writer) error {
 	dependents := directDependents(cfg, name)
 	actions := make([]string, 0, len(svc.ActionOrder))
 	actions = append(actions, svc.ActionOrder...)
 
+	state, pid, detected := "-", 0, []int(nil)
+	if live != nil {
+		state = live.State.Status.String()
+		pid = live.State.PID
+		detected = live.DetectedPorts
+	}
+
 	if options.Output == kranzcli.OutputJSON {
 		return kranzcli.WriteJSON(stdout, struct {
-			Name        string   `json:"name"`
-			Description string   `json:"description"`
-			Command     string   `json:"command"`
-			Dir         string   `json:"dir"`
-			Shell       string   `json:"shell"`
-			Supervision string   `json:"supervision"`
-			Tags        []string `json:"tags"`
-			DependsOn   []string `json:"depends_on"`
-			Dependents  []string `json:"dependents"`
-			Ports       []int    `json:"ports"`
-			Actions     []string `json:"actions"`
-			Disabled    bool     `json:"disabled"`
-			Healthcheck bool     `json:"healthcheck"`
-		}{name, svc.Description, svc.Command, svc.Dir, svc.Shell, string(svc.Supervision), svc.Tags, svc.DependsOn, dependents, svc.Ports, actions, svc.Disabled, svc.HealthCheck != nil})
+			Name          string   `json:"name"`
+			Description   string   `json:"description"`
+			Command       string   `json:"command"`
+			Dir           string   `json:"dir"`
+			Shell         string   `json:"shell"`
+			Supervision   string   `json:"supervision"`
+			Tags          []string `json:"tags"`
+			DependsOn     []string `json:"depends_on"`
+			Dependents    []string `json:"dependents"`
+			Ports         []int    `json:"ports"`
+			DetectedPorts []int    `json:"detected_ports"`
+			Actions       []string `json:"actions"`
+			Disabled      bool     `json:"disabled"`
+			Healthcheck   bool     `json:"healthcheck"`
+			State         string   `json:"state"`
+			PID           int      `json:"pid"`
+		}{name, svc.Description, svc.Command, svc.Dir, svc.Shell, string(svc.Supervision),
+			emptyIfNil(svc.Tags), emptyIfNil(svc.DependsOn), emptyIfNil(dependents),
+			emptyIntsIfNil(svc.Ports), emptyIntsIfNil(detected), emptyIfNil(actions),
+			svc.Disabled, svc.HealthCheck != nil, state, pid})
 	}
 
 	_, _ = fmt.Fprintf(stdout, "Service:     %s\n", name)
@@ -381,6 +404,19 @@ func serviceInfo(cfg *config.Config, name string, svc config.Service, options kr
 	_, _ = fmt.Fprintf(stdout, "Ports:       %s\n", joinPortsOrDash(svc.Ports))
 	_, _ = fmt.Fprintf(stdout, "Actions:     %s\n", joinOrDash(actions))
 	_, _ = fmt.Fprintf(stdout, "Healthcheck: %t\n", svc.HealthCheck != nil)
+	// What the file says is half the question. When a runtime is up, the other
+	// half is what this service is actually doing right now.
+	if live != nil {
+		_, _ = fmt.Fprintf(stdout, "\nRight now:\n")
+		_, _ = fmt.Fprintf(stdout, "  State:     %s\n", state)
+		_, _ = fmt.Fprintf(stdout, "  PID:       %s\n", pidLabel(pid))
+		_, _ = fmt.Fprintf(stdout, "  Health:    %s\n", healthLabel(live))
+		_, _ = fmt.Fprintf(stdout, "  Uptime:    %s\n", serviceUptime(live))
+		_, _ = fmt.Fprintf(stdout, "  Ports:     %s\n", joinPortsOrDash(detected))
+		if live.State.ExitError != "" {
+			_, _ = fmt.Fprintf(stdout, "  Last exit: %s\n", live.State.ExitError)
+		}
+	}
 	if svc.Disabled {
 		_, _ = fmt.Fprintf(stdout, "Disabled:    true\n")
 	}
@@ -493,12 +529,7 @@ func runGraph(options kranzcli.GlobalOptions, args []string, stdout io.Writer) e
 	}
 	switch format {
 	case "text":
-		for _, name := range cfg.ServiceNames() {
-			_, _ = fmt.Fprintf(stdout, "%s\n", name)
-			for _, dependency := range cfg.Services[name].DependsOn {
-				_, _ = fmt.Fprintf(stdout, "  depends on %s\n", dependency)
-			}
-		}
+		writeDependencyTree(stdout, cfg)
 		return nil
 	case "dot":
 		_, _ = fmt.Fprintln(stdout, "digraph kranz {")
@@ -517,7 +548,7 @@ func runGraph(options kranzcli.GlobalOptions, args []string, stdout io.Writer) e
 		}
 		nodes := make([]node, 0, len(cfg.Services))
 		for _, name := range cfg.ServiceNames() {
-			nodes = append(nodes, node{name, cfg.Services[name].DependsOn})
+			nodes = append(nodes, node{name, emptyIfNil(cfg.Services[name].DependsOn)})
 		}
 		return kranzcli.WriteJSON(stdout, nodes)
 	default:
@@ -622,6 +653,32 @@ func runPorts(options kranzcli.GlobalOptions, args []string, stdout io.Writer) e
 // detectedPorts is a variable so a test can exercise the merge of declared and
 // detected ports without standing up a runtime that opens real sockets.
 var detectedPorts = detectedPortsByService
+
+// runtimeSnapshots is a variable for the same reason: a test needs to describe
+// a service both with and without a runtime behind it.
+var runtimeSnapshots = liveServiceSnapshots
+
+// liveServiceSnapshots returns what the running runtime knows about each
+// service, or nil when there is no runtime. A project that is not running is
+// the ordinary case, so every way of not reaching one returns nil.
+func liveServiceSnapshots(options kranzcli.GlobalOptions) map[string]*app.ServiceSnapshot {
+	record, err := resolveSession(options)
+	if err != nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	client, err := kranzruntime.DialContext(ctx, record.Socket, version)
+	if err != nil {
+		return nil
+	}
+	defer func() { _ = client.Close() }()
+	snapshots := make(map[string]*app.ServiceSnapshot)
+	for _, snapshot := range client.Services() {
+		snapshots[snapshot.Name] = snapshot
+	}
+	return snapshots
+}
 
 // detectedPortsByService asks the running runtime which ports its services
 // actually opened. A project that is not running is the ordinary case here, not
@@ -793,10 +850,13 @@ func runDoctor(options kranzcli.GlobalOptions, stdout io.Writer) error {
 		}
 	}
 
-	failed := 0
+	failed, warned := 0, 0
 	for _, item := range findings {
-		if item.Status == "fail" {
+		switch item.Status {
+		case "fail":
 			failed++
+		case "warn":
+			warned++
 		}
 	}
 
@@ -813,9 +873,123 @@ func runDoctor(options kranzcli.GlobalOptions, stdout io.Writer) error {
 		if err := w.Flush(); err != nil {
 			return err
 		}
+		// A clean project produced two rows and never mentioned the services it
+		// examined, so a passing preflight was indistinguishable from one that
+		// had not looked. The summary states the scope either way.
+		_, _ = fmt.Fprintf(stdout, "\nChecked %d service(s): commands, directories, env files, and declared ports.\n", len(cfg.Services))
+		switch {
+		case failed > 0:
+			_, _ = fmt.Fprintf(stdout, "%d problem(s) and %d warning(s).\n", failed, warned)
+		case warned > 0:
+			_, _ = fmt.Fprintf(stdout, "No problems. %d warning(s) worth a look.\n", warned)
+		default:
+			_, _ = fmt.Fprintln(stdout, "No problems found.")
+		}
 	}
 	if failed > 0 {
 		return &kranzcli.Error{Code: "preflight_failed", Message: fmt.Sprintf("%d preflight check(s) failed", failed), ExitCode: kranzcli.ExitConfig}
 	}
 	return nil
+}
+
+// writeDependencyTree draws the graph as a tree rooted at the services nothing
+// depends on, so the shape of the project is visible at a glance. The previous
+// rendering was a flat list of every service with its dependencies indented
+// underneath, which showed the same edges without ever showing the structure.
+func writeDependencyTree(stdout io.Writer, cfg *config.Config) {
+	dependents := make(map[string][]string, len(cfg.Services))
+	for _, name := range cfg.ServiceNames() {
+		for _, dependency := range cfg.Services[name].DependsOn {
+			dependents[dependency] = append(dependents[dependency], name)
+		}
+	}
+
+	// A root is a service that depends on nothing: it starts first, and
+	// everything else hangs below it.
+	var roots []string
+	for _, name := range cfg.ServiceNames() {
+		if len(cfg.Services[name].DependsOn) == 0 {
+			roots = append(roots, name)
+		}
+	}
+	if len(roots) == 0 {
+		// Every service depends on something, which means a cycle. Fall back to
+		// listing edges rather than recursing forever.
+		_, _ = fmt.Fprintln(stdout, "Every service has a dependency, so the graph has a cycle:")
+		for _, name := range cfg.ServiceNames() {
+			_, _ = fmt.Fprintf(stdout, "  %s -> %s\n", joinOrDash(cfg.Services[name].DependsOn), name)
+		}
+		return
+	}
+
+	// A service with several dependencies appears under each of them. Printing
+	// its subtree every time would multiply the output, so it is expanded once
+	// and marked afterwards.
+	expanded := make(map[string]bool)
+	var walk func(name, parent, prefix string, last bool, depth int)
+	walk = func(name, parent, prefix string, last bool, depth int) {
+		branch, continuation := "├─ ", "│  "
+		if last {
+			branch, continuation = "└─ ", "   "
+		}
+		if depth == 0 {
+			branch, continuation = "", ""
+		}
+		label := name
+		// A service shown under one dependency may be waiting on others too,
+		// which the tree cannot show without drawing the same node twice.
+		if others := without(cfg.Services[name].DependsOn, parent); depth > 0 && len(others) > 0 {
+			label += "  (also waits for " + strings.Join(others, ", ") + ")"
+		}
+		if expanded[name] && len(dependents[name]) > 0 {
+			label += "  (see above)"
+			_, _ = fmt.Fprintf(stdout, "%s%s%s\n", prefix, branch, label)
+			return
+		}
+		expanded[name] = true
+		_, _ = fmt.Fprintf(stdout, "%s%s%s\n", prefix, branch, label)
+		children := dependents[name]
+		for index, child := range children {
+			walk(child, name, prefix+continuation, index == len(children)-1, depth+1)
+		}
+	}
+	for _, root := range roots {
+		walk(root, "", "", true, 0)
+	}
+
+	orphans := make([]string, 0)
+	for _, name := range cfg.ServiceNames() {
+		if !expanded[name] {
+			orphans = append(orphans, name)
+		}
+	}
+	if len(orphans) > 0 {
+		_, _ = fmt.Fprintf(stdout, "\nNot reachable from any root: %s\n", strings.Join(orphans, ", "))
+	}
+}
+
+func without(values []string, exclude string) []string {
+	kept := make([]string, 0, len(values))
+	for _, value := range values {
+		if value != exclude {
+			kept = append(kept, value)
+		}
+	}
+	return kept
+}
+
+// emptyIfNil and emptyIntsIfNil keep JSON arrays as arrays. A consumer that
+// iterates a list should not have to special-case null for "nothing here".
+func emptyIfNil(values []string) []string {
+	if values == nil {
+		return []string{}
+	}
+	return values
+}
+
+func emptyIntsIfNil(values []int) []int {
+	if values == nil {
+		return []int{}
+	}
+	return values
 }

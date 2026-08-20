@@ -7,8 +7,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/kranz-org/kranz/internal/app"
 	kranzcli "github.com/kranz-org/kranz/internal/cli"
+	"github.com/kranz-org/kranz/internal/config"
 )
 
 const inspectionProject = `project: Inspection
@@ -130,8 +133,14 @@ func TestInfoDescribesProjectAndService(t *testing.T) {
 func TestGraphRendersTextDotAndJSON(t *testing.T) {
 	directory := inspectionDirectory(t)
 
-	if text := runInspection(t, directory, "graph"); !strings.Contains(text, "depends on db") {
-		t.Errorf("text graph is wrong: %q", text)
+	// The text graph is a tree rooted at the services nothing depends on, so
+	// the shape of the project is visible rather than only its edges.
+	text := runInspection(t, directory, "graph")
+	if !strings.Contains(text, "db\n") || !strings.Contains(text, "└─ migrate") || !strings.Contains(text, "└─ api") {
+		t.Errorf("text graph is not a tree: %q", text)
+	}
+	if strings.Index(text, "db") > strings.Index(text, "api") {
+		t.Errorf("text graph does not start at the root: %q", text)
 	}
 	if dot := runInspection(t, directory, "graph", "--format", "dot"); !strings.Contains(dot, `"db" -> "migrate"`) {
 		t.Errorf("dot graph is wrong: %q", dot)
@@ -191,5 +200,73 @@ func TestInspectionCommandsOutsideAProjectExplainThemselves(t *testing.T) {
 		if !strings.Contains(stderr.String(), "no Kranz configuration was found") {
 			t.Errorf("%v error = %q", command, stderr.String())
 		}
+	}
+}
+
+func withRuntimeSnapshots(t *testing.T, snapshots map[string]*app.ServiceSnapshot) {
+	t.Helper()
+	previous := runtimeSnapshots
+	runtimeSnapshots = func(kranzcli.GlobalOptions) map[string]*app.ServiceSnapshot { return snapshots }
+	t.Cleanup(func() { runtimeSnapshots = previous })
+}
+
+// What the file says is half of "tell me about this service". When a runtime is
+// up, the other half is what the service is doing right now, and info answered
+// only the first half while status held the rest.
+func TestInfoReportsLiveStateWhenARuntimeIsRunning(t *testing.T) {
+	directory := inspectionDirectory(t)
+	withRuntimeSnapshots(t, map[string]*app.ServiceSnapshot{
+		"api": {
+			Name:          "api",
+			State:         config.ServiceState{Status: config.StatusRunning, PID: 4242, StartedAt: time.Now().Add(-90 * time.Second)},
+			DetectedPorts: []int{65501},
+			Health:        app.HealthSnapshot{Observed: true, Ready: true},
+		},
+	})
+
+	output := runInspection(t, directory, "info", "api")
+	for _, want := range []string{"Right now", "running", "4242", "ready", "65501"} {
+		if !strings.Contains(output, want) {
+			t.Errorf("info omits %q:\n%s", want, output)
+		}
+	}
+}
+
+// Without a runtime the command still describes the configuration, and must not
+// invent a state it cannot know.
+func TestInfoOmitsLiveStateWithoutARuntime(t *testing.T) {
+	withRuntimeSnapshots(t, nil)
+
+	output := runInspection(t, inspectionDirectory(t), "info", "api")
+	if strings.Contains(output, "Right now") {
+		t.Errorf("info reported live state with no runtime:\n%s", output)
+	}
+	if !strings.Contains(output, "Service:     api") {
+		t.Errorf("info stopped describing the configuration:\n%s", output)
+	}
+}
+
+// A consumer iterating a list should not have to special-case null for
+// "nothing here".
+func TestListJSONUsesEmptyArraysNotNull(t *testing.T) {
+	directory := t.TempDir()
+	if err := os.WriteFile(filepath.Join(directory, "kranz.yaml"), []byte("project: Bare\nservices:\n  solo:\n    command: sleep 60\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	output := runInspection(t, directory, "list", "services", "--output", "json")
+	if strings.Contains(output, "null") {
+		t.Errorf("list services JSON contains null:\n%s", output)
+	}
+}
+
+// doctor on a clean project produced two rows and never mentioned the services
+// it examined, so a passing preflight looked like one that had not looked.
+func TestDoctorStatesWhatItChecked(t *testing.T) {
+	output := runInspection(t, inspectionDirectory(t), "doctor")
+	if !strings.Contains(output, "Checked 3 service(s)") {
+		t.Errorf("doctor does not state its scope:\n%s", output)
+	}
+	if !strings.Contains(output, "No problems found") {
+		t.Errorf("doctor does not state its verdict:\n%s", output)
 	}
 }

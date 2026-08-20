@@ -105,7 +105,7 @@ func TestConfigExplainAttributesFieldsToTheLayerThatSetThem(t *testing.T) {
 }
 
 func TestConfigExplainScopesToOneService(t *testing.T) {
-	output := runInspection(t, secretsDirectory(t), "config", "explain", "zulu")
+	output := runInspection(t, secretsDirectory(t), "config", "explain", "--all", "zulu")
 	if !strings.Contains(output, "services.zulu.command") {
 		t.Errorf("explain zulu omits its own fields:\n%s", output)
 	}
@@ -134,5 +134,41 @@ func TestSecretKeyDetection(t *testing.T) {
 		if got := isSecretKey(name); got != want {
 			t.Errorf("isSecretKey(%q) = %t, want %t", name, got, want)
 		}
+	}
+}
+
+// Provenance is a question about layers. With one layer the answer is the same
+// for every field, and printing it once per field buries it in a wall of
+// identical rows.
+func TestConfigExplainOnASingleLayerSaysSoInsteadOfListing(t *testing.T) {
+	output := runInspection(t, secretsDirectory(t), "config", "explain")
+
+	if !strings.Contains(output, "one configuration layer") {
+		t.Errorf("single-layer explain does not say so:\n%s", output)
+	}
+	if strings.Contains(output, "services.zulu.command") {
+		t.Errorf("single-layer explain listed every field anyway:\n%s", output)
+	}
+	if !strings.Contains(output, "--all") {
+		t.Errorf("single-layer explain does not offer the full listing:\n%s", output)
+	}
+}
+
+// Reporting that `services` and `services.api` also come from a file adds a row
+// for every mapping on the way down and answers nothing the leaves do not.
+func TestConfigExplainListsOnlyLeafFields(t *testing.T) {
+	output := runInspection(t, secretsDirectory(t), "config", "explain", "--all")
+
+	for _, line := range strings.Split(output, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 2 || fields[0] == "FIELD" {
+			continue
+		}
+		if fields[0] == "services" || fields[0] == "defaults" || fields[0] == "services.zulu" {
+			t.Errorf("intermediate mapping %q was listed as a field", fields[0])
+		}
+	}
+	if !strings.Contains(output, "services.zulu.command") {
+		t.Errorf("leaf fields are missing:\n%s", output)
 	}
 }

@@ -36,6 +36,27 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ### Changed
 
+- A command group runs its obvious subcommand when invoked bare: `kranz config`
+  shows the configuration, `kranz action` lists actions, and `kranz port 8080`
+  inspects that port.
+- `kranz ports` reports the ports a running runtime saw its services open, not
+  only the ports the configuration declares.
+- `kranz status` reports health, uptime, and detected ports, and shows `-`
+  rather than `0` for a service that has no process of its own. `kranz ps`
+  reports running and total services instead of a bare total.
+- `kranz info SERVICE` adds what the service is doing right now when a runtime
+  is up.
+- `start`, `stop`, `restart`, `reload`, and `down` say what they changed. A stop
+  that expands to dependents names all of them.
+- A bare `kranz logs` returns the last fifty lines instead of every buffered
+  line; `--all` returns everything.
+- `kranz graph` draws a dependency tree instead of listing each service with its
+  dependencies indented beneath it.
+- `kranz config explain` on a single-layer project says every field comes from
+  that layer instead of repeating the filename on every row, and lists only
+  leaf fields rather than every mapping on the way down.
+- A command that needs a runtime the project has not started now says how to
+  start one instead of reporting that a runtime the user never named is missing.
 - The positional configuration form is removed. `kranz prod.yaml` becomes
   `kranz -f prod.yaml`, and the old shape is recognised and answered with that
   correction. Bare `kranz` still opens the TUI and every existing configuration

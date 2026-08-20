@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/kranz-org/kranz/internal/app"
+	"github.com/kranz-org/kranz/internal/config"
 )
 
 const metadataVersion = 1
@@ -49,8 +50,11 @@ type SessionMetadata struct {
 
 type SessionRecord struct {
 	SessionMetadata
-	State    SessionState `json:"state"`
-	Services *int         `json:"services"`
+	State SessionState `json:"state"`
+	// Services and Running are nil when the runtime could not be reached, so a
+	// caller can tell "no services" from "state unknown".
+	Services *int `json:"services"`
+	Running  *int `json:"running"`
 }
 
 type Registry struct {
@@ -353,8 +357,15 @@ func (r *Registry) List(ctx context.Context, clientVersion string) ([]SessionRec
 		record := SessionRecord{SessionMetadata: metadata, State: SessionUnreachable}
 		client, dialErr := DialContext(ctx, metadata.Socket, clientVersion)
 		if dialErr == nil {
-			count := len(client.Services())
-			record.Services = &count
+			snapshots := client.Services()
+			count := len(snapshots)
+			running := 0
+			for _, snapshot := range snapshots {
+				if snapshot.State.Status == config.StatusRunning {
+					running++
+				}
+			}
+			record.Services, record.Running = &count, &running
 			record.State = SessionRunning
 			_ = client.Close()
 		} else {

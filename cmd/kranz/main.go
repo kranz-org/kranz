@@ -196,7 +196,7 @@ func execute(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	if command := invocation.Command(); command == "start" || command == "stop" || command == "restart" || command == "reload" {
-		if err := runLifecycle(invocation.Globals, command, invocation.Args); err != nil {
+		if err := runLifecycle(invocation.Globals, command, invocation.Args, stdout); err != nil {
 			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
 		}
 		if invocation.Globals.Output == kranzcli.OutputJSON {
@@ -207,7 +207,7 @@ func execute(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	if invocation.Command() == "down" {
-		if err := runDown(invocation.Globals, invocation.Args); err != nil {
+		if err := runDown(invocation.Globals, invocation.Args, stdout); err != nil {
 			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
 		}
 		if invocation.Globals.Output == kranzcli.OutputJSON {
@@ -288,9 +288,11 @@ func runPS(options kranzcli.GlobalOptions, stdout, stderr io.Writer) int {
 	w := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(w, "ID\tNAME\tPROJECT\tMODE\tSERVICES\tSTATE\tUPTIME")
 	for _, record := range records {
+		// A bare total says nothing about whether the project is actually up.
+		// An unreachable runtime reports "-" rather than a count it cannot know.
 		services := "-"
-		if record.Services != nil {
-			services = fmt.Sprint(*record.Services)
+		if record.Services != nil && record.Running != nil {
+			services = fmt.Sprintf("%d/%d", *record.Running, *record.Services)
 		}
 		id := record.ID
 		if len(id) > 8 {
@@ -304,15 +306,24 @@ func runPS(options kranzcli.GlobalOptions, stdout, stderr io.Writer) int {
 	return 0
 }
 
+// shortDuration renders an age the way a person reads one: the largest unit
+// that still says something, never a run of trailing zero units. Every command
+// that shows an age uses it, so `ps` and `status` cannot disagree about what
+// eight minutes looks like.
 func shortDuration(d time.Duration) string {
 	if d < 0 {
 		d = 0
 	}
-	d = d.Round(time.Second)
-	if d < time.Minute {
-		return d.String()
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh%dm", int(d.Hours()), int(d.Minutes())%60)
+	default:
+		return fmt.Sprintf("%dd%dh", int(d.Hours())/24, int(d.Hours())%24)
 	}
-	return d.Round(time.Minute).String()
 }
 
 func writeVersion(stdout, stderr io.Writer, format kranzcli.OutputFormat) int {

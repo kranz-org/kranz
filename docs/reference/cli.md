@@ -87,9 +87,10 @@ These read the configuration only. They work before the first `up` and never
 disturb a running runtime.
 
 ```bash
+kranz config                        # same as config show
 kranz config check                  # load, merge, and validate
 kranz config show [--provenance]    # effective configuration, secrets redacted
-kranz config explain [SERVICE]      # which layer set each field
+kranz config explain [SERVICE] [--all]  # which layer set each field
 kranz doctor                        # preflight checks
 kranz list [services|actions|tags]
 kranz info [SERVICE]
@@ -99,9 +100,21 @@ kranz ports [SELECTOR ...]
 kranz port inspect PORT
 ```
 
+`ports` reports both the ports a service declares and the ports a running
+runtime saw it open, labelled by origin, because a service that picks its port
+at runtime is exactly the case where the configuration cannot answer.
+
+`info SERVICE` describes the configuration, and adds what the service is doing
+right now when a runtime is up.
+
 `config show` redacts environment values whose name looks like a credential and
 keeps services, action groups, and actions in the order the configuration
-declares them.
+declares them. `config explain` on a single-layer project says so instead of
+repeating the same filename on every field; `--all` lists them anyway.
+
+A group runs its obvious subcommand when invoked bare: `kranz config` is
+`config show`, `kranz action` is `action list`, and `kranz port 8080` is
+`port inspect 8080`.
 
 `plan` prints the dependency waves the supervisor itself gates readiness on, and
 pulls in the dependencies of whatever you selected:
@@ -149,12 +162,15 @@ closes attached clients cleanly.
 ### Logs
 
 ```bash
-kranz logs [SELECTOR ...]
-kranz logs --tail 50
+kranz logs [SELECTOR ...]          # the last 50 lines
+kranz logs --tail 200
+kranz logs --all                   # everything still buffered
 kranz logs --since 5m
 kranz logs api --follow
 ```
 
+A bare `kranz logs` returns the last fifty lines, because every service keeps a
+thousand and a few services make that thousands. `--all` returns everything.
 `--tail` and `--since` compose: `--since 5m --tail 50` is the last fifty lines
 from the past five minutes. A stopped service keeps its buffer, so logs still
 answer for a service that has already died. `--follow` resumes from a cursor

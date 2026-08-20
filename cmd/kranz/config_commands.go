@@ -225,6 +225,10 @@ func fieldSources(paths []string) (map[string]string, error) {
 	return sources, nil
 }
 
+// recordSources walks a layer and attributes its leaves. Only leaves are
+// recorded: reporting that `services` and `services.api` also "come from" a
+// file adds a row for every mapping on the way down without answering anything
+// the leaf rows do not already answer.
 func recordSources(node *yaml.Node, path []string, file string, sources map[string]string) {
 	if node == nil || node.Kind != yaml.MappingNode {
 		return
@@ -232,15 +236,28 @@ func recordSources(node *yaml.Node, path []string, file string, sources map[stri
 	for index := 0; index+1 < len(node.Content); index += 2 {
 		key, value := node.Content[index], node.Content[index+1]
 		childPath := append(append([]string(nil), path...), key.Value)
-		joined := strings.Join(childPath, ".")
-		sources[joined] = file
 		if value.Kind == yaml.MappingNode {
 			recordSources(value, childPath, file, sources)
+			continue
 		}
+		sources[strings.Join(childPath, ".")] = file
 	}
 }
 
 func runConfigExplain(options kranzcli.GlobalOptions, args []string, stdout io.Writer) error {
+	all := false
+	positional := make([]string, 0, len(args))
+	for _, arg := range args {
+		if arg == "--all" {
+			all = true
+			continue
+		}
+		if strings.HasPrefix(arg, "-") {
+			return &kranzcli.Error{Code: "unknown_option", Message: fmt.Sprintf("unknown config explain option %q", arg), Hint: "The only option is --all.", ExitCode: kranzcli.ExitUsage}
+		}
+		positional = append(positional, arg)
+	}
+	args = positional
 	if len(args) > 1 {
 		return &kranzcli.Error{Code: "invalid_arguments", Message: "config explain accepts at most one service", ExitCode: kranzcli.ExitUsage}
 	}
@@ -286,10 +303,13 @@ func runConfigExplain(options kranzcli.GlobalOptions, args []string, stdout io.W
 		_, _ = fmt.Fprintln(stdout, "No layered fields to explain.")
 		return nil
 	}
-	// One layer means every field comes from the same file, which is worth
-	// saying once rather than repeating on every row.
-	if len(paths) == 1 {
-		_, _ = fmt.Fprintf(stdout, "All fields come from %s.\n\n", filepath.Base(paths[0]))
+	// Provenance is a question about layers. With one layer the answer is the
+	// same for every field, and printing it once per field buries that.
+	if len(paths) == 1 && !all {
+		_, _ = fmt.Fprintf(stdout, "This project has one configuration layer, so every field comes from it:\n\n  %s\n\n", paths[0])
+		_, _ = fmt.Fprintf(stdout, "%d fields are set there. Run `kranz config explain --all` to list them,\n", len(entries))
+		_, _ = fmt.Fprintln(stdout, "or `kranz config show` to read the effective configuration.")
+		return nil
 	}
 	w := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(w, "FIELD\tSET BY")
