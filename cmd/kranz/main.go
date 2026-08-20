@@ -68,6 +68,52 @@ func execute(args []string, stdout, stderr io.Writer) int {
 	if invocation.Command() == "version" {
 		return writeVersion(stdout, stderr, invocation.Globals.Output)
 	}
+	// The inspection commands describe a project from its configuration and
+	// never touch a runtime, so they are dispatched before anything that
+	// resolves a session.
+	switch invocation.Command() {
+	case "config check":
+		if err := runConfigCheck(invocation.Globals, stdout); err != nil {
+			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
+		}
+		return 0
+	case "doctor":
+		if err := runDoctor(invocation.Globals, stdout); err != nil {
+			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
+		}
+		return 0
+	case "list":
+		if err := runList(invocation.Globals, invocation.Args, stdout); err != nil {
+			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
+		}
+		return 0
+	case "info":
+		if err := runInfo(invocation.Globals, invocation.Args, stdout); err != nil {
+			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
+		}
+		return 0
+	case "plan":
+		if err := runPlan(invocation.Globals, invocation.Args, stdout); err != nil {
+			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
+		}
+		return 0
+	case "graph":
+		if err := runGraph(invocation.Globals, invocation.Args, stdout); err != nil {
+			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
+		}
+		return 0
+	case "ports":
+		if err := runPorts(invocation.Globals, invocation.Args, stdout); err != nil {
+			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
+		}
+		return 0
+	case "port inspect":
+		if err := runPortInspect(invocation.Globals, invocation.Args, stdout); err != nil {
+			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
+		}
+		return 0
+	}
+
 	if invocation.Command() == "ps" {
 		if len(invocation.Args) != 0 {
 			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, &kranzcli.Error{Code: "invalid_arguments", Message: "ps does not accept arguments", ExitCode: kranzcli.ExitUsage})

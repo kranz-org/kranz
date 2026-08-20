@@ -794,6 +794,12 @@ func loadServiceEnvFiles(cfg *Config, svc Service) (map[string]string, error) {
 	return result, nil
 }
 
+// ServiceEnvFiles returns the env file paths a service actually reads, resolved
+// the way the loader resolves them: relative to the service's directory, with
+// the project defaults prepended. Preflight checks outside this package need
+// the same answer the runtime uses, not a second guess at the base directory.
+func ServiceEnvFiles(cfg *Config, svc Service) []string { return resolvedServiceEnvFiles(cfg, svc) }
+
 func resolvedServiceEnvFiles(cfg *Config, svc Service) []string {
 	files := append(append([]string(nil), cfg.Defaults.EnvFiles...), svc.EnvFiles...)
 	for index, path := range files {

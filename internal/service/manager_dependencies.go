@@ -135,7 +135,14 @@ func containsName(values []string, target string) bool {
 // groupByDependencyLevel groups independent services for parallel readiness gating.
 
 func (m *Manager) groupByDependencyLevel(order []string) [][]string {
-	graph := m.configSnapshot().GetDependsOn()
+	return DependencyLevels(m.configSnapshot(), order)
+}
+
+// DependencyLevels groups an ordering into waves that can start in parallel:
+// everything in one wave depends only on earlier waves. The runtime uses it to
+// gate readiness; the CLI uses it to show the same waves in `kranz plan`.
+func DependencyLevels(cfg *config.Config, order []string) [][]string {
+	graph := cfg.GetDependsOn()
 	levels := make(map[string]int)
 
 	// A service level is one more than its deepest dependency.
@@ -232,7 +239,14 @@ func (m *Manager) GetAffectedServices(name string) []string {
 // topologicalSort orders services with Kahn's algorithm.
 
 func (m *Manager) topologicalSort() ([]string, error) {
-	cfg := m.configSnapshot()
+	return TopologicalOrder(m.configSnapshot())
+}
+
+// TopologicalOrder orders a configuration's services so every service follows
+// its dependencies, using Kahn's algorithm. It is exported because the CLI
+// plans starts without owning a Manager, and a second implementation of the
+// same ordering would be free to disagree with the one the runtime uses.
+func TopologicalOrder(cfg *config.Config) ([]string, error) {
 	graph := cfg.GetDependsOn()
 	names := cfg.ServiceNames()
 	inDegree := make(map[string]int, len(names))
