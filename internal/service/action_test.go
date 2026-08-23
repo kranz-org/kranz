@@ -286,3 +286,79 @@ func waitForActionStatus(t *testing.T, runner *ActionRunner, id config.ActionID,
 	state, exists := runner.State(id)
 	t.Fatalf("action state = %#v, %v; want %s", state, exists, status)
 }
+
+// The whole point of the action log stream: output survives the run that
+// produced it, so it can be read again without running the action a second
+// time. Each run is numbered and framed so a later one stays distinguishable.
+func TestActionRunnerRetainsNumberedRunsInItsLogStream(t *testing.T) {
+	directory := t.TempDir()
+	id := serviceActionID("app", "report")
+	runner := newTestActionRunner(directory, map[string]config.Action{
+		"report": {Command: `printf 'counted\n'; printf 'noticed\n' >&2`, Dir: directory, Shell: "/bin/sh"},
+	})
+
+	for range 2 {
+		if _, err := runner.Run(context.Background(), id); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	entries := runner.ActionLogEntries(id)
+	if len(entries) == 0 {
+		t.Fatal("the finished action left no log stream behind")
+	}
+	byRun := map[uint32][]config.LogEntry{}
+	for _, entry := range entries {
+		byRun[entry.Run] = append(byRun[entry.Run], entry)
+	}
+	if len(byRun) != 2 {
+		t.Fatalf("runs = %d, want 2", len(byRun))
+	}
+	for run := uint32(1); run <= 2; run++ {
+		text := ""
+		sources := map[string]bool{}
+		for _, entry := range byRun[run] {
+			text += entry.Raw + "\n"
+			sources[entry.Source] = true
+		}
+		if !strings.Contains(text, "counted") || !strings.Contains(text, "noticed") {
+			t.Errorf("run %d lost process output: %s", run, text)
+		}
+		if !sources["stdout"] || !sources["stderr"] {
+			t.Errorf("run %d lost stream identity: %v", run, sources)
+		}
+		if !strings.Contains(text, "#"+string(rune('0'+run))+" started") {
+			t.Errorf("run %d is not framed: %s", run, text)
+		}
+	}
+
+	runner.ClearActionLogs(id)
+	if remaining := runner.ActionLogEntries(id); len(remaining) != 0 {
+		t.Errorf("cleared stream still holds %d entries", len(remaining))
+	}
+	// Clearing reclaims the buffer without reusing run numbers: an address must
+	// never come to mean a different execution than it did before.
+	if _, err := runner.Run(context.Background(), id); err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range runner.ActionLogEntries(id) {
+		if entry.Run != 3 {
+			t.Fatalf("run numbering restarted at %d after a clear", entry.Run)
+		}
+	}
+}
+
+// A lifecycle hook's output belongs to the service it acts on, which already
+// records it. Giving it a second, unaddressable stream would only duplicate it.
+func TestActionRunnerKeepsNoStreamForLifecycleActions(t *testing.T) {
+	directory := t.TempDir()
+	runner := newTestActionRunner(directory, nil)
+	id := config.ActionID{OwnerKind: config.ActionOwnerLifecycle, Owner: "app", Name: "prestart"}
+	action := config.Action{Command: `printf 'hooked\n'`, Dir: directory, Shell: "/bin/sh"}
+	if _, err := runner.RunDefinition(context.Background(), id, action); err != nil {
+		t.Fatal(err)
+	}
+	if entries := runner.ActionLogEntries(id); len(entries) != 0 {
+		t.Errorf("lifecycle action opened its own stream: %v", entries)
+	}
+}

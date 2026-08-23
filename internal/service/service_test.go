@@ -2,6 +2,7 @@ package service
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -51,7 +52,7 @@ func TestLogEntriesKeepTimestampsAlignedAcrossOverflowAndClear(t *testing.T) {
 	}
 
 	svc.ClearLogs()
-	if len(svc.LogEntries()) != 0 || svc.Logs.Len() != 0 {
+	if len(svc.LogEntries()) != 0 || len(svc.LogLines()) != 0 {
 		t.Fatal("ClearLogs left text or timestamp metadata")
 	}
 }
@@ -75,6 +76,55 @@ func TestLogEntriesPreserveSourceSequenceAndHotReloadHistory(t *testing.T) {
 	}{{"stdout", 1, "one"}, {"stderr", 2, "two"}, {"stdout", 3, "three"}} {
 		if entries[index].Source != want.source || entries[index].Sequence != want.sequence || entries[index].Raw != want.raw {
 			t.Fatalf("entry %d = %+v, want %+v", index, entries[index], want)
+		}
+	}
+}
+
+// A pipe read is not line-aligned, so one captured chunk can carry many lines.
+// Storing it as a single entry is what made every consumer that counts entries
+// report a number the user could not reproduce by counting what they saw.
+func TestAppendLogStoresOneEntryPerLine(t *testing.T) {
+	svc := NewService("api", config.Service{}, 100)
+	svc.AppendLogAtSource(time.Now(), "stdout", "first\nsecond\n\nfourth\n")
+
+	entries := svc.LogEntries()
+	if len(entries) != 4 {
+		t.Fatalf("entries = %d, want 4", len(entries))
+	}
+	for index, want := range []string{"first", "second", "", "fourth"} {
+		if entries[index].Raw != want {
+			t.Errorf("entry %d = %q, want %q", index, entries[index].Raw, want)
+		}
+		if strings.Contains(entries[index].Raw, "\n") {
+			t.Errorf("entry %d still holds more than one line", index)
+		}
+		// Every line is separately addressable, which is what a follow cursor
+		// and a search hit index both rely on.
+		if index > 0 && entries[index].Sequence <= entries[index-1].Sequence {
+			t.Errorf("entry %d did not advance the cursor", index)
+		}
+	}
+}
+
+func TestSplitCapturedLinesKeepsBlanksAndDropsTheTerminator(t *testing.T) {
+	for input, want := range map[string][]string{
+		"solo":               {"solo"},
+		"one\ntwo\n":         {"one", "two"},
+		"one\ntwo":           {"one", "two"},
+		"trailing blank\n\n": {"trailing blank", ""},
+		"crlf\r\n":           {"crlf"},
+		"":                   {""},
+	} {
+		got := splitCapturedLines(input)
+		if len(got) != len(want) {
+			t.Errorf("splitCapturedLines(%q) = %q, want %q", input, got, want)
+			continue
+		}
+		for index := range got {
+			if got[index] != want[index] {
+				t.Errorf("splitCapturedLines(%q) = %q, want %q", input, got, want)
+				break
+			}
 		}
 	}
 }

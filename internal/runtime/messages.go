@@ -42,6 +42,8 @@ const (
 	methodCancelAction                    = "cancelAction"
 	methodAcquireInteractiveAction        = "acquireInteractiveAction"
 	methodCompleteInteractiveAction       = "completeInteractiveAction"
+	methodActionLogs                      = "actionLogs"
+	methodClearActionLogs                 = "clearActionLogs"
 	methodLogs                            = "logs"
 	methodClearLogs                       = "clearLogs"
 	methodMarkLogsRead                    = "markLogsRead"

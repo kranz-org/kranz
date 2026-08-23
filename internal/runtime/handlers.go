@@ -126,6 +126,13 @@ var handlers = map[string]handlerFunc{
 		}
 		return l.CompleteInteractiveAction(req.ID, req.Lease, execErr, req.ExitCode, req.PID)
 	}),
+	methodActionLogs: handler(func(_ context.Context, l *app.Local, req actionIDRequest) (logsResponse, error) {
+		return logsResponse{Entries: l.ActionLogs(req.ID)}, nil
+	}),
+	methodClearActionLogs: handler(func(_ context.Context, l *app.Local, req actionIDRequest) (emptyResponse, error) {
+		l.ClearActionLogs(req.ID)
+		return emptyResponse{}, nil
+	}),
 	methodLogs: handler(func(_ context.Context, l *app.Local, req nameRequest) (logsResponse, error) {
 		return logsResponse{Entries: l.Logs(req.Name)}, nil
 	}),

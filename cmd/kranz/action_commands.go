@@ -214,14 +214,14 @@ func runActionRun(options kranzcli.GlobalOptions, args []string, stdout io.Write
 			Stdout   []string `json:"stdout"`
 			Stderr   []string `json:"stderr"`
 			Error    string   `json:"error"`
-		}{actionIDString(id), result.Status.String(), result.ExitCode, result.Duration.String(), emptyIfNil(result.Stdout), emptyIfNil(result.Stderr), result.Error}); err != nil {
+		}{actionIDString(id), result.Status.String(), result.ExitCode, result.Duration.String(), actionOutputLines(result.Stdout), actionOutputLines(result.Stderr), result.Error}); err != nil {
 			return err
 		}
 	} else {
-		for _, line := range result.Stdout {
+		for _, line := range actionOutputLines(result.Stdout) {
 			_, _ = fmt.Fprintln(stdout, line)
 		}
-		for _, line := range result.Stderr {
+		for _, line := range actionOutputLines(result.Stderr) {
 			_, _ = fmt.Fprintln(stdout, line)
 		}
 		_, _ = fmt.Fprintf(stdout, "%s %s in %s (exit %d)\n", actionIDString(id), result.Status, result.Duration.Round(1e6), result.ExitCode)
@@ -257,4 +257,17 @@ func rejectInteractiveAction(id config.ActionID, action config.Action) error {
 		Hint:     "Run it from the TUI with `kranz attach`.",
 		ExitCode: kranzcli.ExitUsage,
 	}
+}
+
+// actionOutputLines turns captured output into one entry per line. A pipe hands
+// Kranz whatever chunk it read, so a JSON consumer counting array elements and
+// a human counting printed lines would otherwise disagree.
+func actionOutputLines(chunks []string) []string {
+	lines := make([]string, 0, len(chunks))
+	for _, chunk := range chunks {
+		for _, line := range strings.Split(strings.TrimSuffix(chunk, "\n"), "\n") {
+			lines = append(lines, strings.TrimSuffix(line, "\r"))
+		}
+	}
+	return lines
 }

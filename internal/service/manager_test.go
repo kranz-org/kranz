@@ -194,7 +194,7 @@ func TestLifecycleResultHidesSuccessfulProgressButKeepsFailureOutput(t *testing.
 		Status: ActionSucceeded, ExitCode: 0,
 		Stdout: []string{"created"}, Stderr: []string{"Container api Running"},
 	})
-	logs := strings.Join(service.Logs.Lines(), "\n")
+	logs := strings.Join(service.LogLines(), "\n")
 	if strings.Contains(logs, "created") || strings.Contains(logs, "Container api Running") {
 		t.Fatalf("successful lifecycle progress leaked into service logs:\n%s", logs)
 	}
@@ -205,7 +205,7 @@ func TestLifecycleResultHidesSuccessfulProgressButKeepsFailureOutput(t *testing.
 	manager.appendLifecycleResult(service, "stop", ActionResult{
 		Status: ActionFailed, ExitCode: 1, Stderr: []string{"permission denied"},
 	})
-	logs = strings.Join(service.Logs.Lines(), "\n")
+	logs = strings.Join(service.LogLines(), "\n")
 	if !strings.Contains(logs, "[stderr] permission denied") {
 		t.Fatalf("failed lifecycle diagnostics missing:\n%s", logs)
 	}
@@ -345,11 +345,11 @@ func TestDetachedLogFollowerStreamsAndStopsSeparately(t *testing.T) {
 	}
 	service, _ := manager.GetService("stack")
 	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) && !strings.Contains(strings.Join(service.Logs.Lines(), ""), "remote log") {
+	for time.Now().Before(deadline) && !strings.Contains(strings.Join(service.LogLines(), ""), "remote log") {
 		time.Sleep(10 * time.Millisecond)
 	}
-	if !strings.Contains(strings.Join(service.Logs.Lines(), ""), "remote log") {
-		t.Fatalf("detached logs were not streamed: %v", service.Logs.Lines())
+	if !strings.Contains(strings.Join(service.LogLines(), ""), "remote log") {
+		t.Fatalf("detached logs were not streamed: %v", service.LogLines())
 	}
 	if err := manager.StopService("stack"); err != nil {
 		t.Fatal(err)
@@ -579,7 +579,7 @@ func TestStartAndStopAppendLifecycleBoundaries(t *testing.T) {
 	}
 
 	api, _ := manager.GetService("api")
-	logs := strings.Join(api.Logs.Lines(), "\n")
+	logs := strings.Join(api.LogLines(), "\n")
 	for _, expected := range []string{
 		"[Kranz] Starting",
 		"[Kranz] Started · PID ",

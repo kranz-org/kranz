@@ -386,6 +386,15 @@ func (c *Client) Logs(name string) []config.LogEntry {
 	return resp.Entries
 }
 
+func (c *Client) ActionLogs(id config.ActionID) []config.LogEntry {
+	resp, _ := call[actionIDRequest, logsResponse](c, context.Background(), methodActionLogs, actionIDRequest{ID: id})
+	return resp.Entries
+}
+
+func (c *Client) ClearActionLogs(id config.ActionID) {
+	_, _ = call[actionIDRequest, emptyResponse](c, context.Background(), methodClearActionLogs, actionIDRequest{ID: id})
+}
+
 func (c *Client) ClearLogs(name string) {
 	_, _ = call[nameRequest, emptyResponse](c, context.Background(), methodClearLogs, nameRequest{Name: name})
 }

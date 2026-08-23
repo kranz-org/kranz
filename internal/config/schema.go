@@ -518,9 +518,13 @@ type LogEntry struct {
 	Sequence  uint64    `json:"sequence"`
 	Timestamp time.Time `json:"timestamp"`
 	Source    string    `json:"source"`
-	Level     LogLevel  `json:"level"`
-	Text      string    `json:"text"`
-	Raw       string    `json:"raw"`
+	// Run numbers the execution that produced the line. Services stream
+	// continuously and leave it zero; actions number every invocation so a
+	// single run stays addressable after later ones append to the same buffer.
+	Run   uint32   `json:"run,omitempty"`
+	Level LogLevel `json:"level"`
+	Text  string   `json:"text"`
+	Raw   string   `json:"raw"`
 }
 
 // Notification is one entry in the in-memory notification center.

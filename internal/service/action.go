@@ -119,6 +119,8 @@ type ActionRunner struct {
 	states       map[config.ActionID]ActionResult
 	active       map[actionOwner]*activeAction
 	logBufSize   int
+	logsMu       sync.RWMutex
+	logs         map[config.ActionID]*logStream
 	shuttingDown bool
 	leaseSeq     atomic.Uint64
 }
@@ -132,6 +134,7 @@ func NewActionRunner(cfg *config.Config, logBufSize int) *ActionRunner {
 		cfg:        cfg,
 		states:     make(map[config.ActionID]ActionResult),
 		active:     make(map[actionOwner]*activeAction),
+		logs:       make(map[config.ActionID]*logStream),
 		logBufSize: logBufSize,
 	}
 }
@@ -202,7 +205,17 @@ func (r *ActionRunner) RunDefinition(ctx context.Context, id config.ActionID, ac
 	r.states[id] = ActionResult{ID: id, Status: ActionRunning, ExitCode: -1, StartedAt: started}
 	r.mu.Unlock()
 
-	result, runErr := r.execute(runCtx, id, action, started)
+	stream := r.logStreamFor(id)
+	var run uint32
+	if stream != nil {
+		run = stream.BeginRun()
+		stream.Append(started, "kranz", fmt.Sprintf("[Kranz] %s/%s #%d started", id.Owner, id.Name, run))
+	}
+	result, runErr := r.execute(runCtx, id, action, started, stream)
+	if stream != nil {
+		stream.Append(time.Now(), "kranz", fmt.Sprintf("[Kranz] %s/%s #%d %s · exit %d · %s",
+			id.Owner, id.Name, run, result.Status, result.ExitCode, result.Duration.Round(time.Millisecond)))
+	}
 	cancel()
 	r.mu.Lock()
 	delete(r.active, owner)
@@ -212,7 +225,7 @@ func (r *ActionRunner) RunDefinition(ctx context.Context, id config.ActionID, ac
 	return result, runErr
 }
 
-func (r *ActionRunner) execute(ctx context.Context, id config.ActionID, action config.Action, started time.Time) (ActionResult, error) {
+func (r *ActionRunner) execute(ctx context.Context, id config.ActionID, action config.Action, started time.Time, stream *logStream) (ActionResult, error) {
 	result := ActionResult{ID: id, Status: ActionFailed, ExitCode: -1, StartedAt: started}
 	if err := ctx.Err(); err != nil {
 		return finishActionResult(result, ActionCancelled, nil, err)
@@ -226,6 +239,10 @@ func (r *ActionRunner) execute(ctx context.Context, id config.ActionID, action c
 	}
 	result.PID = pid
 	r.setActionPID(id, pid)
+	// The pump copies output into the addressable stream while the action runs,
+	// so `kranz logs owner/action --follow` sees lines as they land instead of
+	// only at exit. Its final sweep runs on every return path.
+	defer startOutputPump(stream, process)()
 
 	waitCh := make(chan error, 1)
 	go func() { waitCh <- process.Wait() }()
@@ -430,3 +447,96 @@ func (m *Manager) ActionStates() []ActionResult {
 func (m *Manager) CancelAction(id config.ActionID) bool {
 	return m.actions.Cancel(id)
 }
+
+// actionLogPumpInterval paces copying a running action's output into its
+// addressable stream. It matches the detached log follower's cadence: fast
+// enough that --follow feels live, slow enough to stay off the hot path.
+const actionLogPumpInterval = 100 * time.Millisecond
+
+// logStreamFor returns the addressable log stream for an action, creating it on
+// first use. Lifecycle actions get none: their output already belongs to the
+// service they act on, and `kranz logs api` is where it is read.
+func (r *ActionRunner) logStreamFor(id config.ActionID) *logStream {
+	if id.OwnerKind == config.ActionOwnerLifecycle {
+		return nil
+	}
+	r.logsMu.Lock()
+	defer r.logsMu.Unlock()
+	stream, exists := r.logs[id]
+	if !exists {
+		stream = newLogStream(r.logBufSize)
+		r.logs[id] = stream
+	}
+	return stream
+}
+
+// ActionLogEntries returns the buffered history of one action.
+func (r *ActionRunner) ActionLogEntries(id config.ActionID) []config.LogEntry {
+	r.logsMu.RLock()
+	stream := r.logs[id]
+	r.logsMu.RUnlock()
+	if stream == nil {
+		return nil
+	}
+	return stream.Entries()
+}
+
+// ClearActionLogs discards one action's buffered history.
+func (r *ActionRunner) ClearActionLogs(id config.ActionID) {
+	r.logsMu.RLock()
+	stream := r.logs[id]
+	r.logsMu.RUnlock()
+	if stream != nil {
+		stream.Clear()
+	}
+}
+
+// startOutputPump copies a process's captured output into stream until the
+// returned stop function is called, which sweeps whatever arrived last. It
+// reads by offset rather than draining, so the ActionResult snapshot the caller
+// builds from the same buffers stays complete.
+func startOutputPump(stream *logStream, process *ProcessManager) func() {
+	if stream == nil || process == nil {
+		return func() {}
+	}
+	stdoutOffset, stderrOffset := 0, 0
+	sweep := func() {
+		lines := process.Stdout().Lines()
+		for ; stdoutOffset < len(lines); stdoutOffset++ {
+			stream.Append(time.Now(), "stdout", lines[stdoutOffset])
+		}
+		lines = process.Stderr().Lines()
+		for ; stderrOffset < len(lines); stderrOffset++ {
+			stream.Append(time.Now(), "stderr", lines[stderrOffset])
+		}
+	}
+	done, finished := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(finished)
+		ticker := time.NewTicker(actionLogPumpInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				sweep()
+			}
+		}
+	}()
+	// The offsets are owned by the pump goroutine; the final sweep runs only
+	// after it has exited, so the two never advance them concurrently.
+	return func() {
+		close(done)
+		<-finished
+		sweep()
+	}
+}
+
+// ActionLogs returns the buffered history of one action.
+func (m *Manager) ActionLogs(id config.ActionID) []config.LogEntry {
+	return m.actions.ActionLogEntries(id)
+}
+
+// ClearActionLogs discards one action's buffered history.
+func (m *Manager) ClearActionLogs(id config.ActionID) { m.actions.ClearActionLogs(id) }

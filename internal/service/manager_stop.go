@@ -104,9 +104,14 @@ func (m *Manager) appendLifecycleResult(svc *Service, operation string, result A
 	// successful lifecycle operation only needs its concise boundary; keep
 	// command output for failures where it is diagnostic.
 	if result.Status != ActionSucceeded {
-		lines := append([]string(nil), result.Stdout...)
-		for _, line := range result.Stderr {
-			lines = append(lines, "[stderr] "+line)
+		var lines []string
+		for _, chunk := range result.Stdout {
+			lines = append(lines, splitCapturedLines(chunk)...)
+		}
+		for _, chunk := range result.Stderr {
+			for _, line := range splitCapturedLines(chunk) {
+				lines = append(lines, "[stderr] "+line)
+			}
 		}
 		const maxLifecycleFailureLines = 40
 		if omitted := len(lines) - maxLifecycleFailureLines; omitted > 0 {

@@ -299,6 +299,12 @@ func (l *Local) Logs(name string) []config.LogEntry {
 	return svc.LogEntries()
 }
 
+func (l *Local) ActionLogs(id config.ActionID) []config.LogEntry {
+	return l.manager.ActionLogs(id)
+}
+
+func (l *Local) ClearActionLogs(id config.ActionID) { l.manager.ClearActionLogs(id) }
+
 func (l *Local) ClearLogs(name string) {
 	svc, ok := l.manager.GetService(name)
 	if !ok {

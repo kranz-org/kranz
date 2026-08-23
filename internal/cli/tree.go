@@ -60,7 +60,10 @@ func DefaultTree() *Command {
 		{Name: "reload", Summary: "reload runtime configuration"},
 		{Name: "down", Summary: "stop a project runtime", Usage: "kranz down [--force]"},
 		{Name: "attach", Summary: "open the TUI for an active runtime"},
-		{Name: "logs", Summary: "show service logs", Usage: "kranz logs [SELECTOR ...] [--tail N | --all] [--since D] [--follow]"},
+		{Name: "logs", Summary: "show and clear logs", Default: "show", Children: []*Command{
+			{Name: "show", Summary: "show service and action logs", Usage: "kranz logs [SELECTOR ...] [--tail N | --all] [--since D]\n  [--run N | --runs N] [--source S] [--with-actions]\n  [--plain | --no-timestamps | --no-labels] [--follow]"},
+			{Name: "clear", Summary: "discard buffered logs", Usage: "kranz logs clear [SELECTOR ...] [--with-actions] [--force]"},
+		}},
 		{Name: "action", Summary: "inspect and run actions", Default: "list", Children: []*Command{
 			{Name: "list", Summary: "list actions", Usage: "kranz action list [OWNER]"},
 			{Name: "info", Summary: "show action details", Usage: "kranz action info OWNER/ACTION"},

@@ -109,6 +109,11 @@ type API interface {
 
 	// Logs returns the current buffered log entries for a service.
 	Logs(name string) []config.LogEntry
+	// ActionLogs returns the buffered log entries of one action. Lifecycle
+	// actions have none: their output belongs to the service they act on.
+	ActionLogs(id config.ActionID) []config.LogEntry
+	// ClearActionLogs discards one action's buffered logs.
+	ClearActionLogs(id config.ActionID)
 	// ClearLogs discards a service's buffered logs and resets its unread
 	// count.
 	ClearLogs(name string)

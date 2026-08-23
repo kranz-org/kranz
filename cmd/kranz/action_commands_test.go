@@ -110,3 +110,22 @@ func TestActionRunNeedsARuntime(t *testing.T) {
 		t.Fatalf("exit = %d, stderr = %q", code, stderr.String())
 	}
 }
+
+// `kranz action run --output=json` promises an array of output lines. A pipe
+// hands Kranz whatever chunk it read, so without splitting, a consumer counting
+// array elements and a human counting printed lines disagree.
+func TestActionOutputLinesAreOneLineEach(t *testing.T) {
+	lines := actionOutputLines([]string{"one\ntwo\n", "three\r\n", "four"})
+	want := []string{"one", "two", "three", "four"}
+	if len(lines) != len(want) {
+		t.Fatalf("lines = %q, want %q", lines, want)
+	}
+	for index := range lines {
+		if lines[index] != want[index] {
+			t.Fatalf("lines = %q, want %q", lines, want)
+		}
+	}
+	if empty := actionOutputLines(nil); empty == nil {
+		t.Error("nil output must still encode as an empty JSON array")
+	}
+}

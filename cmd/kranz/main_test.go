@@ -327,7 +327,7 @@ func TestLogsSnapshotFollowAndClientInterrupt(t *testing.T) {
 	if code := execute([]string{"-p", name, "logs", "emitter"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("logs exit=%d stderr=%s", code, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "[emitter/stdout]") || !strings.Contains(stdout.String(), "[emitter/stderr]") {
+	if !strings.Contains(stdout.String(), "[emitter stdout]") || !strings.Contains(stdout.String(), "[emitter stderr]") {
 		t.Fatalf("text logs lost identity:\n%s", stdout.String())
 	}
 	stdout.Reset()
@@ -354,7 +354,7 @@ func TestLogsSnapshotFollowAndClientInterrupt(t *testing.T) {
 	if err := follow.Wait(); err != nil {
 		t.Fatalf("follow interrupted with %v; stderr=%s", err, followErr.String())
 	}
-	if !strings.Contains(followOut.String(), "[emitter/") {
+	if !strings.Contains(followOut.String(), "[emitter ") {
 		t.Fatalf("follow did not stream new events: %s", followOut.String())
 	}
 	stdout.Reset()

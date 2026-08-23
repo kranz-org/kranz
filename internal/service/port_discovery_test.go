@@ -378,13 +378,13 @@ func TestDiscoveryFailureIsNonFatalAndRecoveryReplacesSnapshots(t *testing.T) {
 		{},
 	}}
 	manager.SetListenerScanner(scanner)
-	logsBefore := len(svc.Logs.Lines())
+	logsBefore := len(svc.LogLines())
 
 	manager.refreshDetectedPorts(context.Background())
 	if svc.Status() != config.StatusRunning || len(svc.DetectedPorts()) != 0 {
 		t.Fatalf("scanner failure affected service: status=%s ports=%v", svc.Status(), svc.DetectedPorts())
 	}
-	if logsAfter := len(svc.Logs.Lines()); logsAfter != logsBefore {
+	if logsAfter := len(svc.LogLines()); logsAfter != logsBefore {
 		t.Fatalf("scanner failure added service log spam: before=%d after=%d", logsBefore, logsAfter)
 	}
 
