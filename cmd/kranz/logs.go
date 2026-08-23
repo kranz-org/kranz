@@ -222,7 +222,10 @@ func parseLogOptions(args []string) (logOptions, error) {
 	for index := 0; index < len(args); index++ {
 		arg := args[index]
 		switch {
-		case arg == "--follow" || arg == "-f":
+		// -f is not a follow shorthand here: the global parser claims it as
+		// --config wherever it appears, so accepting it below would document a
+		// spelling that never reaches this switch.
+		case arg == "--follow":
 			options.follow = true
 		case arg == "--all":
 			options.all = true

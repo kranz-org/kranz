@@ -4,6 +4,12 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### Fixed
+
+- `kranz logs -f` no longer looks like a `--follow` shorthand. The global parser
+  claims `-f` as `--config` wherever it appears, so the alias could never reach
+  the logs command; `--follow` is the spelling.
+
 ## [0.8.1] - 2026-08-23
 
 ### Added
