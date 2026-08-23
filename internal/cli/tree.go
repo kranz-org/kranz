@@ -9,11 +9,21 @@ import (
 	"strings"
 )
 
+// Option documents one flag a command accepts. The usage line lists the
+// spellings; this is where the meaning lives, because a name alone cannot say
+// what a value means — `--run N` reads as a run number until help explains
+// that a negative N counts back from the latest execution.
+type Option struct {
+	Flags   string
+	Summary string
+}
+
 // Command describes one node in the public command tree.
 type Command struct {
 	Name     string
 	Summary  string
 	Usage    string
+	Options  []Option
 	Children []*Command
 
 	// Default names the subcommand to run when a group is invoked bare. A group
@@ -36,11 +46,22 @@ type Command struct {
 // change, which is what moves the command into the working help section.
 func DefaultTree() *Command {
 	return &Command{Name: "kranz", Summary: "a local service orchestrator", Children: []*Command{
-		{Name: "init", Summary: "create a Kranz configuration", Usage: "kranz init [--from PATH] [--project NAME] [--service NAME] [--command COMMAND] [-o PATH] [-y|--yes]"},
+		{Name: "init", Summary: "create a Kranz configuration", Usage: "kranz init [--from PATH] [--project NAME] [--service NAME] [--command COMMAND] [-o PATH] [-y|--yes]", Options: []Option{
+			{Flags: "--from PATH", Summary: "convert an existing Procfile or compose file"},
+			{Flags: "--project NAME", Summary: "project name to write"},
+			{Flags: "--service NAME", Summary: "name of the first service"},
+			{Flags: "--command COMMAND", Summary: "command that first service runs"},
+			{Flags: "-o, --output-file PATH", Summary: "file to write; defaults to kranz.yaml"},
+			{Flags: "-y, --yes", Summary: "answer every prompt yes, overwriting any file"},
+		}},
 		{Name: "config", Summary: "inspect effective configuration", Default: "show", Children: []*Command{
 			{Name: "check", Summary: "load and validate configuration"},
-			{Name: "show", Summary: "print redacted effective configuration", Usage: "kranz config show [--provenance]"},
-			{Name: "explain", Summary: "show field provenance", Usage: "kranz config explain [SERVICE] [--all]"},
+			{Name: "show", Summary: "print redacted effective configuration", Usage: "kranz config show [--provenance]", Options: []Option{
+				{Flags: "--provenance", Summary: "annotate each field with the layer it came from"},
+			}},
+			{Name: "explain", Summary: "show field provenance", Usage: "kranz config explain [SERVICE] [--all]", Options: []Option{
+				{Flags: "--all", Summary: "explain every service instead of one"},
+			}},
 		}},
 		{Name: "doctor", Summary: "run project preflight checks"},
 		{Name: "ps", Summary: "list active project runtimes"},
@@ -48,21 +69,43 @@ func DefaultTree() *Command {
 		{Name: "info", Summary: "show project or service details", Usage: "kranz info [SERVICE]"},
 		{Name: "status", Summary: "show runtime status", Usage: "kranz status [SELECTOR ...]"},
 		{Name: "plan", Summary: "show the resolved start plan", Usage: "kranz plan [SELECTOR ...]"},
-		{Name: "graph", Summary: "print the dependency graph", Usage: "kranz graph [--format text|json|dot]"},
+		{Name: "graph", Summary: "print the dependency graph", Usage: "kranz graph [--format text|json|dot]", Options: []Option{
+			{Flags: "--format FORMAT", Summary: "text, json, or dot; defaults to text"},
+		}},
 		{Name: "ports", Summary: "list configured and detected ports", Usage: "kranz ports [SELECTOR ...]"},
 		{Name: "port", Summary: "inspect a local port", Default: "inspect", Children: []*Command{
 			{Name: "inspect", Summary: "identify a port listener", Usage: "kranz port inspect PORT"},
 		}},
-		{Name: "up", Summary: "create a project runtime", Usage: "kranz up [SELECTOR ...] [-d|--detach]\n  kranz up --no-start [-d|--detach]"},
+		{Name: "up", Summary: "create a project runtime", Usage: "kranz up [SELECTOR ...] [-d|--detach]\n  kranz up --no-start [-d|--detach]", Options: []Option{
+			{Flags: "-d, --detach", Summary: "leave the runtime in the background and return"},
+			{Flags: "--no-start", Summary: "create the runtime without starting any service"},
+		}},
 		{Name: "start", Summary: "start services", Usage: "kranz start SELECTOR ..."},
 		{Name: "stop", Summary: "stop services", Usage: "kranz stop SELECTOR ..."},
 		{Name: "restart", Summary: "restart services", Usage: "kranz restart SELECTOR ..."},
 		{Name: "reload", Summary: "reload runtime configuration"},
-		{Name: "down", Summary: "stop a project runtime", Usage: "kranz down [--force]"},
+		{Name: "down", Summary: "stop a project runtime", Usage: "kranz down [--force]", Options: []Option{
+			{Flags: "--force", Summary: "discard a runtime that no longer answers its socket"},
+		}},
 		{Name: "attach", Summary: "open the TUI for an active runtime"},
 		{Name: "logs", Summary: "show and clear logs", Default: "show", Children: []*Command{
-			{Name: "show", Summary: "show service and action logs", Usage: "kranz logs [SELECTOR ...] [--tail N | --all] [--since D]\n  [--run N | --runs N] [--source S] [--with-actions]\n  [--plain | --no-timestamps | --no-labels] [--follow]"},
-			{Name: "clear", Summary: "discard buffered logs", Usage: "kranz logs clear [SELECTOR ...] [--with-actions] [--force]"},
+			{Name: "show", Summary: "show service and action logs", Usage: "kranz logs [SELECTOR ...] [--tail N | --all] [--since D]\n  [--run N | --runs N] [--source S] [--with-actions]\n  [--plain | --no-timestamps | --no-labels] [--follow]", Options: []Option{
+				{Flags: "--tail N", Summary: "show the last N lines; a service defaults to 50"},
+				{Flags: "--all", Summary: "show every buffered line, however far back it goes"},
+				{Flags: "--since D", Summary: "show lines newer than a duration such as 5m or 2h"},
+				{Flags: "--run N", Summary: "show one execution of an action: run number N, or a negative offset from the newest buffered run, so -1 is the latest and -2 the one before it"},
+				{Flags: "--runs N", Summary: "show the last N executions of an action"},
+				{Flags: "--source S", Summary: "keep only stdout, stderr, or kranz; comma-separated"},
+				{Flags: "--with-actions", Summary: "fold the actions an owner has run into its timeline"},
+				{Flags: "--plain", Summary: "print the output as the command printed it"},
+				{Flags: "--no-timestamps", Summary: "drop the time column"},
+				{Flags: "--no-labels", Summary: "drop the stream-name column"},
+				{Flags: "--follow", Summary: "keep printing new lines until interrupted"},
+			}},
+			{Name: "clear", Summary: "discard buffered logs", Usage: "kranz logs clear [SELECTOR ...] [--with-actions] [--force]", Options: []Option{
+				{Flags: "--with-actions", Summary: "clear the actions an owner has run as well"},
+				{Flags: "--force", Summary: "required to clear every buffer at once"},
+			}},
 		}},
 		{Name: "action", Summary: "inspect and run actions", Default: "list", Children: []*Command{
 			{Name: "list", Summary: "list actions", Usage: "kranz action list [OWNER]"},

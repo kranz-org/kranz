@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -122,6 +123,87 @@ func TestHelpDocumentsLifecycleOptionsThatChangeCommandMeaning(t *testing.T) {
 			if !strings.Contains(output, want) {
 				t.Errorf("help %v omits %q:\n%s", test.command, want, output)
 			}
+		}
+	}
+}
+
+// usageFlag finds the option spellings a usage line advertises.
+var usageFlag = regexp.MustCompile(`--?[a-zA-Z][a-zA-Z-]*`)
+
+// A usage line can only spell an option. Every flag it spells therefore has to
+// have an entry saying what it means, or help names something it never explains
+// — which is how `--run N` shipped without anywhere saying that a negative N
+// counts back from the latest run.
+func TestEveryFlagInAUsageLineIsDocumented(t *testing.T) {
+	var walk func(command *Command, path []string)
+	walk = func(command *Command, path []string) {
+		documented := map[string]bool{}
+		for _, option := range command.Options {
+			for _, field := range strings.Fields(strings.ReplaceAll(option.Flags, ",", " ")) {
+				if strings.HasPrefix(field, "-") {
+					documented[field] = true
+				}
+			}
+		}
+		for _, flag := range usageFlag.FindAllString(command.Usage, -1) {
+			if !documented[flag] {
+				t.Errorf("`kranz %s` spells %s in its usage line but documents no such option", PathString(path), flag)
+			}
+		}
+		for _, child := range command.Children {
+			walk(child, append(append([]string(nil), path...), child.Name))
+		}
+	}
+	walk(DefaultTree(), nil)
+}
+
+// The option block is what the user reads instead of the source, so it has to
+// reach them: rendered under its own heading, with a description beside every
+// flag.
+func TestHelpRendersDocumentedOptions(t *testing.T) {
+	var walk func(command *Command, path []string)
+	walk = func(command *Command, path []string) {
+		if len(command.Options) > 0 {
+			output, err := Help(DefaultTree(), path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(output, "\nOptions:\n") {
+				t.Errorf("help for `kranz %s` has no options section:\n%s", PathString(path), output)
+			}
+			for _, option := range command.Options {
+				if option.Summary == "" {
+					t.Errorf("`kranz %s` documents %s with no description", PathString(path), option.Flags)
+				}
+				if !strings.Contains(output, option.Flags) {
+					t.Errorf("help for `kranz %s` omits %s:\n%s", PathString(path), option.Flags, output)
+				}
+			}
+		}
+		for _, child := range command.Children {
+			walk(child, append(append([]string(nil), path...), child.Name))
+		}
+	}
+	walk(DefaultTree(), nil)
+}
+
+// A described flag has to keep its description on one screen. Wrapping is what
+// lets an entry explain a value instead of restating its name.
+func TestOptionDescriptionsWrapWithinTheColumn(t *testing.T) {
+	output, err := Help(DefaultTree(), []string{"logs", "show"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(output, "\n") {
+		if len(line) > optionWidth {
+			t.Errorf("help line runs past %d columns: %q", optionWidth, line)
+		}
+	}
+	// The sentence wraps, so the assertion is on words that survive wrapping:
+	// what matters is that help says a negative run is an offset at all.
+	for _, want := range []string{"negative offset", "before it"} {
+		if !strings.Contains(output, want) {
+			t.Errorf("logs help does not explain what a negative --run means (missing %q):\n%s", want, output)
 		}
 	}
 }

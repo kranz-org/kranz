@@ -4,6 +4,13 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### Added
+
+- `--help` documents the options each command parses, not just their spellings
+  in the usage line. A flag whose value carries meaning now says what it means:
+  `--run N` explains that a negative N counts back from the newest buffered run,
+  so `--run -2` is the run before the latest.
+
 ### Fixed
 
 - `kranz logs -f` no longer looks like a `--follow` shorthand. The global parser
