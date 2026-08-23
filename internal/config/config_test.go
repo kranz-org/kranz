@@ -1428,3 +1428,33 @@ services:
 		t.Fatalf("merged before_start = %#v, want the override sequence only", prerequisites)
 	}
 }
+
+// An action is addressed OWNER/ACTION. When a service and an action group share
+// a name, every action in that group becomes ambiguous and the CLI has no way
+// to say which owner was meant — the project would load cleanly and then be
+// partly unreachable.
+func TestValidateRejectsAnActionGroupNamedAfterAService(t *testing.T) {
+	cfg := &Config{
+		Project:      "Collision",
+		Services:     map[string]Service{"api": {Command: "sleep 60"}},
+		ServiceOrder: []string{"api"},
+		ActionGroups: map[string]ActionGroup{
+			"api": {Actions: map[string]Action{"migrate": {Command: "true"}}, ActionOrder: []string{"migrate"}},
+		},
+		ActionGroupOrder: []string{"api"},
+	}
+	err := Validate(cfg)
+	if err == nil {
+		t.Fatal("a service and an action group were allowed to share a name")
+	}
+	if !strings.Contains(err.Error(), "collides") || !strings.Contains(err.Error(), "api") {
+		t.Errorf("error does not name the collision: %v", err)
+	}
+	// A group whose name is free stays valid.
+	delete(cfg.ActionGroups, "api")
+	cfg.ActionGroups["analytics"] = ActionGroup{Actions: map[string]Action{"stats": {Command: "true"}}, ActionOrder: []string{"stats"}}
+	cfg.ActionGroupOrder = []string{"analytics"}
+	if err := Validate(cfg); err != nil {
+		t.Errorf("a distinctly named group was rejected: %v", err)
+	}
+}

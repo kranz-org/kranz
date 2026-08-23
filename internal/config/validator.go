@@ -115,6 +115,13 @@ func Validate(cfg *Config) error {
 		if len(group.Actions) == 0 {
 			return fmt.Errorf("action group %q must contain at least one action", name)
 		}
+		// An action is addressed OWNER/ACTION. Sharing a name with a service
+		// would make every action in this group ambiguous, and the CLI has no
+		// way to say which owner was meant: the group would load cleanly and
+		// then be unreachable.
+		if _, taken := cfg.Services[name]; taken {
+			return fmt.Errorf("action group %q collides with the service of the same name: rename one so its actions stay addressable", name)
+		}
 		if err := validateActions(fmt.Sprintf("action group %q", name), group.Actions); err != nil {
 			return err
 		}
