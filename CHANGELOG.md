@@ -4,6 +4,55 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-08-23
+
+### Added
+
+- `kranz logs OWNER/ACTION` reads an action's output after it has finished, so a
+  report or a migration can be read again without running it a second time.
+  Actions are addressed by the same name `kranz action run` uses.
+- Run addressing for action logs. Every execution is numbered and framed in the
+  buffer; `--run N` selects one, `--run -1` the latest, and `--runs N` the last
+  N. `--since` still narrows by time, and the three compose with `--tail`.
+- `--with-actions` folds an owner's actions into one timeline with the owner's
+  own output, labelled per line. An action group has no output of its own, so
+  its bare name reports what to name instead.
+- `kranz logs clear [SELECTOR ...]` discards buffered history for what it names,
+  or for the whole project with `--force`.
+- Display flags for reading one stream back: `--plain` prints the output as the
+  command printed it, `--no-timestamps` and `--no-labels` drop one column each,
+  and `--source stdout|stderr|kranz` narrows by origin before the tail applies.
+- `kranz status` accepts tags, which the other selector commands already did.
+
+### Changed
+
+- A bare action selector now shows its whole latest run. An action produces a
+  finite report, and capping it at the last lines cut off the part explaining
+  what the run did. Services keep the recent-lines default; `--tail` and `--all`
+  override both.
+- A selector has one meaning across the CLI: a name a service answers to means
+  that service, and a name no service answers to is tried as a tag. `plan` and
+  `ports` previously unioned the two, so they could cover different services
+  than `start` and `stop` did for the same word.
+- Log lines are labelled `[stream source]` rather than `[service/source]`,
+  because the stream address itself now contains a slash for an action.
+- JSON log events carry `stream`, `kind`, `owner`, `action`, and `run` in place
+  of `service`.
+- A project may no longer define an action group and a service with the same
+  name. Every action under such a group was ambiguous and unreachable, while the
+  configuration still validated cleanly; `kranz config check` now says so.
+
+### Fixed
+
+- `--tail N` returns N lines. A pipe hands Kranz whatever chunk it read, and a
+  chunk could hold many lines while counting as one, so the flag returned an
+  unpredictable number of lines and could cut in the middle of one. Captured
+  output is now stored one line per entry, which also corrects the log search
+  hit count in the interface, the `N lines omitted` cap on a failed lifecycle
+  hook, and the service prefix printed by a foreground `kranz up`, all of which
+  counted chunks.
+- `kranz action run --output json` returns one array element per output line.
+
 ## [0.8.0] - 2026-08-21
 
 ### Added
@@ -324,7 +373,8 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 - Explicit global-user and project-config save destinations in the live theme picker.
 - Native compatibility for common Process Compose configurations.
 
-[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/kranz-org/kranz/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/kranz-org/kranz/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/kranz-org/kranz/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/kranz-org/kranz/compare/v0.7.0...v0.7.1

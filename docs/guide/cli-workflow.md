@@ -86,6 +86,72 @@ $ kranz logs --since 5m
 Logs survive the service. A worker that crashed two minutes ago still answers
 `kranz logs worker`, which is when you actually need it.
 
+Actions keep their own history under the same name `kranz action run` uses, so
+an action that has already finished can be read again without running it twice:
+
+```console
+$ kranz logs api/migrate
+$ kranz logs analytics/stats --run -1    # the latest execution
+$ kranz logs analytics/stats --runs 3    # the last three
+```
+
+A bare service name means "recent lines", because a service streams without
+end. A bare action name means its whole latest run: an action produces a
+finite, self-contained report, and capping that at the last lines would cut off
+the part explaining what the run did. `--tail` and `--all` still override both.
+
+The timestamp and label columns exist to tell interleaved streams apart, which
+is exactly what reading one stream back does not need:
+
+```console
+$ kranz logs analytics/stats --plain            # the output as the command printed it
+$ kranz logs analytics/stats --no-timestamps    # keep the labels, drop the clock
+$ kranz logs api --with-actions --no-labels
+```
+
+`--source` narrows to where a line came from — `stdout`, `stderr`, or `kranz`
+for the lifecycle notes Kranz writes into the buffer itself. It narrows before
+`--tail`, so `--source stderr --tail 20` means twenty error lines rather than
+whichever errors survive in the last twenty lines of everything:
+
+```console
+$ kranz logs api --source stderr --tail 20
+$ kranz logs analytics/stats --source stdout --plain > report.txt
+```
+
+## What a selector means
+
+One rule everywhere. A name a service answers to means that service; a name no
+service answers to is tried as a tag. `kranz plan api`, `kranz status api` and
+`kranz stop api` therefore always cover the same services.
+
+Actions extend the rule rather than change it: `OWNER/ACTION` addresses one
+action, using the same name `kranz action run` uses. Because of that, a service
+and an action group may not share a name — the actions under the second one
+would be unreachable — and `kranz config check` rejects a project that tries.
+
+A service name means the service's own command; a group name has no command of
+its own and so no stream. `--with-actions` folds an owner's actions into one
+timeline, labelled so every line says where it came from:
+
+```console
+$ kranz logs api --with-actions
+2026-08-21T09:12:04.118+03:00 [api stdout] listening on :3000
+2026-08-21T09:12:31.902+03:00 [api/migrate#2 stdout] applied 3 migrations
+```
+
+Lifecycle hooks are not addressed separately: their output is part of the life
+of the service they act on, and `kranz logs api` already carries it.
+
+Buffers live in the runtime and are gone after `kranz down`. To reclaim one
+sooner:
+
+```console
+$ kranz logs clear api
+$ kranz logs clear analytics/stats
+$ kranz logs clear --force          # every stream in the project
+```
+
 ## Open the interface on a running project
 
 ```console
