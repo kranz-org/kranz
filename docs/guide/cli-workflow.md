@@ -92,8 +92,14 @@ an action that has already finished can be read again without running it twice:
 ```console
 $ kranz logs api/migrate
 $ kranz logs analytics/stats --run -1    # the latest execution
+$ kranz logs analytics/stats --run -2    # the one before it
+$ kranz logs analytics/stats --run 7     # run number 7
 $ kranz logs analytics/stats --runs 3    # the last three
 ```
+
+A positive `--run` is the run number Kranz assigned; a negative one counts back
+from the newest run still buffered, which is what keeps `-1` meaning "the
+latest" as older runs age out of the buffer.
 
 A bare service name means "recent lines", because a service streams without
 end. A bare action name means its whole latest run: an action produces a

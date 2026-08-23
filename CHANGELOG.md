@@ -10,6 +10,8 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
   in the usage line. A flag whose value carries meaning now says what it means:
   `--run N` explains that a negative N counts back from the newest buffered run,
   so `--run -2` is the run before the latest.
+- The CLI reference documents `--run`, `--runs`, `--source`, `--with-actions`,
+  the display flags, and `kranz logs clear`, which it had omitted.
 
 ### Fixed
 
