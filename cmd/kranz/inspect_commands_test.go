@@ -355,3 +355,64 @@ func TestDoctorStatesWhatItChecked(t *testing.T) {
 		t.Errorf("doctor does not state its verdict:\n%s", output)
 	}
 }
+
+// A selector must mean one thing everywhere. The CLI used to carry three rules:
+// plan and ports unioned a service name with the tag of the same name, the
+// lifecycle commands let the name win, and status understood no tags at all —
+// so `kranz plan api` and `kranz start api` could cover different services.
+func TestEverySelectorResolverAgreesOnWhatANameMeans(t *testing.T) {
+	cfg := &config.Config{
+		Services: map[string]config.Service{
+			"api":    {},
+			"worker": {Tags: []string{"api", "background"}},
+		},
+		ServiceOrder: []string{"api", "worker"},
+	}
+
+	// A name that a service answers to means that service, not everything
+	// tagged with the same word: `kranz stop api` must not stop the worker.
+	byName, err := resolveServiceSelectors(cfg, []string{"api"})
+	if err != nil {
+		t.Fatalf("resolve = %v", err)
+	}
+	if len(byName) != 1 || byName[0] != "api" {
+		t.Errorf("selector resolved to %v, want just the service", byName)
+	}
+	// The describing commands must answer identically.
+	planned, err := selectServices(cfg, []string{"api"})
+	if err != nil {
+		t.Fatalf("selectServices = %v", err)
+	}
+	if len(planned) != len(byName) || planned[0] != byName[0] {
+		t.Errorf("plan resolved %v but the lifecycle commands resolve %v", planned, byName)
+	}
+	// The log targets are the same rule with actions layered on top.
+	logged, err := resolveLogTargets(cfg, []string{"api"}, false)
+	if err != nil {
+		t.Fatalf("resolveLogTargets = %v", err)
+	}
+	if got := targetAddresses(logged); len(got) != 1 || got[0] != "api" {
+		t.Errorf("logs resolved %v but the lifecycle commands resolve %v", got, byName)
+	}
+
+	// A word no service answers to is tried as a tag, everywhere alike.
+	for name, resolve := range map[string]func() ([]string, error){
+		"lifecycle":  func() ([]string, error) { return resolveServiceSelectors(cfg, []string{"background"}) },
+		"describing": func() ([]string, error) { return selectServices(cfg, []string{"background"}) },
+	} {
+		got, err := resolve()
+		if err != nil {
+			t.Fatalf("%s resolver on a tag: %v", name, err)
+		}
+		if len(got) != 1 || got[0] != "worker" {
+			t.Errorf("%s resolver read the tag as %v, want the worker", name, got)
+		}
+	}
+
+	// And an empty selection still means the whole project for the commands
+	// that describe one.
+	all, err := selectServices(cfg, nil)
+	if err != nil || len(all) != 2 {
+		t.Errorf("empty selection = %v, %v", all, err)
+	}
+}

@@ -604,8 +604,15 @@ func runStatus(options kranzcli.GlobalOptions, args []string, stdout io.Writer) 
 	defer func() { _ = client.Close() }()
 	services := client.Services()
 	if len(args) > 0 {
-		selected := make([]*app.ServiceSnapshot, 0, len(args))
-		for _, name := range args {
+		// status answers questions about the same words the lifecycle commands
+		// act on. Resolving them differently would make `kranz status web` and
+		// `kranz restart web` disagree about what "web" means.
+		names, err := resolveServiceSelectors(client.Config(), args)
+		if err != nil {
+			return err
+		}
+		selected := make([]*app.ServiceSnapshot, 0, len(names))
+		for _, name := range names {
 			service, ok := client.Service(name)
 			if !ok {
 				return &kranzcli.Error{Code: "service_not_found", Message: fmt.Sprintf("service %q was not found", name), ExitCode: kranzcli.ExitNotFound}
@@ -848,6 +855,10 @@ func reportReload(stdout io.Writer, options kranzcli.GlobalOptions, name string,
 	return nil
 }
 
+// resolveServiceSelectors is the one meaning a selector has anywhere in the
+// CLI. A name addresses that service; a name no service answers to is tried as
+// a tag. Name wins deliberately: `kranz stop api` must stop the service called
+// api, not everything that happens to carry api as a tag.
 func resolveServiceSelectors(cfg *config.Config, selectors []string) ([]string, error) {
 	selected := make(map[string]bool)
 	for _, selector := range selectors {
@@ -866,7 +877,12 @@ func resolveServiceSelectors(cfg *config.Config, selectors []string) ([]string, 
 			}
 		}
 		if !matched {
-			return nil, &kranzcli.Error{Code: "selector_not_found", Message: fmt.Sprintf("service or tag %q was not found", selector), ExitCode: kranzcli.ExitNotFound}
+			return nil, &kranzcli.Error{
+				Code:     "selector_not_found",
+				Message:  fmt.Sprintf("service or tag %q was not found", selector),
+				Hint:     "Run `kranz list services` for services and `kranz list tags` for tags.",
+				ExitCode: kranzcli.ExitNotFound,
+			}
 		}
 	}
 	names := make([]string, 0, len(selected))

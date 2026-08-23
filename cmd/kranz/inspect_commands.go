@@ -67,35 +67,15 @@ func loadProject(options kranzcli.GlobalOptions) (*config.Config, []string, erro
 // selectServices resolves positional selectors, which name either a service or
 // a tag. An empty selector means every configured service, which is safe here
 // because no inspection command changes anything.
+// selectServices resolves selectors for the commands that describe a project
+// without a runtime. It is the same rule the runtime commands use, so `kranz
+// plan api` and `kranz start api` can never disagree about what they cover; an
+// empty selection means the whole project.
 func selectServices(cfg *config.Config, selectors []string) ([]string, error) {
 	if len(selectors) == 0 {
 		return cfg.ServiceNames(), nil
 	}
-	seen := make(map[string]bool)
-	var selected []string
-	for _, selector := range selectors {
-		matched := false
-		for _, name := range cfg.ServiceNames() {
-			svc := cfg.Services[name]
-			if name != selector && !containsString(svc.Tags, selector) {
-				continue
-			}
-			matched = true
-			if !seen[name] {
-				seen[name] = true
-				selected = append(selected, name)
-			}
-		}
-		if !matched {
-			return nil, &kranzcli.Error{
-				Code:     "selector_not_found",
-				Message:  fmt.Sprintf("no service or tag matches %q", selector),
-				Hint:     "Run `kranz list services` or `kranz list tags` to see what this project defines.",
-				ExitCode: kranzcli.ExitNotFound,
-			}
-		}
-	}
-	return selected, nil
+	return resolveServiceSelectors(cfg, selectors)
 }
 
 func containsString(values []string, want string) bool {
