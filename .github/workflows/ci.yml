@@ -53,6 +53,10 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Install fish
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes fish
+
       - name: Check formatting
         run: test -z "$(gofmt -l .)"
 
