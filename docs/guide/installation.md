@@ -96,3 +96,6 @@ kranz completion bash > /usr/share/bash-completion/completions/kranz
 kranz completion zsh  > "${fpath[1]}/_kranz"
 kranz completion fish > ~/.config/fish/completions/kranz.fish
 ```
+
+Completion covers commands, subcommands, and each command's own options,
+including the values of options that take a fixed set.

@@ -16,6 +16,60 @@ import (
 type Option struct {
 	Flags   string
 	Summary string
+
+	// Values lists the fixed values the option's argument may take, for shells
+	// that can offer them. It is completion metadata rather than display text:
+	// Flags stays what help prints, because a set worth completing is often too
+	// long to read in a description column.
+	Values []string
+}
+
+// Spellings lists the flag forms an option accepts, in the order help prints
+// them and without the metavariable trailing the last one.
+func (o Option) Spellings() []string {
+	var spellings []string
+	for _, field := range optionFields(o.Flags) {
+		if strings.HasPrefix(field, "-") {
+			spellings = append(spellings, field)
+		}
+	}
+	return spellings
+}
+
+// Metavariable returns the placeholder standing for the option's value, or the
+// empty string when the option takes none. Completion needs the distinction:
+// offering a filename after a flag that takes no argument is worse than
+// offering nothing.
+func (o Option) Metavariable() string {
+	fields := optionFields(o.Flags)
+	if len(fields) == 0 {
+		return ""
+	}
+	if last := fields[len(fields)-1]; !strings.HasPrefix(last, "-") {
+		return last
+	}
+	return ""
+}
+
+// TakesValue reports whether a spelling has to be followed by an argument.
+func (o Option) TakesValue() bool { return o.Metavariable() != "" }
+
+func optionFields(flags string) []string {
+	return strings.Fields(strings.ReplaceAll(flags, ",", " "))
+}
+
+// GlobalFlags are the options every command accepts. Help and the completion
+// scripts read them from here rather than each spelling them out, so the two
+// cannot describe the same flag differently.
+func GlobalFlags() []Option {
+	return []Option{
+		{Flags: "-f, --config PATH", Summary: "configuration layer; repeatable"},
+		{Flags: "-C, --directory DIR", Summary: "working directory for discovery"},
+		{Flags: "-p, --project VALUE", Summary: "runtime name, ID, or unique ID prefix"},
+		{Flags: "--output text|json", Summary: "output format", Values: []string{"text", "json"}},
+		{Flags: "-h, --help", Summary: "show command help"},
+		{Flags: "-v, --version", Summary: "show version and build metadata"},
+	}
 }
 
 // Command describes one node in the public command tree.
@@ -70,7 +124,7 @@ func DefaultTree() *Command {
 		{Name: "status", Summary: "show runtime status", Usage: "kranz status [SELECTOR ...]"},
 		{Name: "plan", Summary: "show the resolved start plan", Usage: "kranz plan [SELECTOR ...]"},
 		{Name: "graph", Summary: "print the dependency graph", Usage: "kranz graph [--format text|json|dot]", Options: []Option{
-			{Flags: "--format FORMAT", Summary: "text, json, or dot; defaults to text"},
+			{Flags: "--format FORMAT", Summary: "text, json, or dot; defaults to text", Values: []string{"text", "json", "dot"}},
 		}},
 		{Name: "ports", Summary: "list configured and detected ports", Usage: "kranz ports [SELECTOR ...]"},
 		{Name: "port", Summary: "inspect a local port", Default: "inspect", Children: []*Command{
@@ -95,7 +149,7 @@ func DefaultTree() *Command {
 				{Flags: "--since D", Summary: "show lines newer than a duration such as 5m or 2h"},
 				{Flags: "--run N", Summary: "show one execution of an action: run number N, or a negative offset from the newest buffered run, so -1 is the latest and -2 the one before it"},
 				{Flags: "--runs N", Summary: "show the last N executions of an action"},
-				{Flags: "--source S", Summary: "keep only stdout, stderr, or kranz; comma-separated"},
+				{Flags: "--source S", Summary: "keep only stdout, stderr, or kranz; comma-separated", Values: []string{"stdout", "stderr", "kranz"}},
 				{Flags: "--with-actions", Summary: "fold the actions an owner has run into its timeline"},
 				{Flags: "--plain", Summary: "print the output as the command printed it"},
 				{Flags: "--no-timestamps", Summary: "drop the time column"},

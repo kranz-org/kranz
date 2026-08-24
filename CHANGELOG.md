@@ -12,9 +12,16 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
   so `--run -2` is the run before the latest.
 - The CLI reference documents `--run`, `--runs`, `--source`, `--with-actions`,
   the display flags, and `kranz logs clear`, which it had omitted.
+- Shell completion covers each command's own options, not just the command
+  names: `kranz logs --<TAB>` offers the log flags and `kranz logs clear --<TAB>`
+  offers only the two that command takes. An option with a fixed set completes
+  its values, and one that takes a path completes filenames.
 
 ### Fixed
 
+- The generated bash completion no longer uses `mapfile`, which the bash 3.2
+  that macOS ships does not have; sourcing it there answered every keystroke
+  with "command not found".
 - `kranz logs -f` no longer looks like a `--follow` shorthand. The global parser
   claims `-f` as `--config` wherever it appears, so the alias could never reach
   the logs command; `--follow` is the spelling.

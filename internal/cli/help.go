@@ -41,17 +41,8 @@ func Help(tree *Command, path []string) (string, error) {
 	}
 	writeSection(&output, "Commands", available)
 	writeSection(&output, "Planned for v0.8.0 (not implemented yet)", planned)
-	writeOptions(&output, command.Options)
-
-	output.WriteString(`
-Global options:
-  -f, --config PATH       configuration layer; repeatable
-  -C, --directory DIR     working directory for discovery
-  -p, --project VALUE     runtime name, ID, or unique ID prefix
-      --output text|json  output format
-  -h, --help              show command help
-  -v, --version           show version and build metadata
-`)
+	writeOptions(&output, "Options", command.Options)
+	writeOptions(&output, "Global options", GlobalFlags())
 	return output.String(), nil
 }
 
@@ -76,16 +67,30 @@ const (
 // writeOptions documents the flags a command parses. A usage line can only
 // spell an option; what its value means has to be written down somewhere the
 // user looks, and --help is where they look.
-func writeOptions(output *strings.Builder, options []Option) {
+func writeOptions(output *strings.Builder, title string, options []Option) {
 	if len(options) == 0 {
 		return
 	}
-	output.WriteString("\nOptions:\n")
+	fmt.Fprintf(output, "\n%s:\n", title)
+	// Where a block mixes short and long spellings, the long-only flags are
+	// indented past the empty short-form column so every `--name` starts in the
+	// same place; a block with no short forms at all needs no such gap.
+	indent := ""
 	for _, option := range options {
-		fmt.Fprintf(output, "  %-*s", optionColumn-2, option.Flags)
+		if spellings := option.Spellings(); len(spellings) > 0 && !strings.HasPrefix(spellings[0], "--") {
+			indent = "    "
+			break
+		}
+	}
+	for _, option := range options {
+		flags := option.Flags
+		if spellings := option.Spellings(); len(spellings) > 0 && strings.HasPrefix(spellings[0], "--") {
+			flags = indent + flags
+		}
+		fmt.Fprintf(output, "  %-*s", optionColumn-2, flags)
 		// A flag too wide for the column starts its description on the next
 		// line rather than pushing the whole block out of alignment.
-		if len(option.Flags) > optionColumn-3 {
+		if len(flags) > optionColumn-3 {
 			fmt.Fprintf(output, "\n%*s", optionColumn, "")
 		}
 		for index, line := range wrapText(option.Summary, optionWidth-optionColumn) {

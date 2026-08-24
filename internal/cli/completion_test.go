@@ -84,3 +84,68 @@ func TestCompletionIncludesSubcommands(t *testing.T) {
 		}
 	}
 }
+
+// A shell that completes commands but not their flags leaves the user typing
+// the part that is hardest to remember. Every option help documents has to
+// reach every script, under the command that accepts it.
+func TestCompletionOffersEveryDocumentedOption(t *testing.T) {
+	for _, shell := range CompletionShells() {
+		script, err := Completion(DefaultTree(), shell)
+		if err != nil {
+			t.Fatalf("%s: %v", shell, err)
+		}
+		var walk func(command *Command, path []string)
+		walk = func(command *Command, path []string) {
+			for _, option := range command.Options {
+				for _, spelling := range option.Spellings() {
+					// fish names a flag without its dashes, as -l tail or -s o.
+					needle := spelling
+					if shell == "fish" {
+						needle = "-l " + strings.TrimPrefix(spelling, "--")
+						if !strings.HasPrefix(spelling, "--") {
+							needle = "-s " + strings.TrimPrefix(spelling, "-")
+						}
+					}
+					if !strings.Contains(script, needle) {
+						t.Errorf("%s completion omits %s of `kranz %s`", shell, spelling, PathString(path))
+					}
+				}
+			}
+			for _, child := range command.Children {
+				walk(child, append(append([]string(nil), path...), child.Name))
+			}
+		}
+		walk(DefaultTree(), nil)
+		for _, option := range GlobalFlags() {
+			for _, spelling := range option.Spellings() {
+				if shell == "fish" {
+					continue
+				}
+				if !strings.Contains(script, spelling) {
+					t.Errorf("%s completion omits the global %s", shell, spelling)
+				}
+			}
+		}
+	}
+}
+
+// An option whose values a shell offers has to offer the values the parser
+// takes, or completion writes a command the CLI then rejects.
+func TestCompletionOffersTheValuesAnOptionAccepts(t *testing.T) {
+	for _, shell := range CompletionShells() {
+		script, err := Completion(DefaultTree(), shell)
+		if err != nil {
+			t.Fatalf("%s: %v", shell, err)
+		}
+		for _, option := range valuedOptions(DefaultTree()) {
+			if len(option.Values) == 0 {
+				continue
+			}
+			for _, value := range option.Values {
+				if !strings.Contains(script, value) {
+					t.Errorf("%s completion omits %q for %s", shell, value, option.Flags)
+				}
+			}
+		}
+	}
+}

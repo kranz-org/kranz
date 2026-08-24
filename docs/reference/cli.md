@@ -225,6 +225,14 @@ kranz completion fish > ~/.config/fish/completions/kranz.fish
 
 The Linux packages install these already.
 
+The scripts are generated from the same command tree as `--help`, so they offer
+what the binary actually has: commands, the subcommands of a group, and the
+options of whichever command is being typed. `kranz logs --<TAB>` offers the log
+flags, `kranz logs clear --<TAB>` offers only the two `clear` takes, and an
+option with a fixed set of values completes those too — `--source` to a stream
+name, `--format` to a graph format. A flag that takes a path completes
+filenames.
+
 ## Machine-readable output
 
 `--output json` wraps every successful non-interactive result in a versioned
