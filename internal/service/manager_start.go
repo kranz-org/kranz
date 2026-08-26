@@ -174,6 +174,11 @@ func (m *Manager) startDetachedService(ctx context.Context, svc *Service) error 
 	result, err := m.actions.RunDefinition(ctx, id, *start)
 	m.appendLifecycleResult(svc, "start", result)
 	if err != nil {
+		var resultErr error
+		if result.Error != "" {
+			resultErr = errors.New(result.Error)
+		}
+		svc.RecordExit(result.ExitCode, resultErr)
 		svc.SetDesiredRunning(false)
 		// A detached start can mutate external state before failing, timing out,
 		// or being canceled. Never claim it is stopped without observing that.

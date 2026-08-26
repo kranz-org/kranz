@@ -119,3 +119,29 @@ func TestFailedStartFinishesItsServiceRun(t *testing.T) {
 		t.Fatalf("failed start summary = %#v", runs)
 	}
 }
+
+func TestDetachedServiceRunStaysLiveAfterStartAction(t *testing.T) {
+	manager := NewManager(&config.Config{Services: map[string]config.Service{
+		"stack": {
+			Supervision: config.SupervisionDetached,
+			Lifecycle: config.LifecycleConfig{
+				Start: &config.Action{Command: "true", Shell: "/bin/sh"},
+				Stop:  &config.Action{Command: "true", Shell: "/bin/sh"},
+			},
+		},
+	}})
+	if err := manager.StartService("stack"); err != nil {
+		t.Fatal(err)
+	}
+	runs := manager.RunSummaries(ServiceRunTarget("stack"))
+	if len(runs) != 1 || !runs[0].Live || runs[0].ExitCode != nil || runs[0].Status != config.StatusRunning.String() {
+		t.Fatalf("running detached summary = %#v", runs)
+	}
+	if err := manager.StopService("stack"); err != nil {
+		t.Fatal(err)
+	}
+	runs = manager.RunSummaries(ServiceRunTarget("stack"))
+	if len(runs) != 1 || runs[0].Live || runs[0].ExitCode == nil || *runs[0].ExitCode != 0 || runs[0].Status != config.StatusStopped.String() {
+		t.Fatalf("stopped detached summary = %#v", runs)
+	}
+}
