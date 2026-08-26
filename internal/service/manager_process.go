@@ -35,9 +35,9 @@ func (m *Manager) monitorProcess(name string, svc *Service, pm *ProcessManager, 
 			shouldEvaluate := false
 			if current, _ := svc.runtime(); current == pm && svc.Status() != config.StatusStopping {
 				svc.clearRuntime(pm)
+				svc.RecordExit(exitCode, waitErr)
 				svc.SetStatus(config.StatusStopped)
 				svc.SetPID(0)
-				svc.RecordExit(exitCode, waitErr)
 				shouldEvaluate = true
 				if m.successfulExit(svc.Config, exitCode) {
 					svc.AppendLog(fmt.Sprintf("[Kranz] Process exited · code %d", exitCode))

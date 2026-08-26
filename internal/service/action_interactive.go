@@ -58,6 +58,8 @@ func (r *ActionRunner) PrepareInteractive(id config.ActionID) (*exec.Cmd, func(e
 	r.nextRun[id] = run
 	r.states[id] = ActionResult{ID: id, Run: run, Status: ActionRunning, ExitCode: -1, StartedAt: started}
 	r.mu.Unlock()
+	r.catalog.Begin(RunSummary{Target: ActionRunTarget(id), Run: run, Status: ActionRunning.String(), StartedAt: started,
+		StartReason: "interactive handoff"})
 
 	finish := func(runErr error) ActionResult {
 		result := ActionResult{
@@ -85,6 +87,8 @@ func (r *ActionRunner) PrepareInteractive(id config.ActionID) (*exec.Cmd, func(e
 		r.retainResultLocked(result)
 		close(active.done)
 		r.mu.Unlock()
+		r.catalog.Update(ActionRunTarget(id), run, "", result.PID, nil)
+		r.catalog.Finish(ActionRunTarget(id), run, result.Status.String(), result.FinishedAt, result.ExitCode, nil)
 		return result
 	}
 	return command, finish, nil
@@ -130,6 +134,8 @@ func (r *ActionRunner) AcquireInteractive(id config.ActionID) (config.Action, st
 	r.nextRun[id] = run
 	r.states[id] = ActionResult{ID: id, Run: run, Status: ActionRunning, ExitCode: -1, StartedAt: started}
 	r.mu.Unlock()
+	r.catalog.Begin(RunSummary{Target: ActionRunTarget(id), Run: run, Status: ActionRunning.String(), StartedAt: started,
+		StartReason: "interactive handoff"})
 	return action, lease, nil
 }
 
@@ -168,6 +174,8 @@ func (r *ActionRunner) CompleteInteractive(id config.ActionID, lease string, exi
 	r.retainResultLocked(result)
 	close(active.done)
 	r.mu.Unlock()
+	r.catalog.Update(ActionRunTarget(id), run, "", result.PID, nil)
+	r.catalog.Finish(ActionRunTarget(id), run, result.Status.String(), result.FinishedAt, result.ExitCode, nil)
 	return result, nil
 }
 

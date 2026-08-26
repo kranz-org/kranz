@@ -21,7 +21,8 @@ type Service struct {
 	State   config.ServiceState
 	stateMu sync.RWMutex
 
-	stream *logStream
+	stream  *logStream
+	catalog *RunCatalog
 
 	// journal records this service's transitions for readers that need what
 	// happened rather than what is. It is nil for services constructed outside
@@ -159,6 +160,11 @@ func NewService(name string, cfg config.Service, logBufSize int) *Service {
 // SetJournal attaches the runtime journal this service records into.
 func (s *Service) SetJournal(journal *Journal) { s.journal = journal }
 
+func (s *Service) SetRunCatalog(catalog *RunCatalog) {
+	s.catalog = catalog
+	s.stream.SetCatalog(catalog, ServiceRunTarget(s.Name))
+}
+
 // SetStatus atomically updates lifecycle status and transition timestamps, and
 // records the transition. Every lifecycle path funnels through here, so the
 // journal cannot miss a change some other path made.
@@ -179,6 +185,8 @@ func (s *Service) SetStatus(status config.ServiceStatus) {
 		s.State.ExitCode = 0
 		s.State.ExitError = ""
 		s.State.Cause = nil
+		s.catalog.Begin(RunSummary{Target: ServiceRunTarget(s.Name), Run: s.State.Run, Status: status.String(),
+			StartedAt: s.State.StartedAt, StartReason: "start"})
 	}
 	if status == config.StatusRunning && s.State.StartedAt.IsZero() {
 		s.State.StartedAt = time.Now()
@@ -193,11 +201,15 @@ func (s *Service) SetStatus(status config.ServiceStatus) {
 		Cause:   s.State.Cause,
 		Summary: s.Name + " " + status.String(),
 	}
-	if status == config.StatusStopped && s.State.Completed {
+	if (status == config.StatusStopped || status == config.StatusUnknown) && s.State.Completed {
 		exit := s.State.ExitCode
 		transition.ExitCode = &exit
 	}
 	s.stateMu.Unlock()
+	s.catalog.Update(ServiceRunTarget(s.Name), transition.Run, status.String(), transition.PID, transition.Cause)
+	if (status == config.StatusStopped || status == config.StatusUnknown) && transition.ExitCode != nil {
+		s.catalog.Finish(ServiceRunTarget(s.Name), transition.Run, status.String(), time.Now(), *transition.ExitCode, transition.Cause)
+	}
 	if previous != status {
 		s.journal.Record(transition)
 	}
@@ -208,11 +220,13 @@ func (s *Service) SetStatus(status config.ServiceStatus) {
 // with it instead of a reader having to correlate two records by time.
 func (s *Service) SetCause(cause *config.StateCause) {
 	s.stateMu.Lock()
-	defer s.stateMu.Unlock()
 	if cause != nil && cause.At.IsZero() {
 		cause.At = time.Now()
 	}
 	s.State.Cause = cause
+	run := s.State.Run
+	s.stateMu.Unlock()
+	s.catalog.Update(ServiceRunTarget(s.Name), run, "", -1, cause)
 }
 
 // Run returns the current execution number of this service.
@@ -307,8 +321,10 @@ func (s *Service) Status() config.ServiceStatus {
 // SetPID updates the owned process ID.
 func (s *Service) SetPID(pid int) {
 	s.stateMu.Lock()
-	defer s.stateMu.Unlock()
 	s.State.PID = pid
+	run := s.State.Run
+	s.stateMu.Unlock()
+	s.catalog.Update(ServiceRunTarget(s.Name), run, "", pid, nil)
 }
 
 // PID returns the owned process ID, or zero while stopped.

@@ -14,7 +14,9 @@ import (
 // one, so `kranz logs api` and `kranz logs analytics/stats` read the same
 // structure through the same filters rather than two parallel implementations.
 type logStream struct {
-	buffer *ringbuffer.RingBuffer
+	buffer  *ringbuffer.RingBuffer
+	catalog *RunCatalog
+	target  RunTarget
 
 	mu        sync.RWMutex
 	times     []time.Time
@@ -24,6 +26,7 @@ type logStream struct {
 	// continuous stream and leaves this zero; an action restarts the numbering
 	// story on every invocation, which is what --run addresses.
 	runs       []uint32
+	lineBytes  []uint64
 	write      int
 	count      int
 	nextSeq    uint64
@@ -40,7 +43,15 @@ func newLogStream(size int) *logStream {
 		sources:   make([]string, size),
 		sequences: make([]uint64, size),
 		runs:      make([]uint32, size),
+		lineBytes: make([]uint64, size),
 	}
+}
+
+func (s *logStream) SetCatalog(catalog *RunCatalog, target RunTarget) {
+	s.mu.Lock()
+	s.catalog = catalog
+	s.target = target
+	s.mu.Unlock()
 }
 
 // BeginRun opens a new numbered execution and returns its number. Numbering is
@@ -88,12 +99,18 @@ func (s *logStream) Append(timestamp time.Time, source, text string) {
 }
 
 func (s *logStream) appendLineLocked(timestamp time.Time, source, line string) {
+	if s.count == len(s.times) {
+		s.catalog.EvictOutput(s.target, s.runs[s.write], s.lineBytes[s.write])
+	}
 	s.nextSeq++
 	s.buffer.Write(line)
 	s.times[s.write] = timestamp
 	s.sources[s.write] = source
 	s.sequences[s.write] = s.nextSeq
 	s.runs[s.write] = s.currentRun
+	lineBytes := uint64(len(line))
+	s.lineBytes[s.write] = lineBytes
+	s.catalog.RecordOutput(s.target, s.currentRun, lineBytes)
 	s.write = (s.write + 1) % len(s.times)
 	if s.count < len(s.times) {
 		s.count++
@@ -154,9 +171,12 @@ func (s *logStream) Clear() {
 	clear(s.sources)
 	clear(s.sequences)
 	clear(s.runs)
+	clear(s.lineBytes)
 	s.write = 0
 	s.count = 0
+	catalog, target := s.catalog, s.target
 	s.mu.Unlock()
+	catalog.ClearOutput(target)
 }
 
 // CopyFrom preserves a logical stream across a hot reload.
@@ -170,6 +190,7 @@ func (s *logStream) CopyFrom(previous *logStream) {
 	s.sources = append(s.sources[:0], previous.sources...)
 	s.sequences = append(s.sequences[:0], previous.sequences...)
 	s.runs = append(s.runs[:0], previous.runs...)
+	s.lineBytes = append(s.lineBytes[:0], previous.lineBytes...)
 	s.write = previous.write
 	s.count = previous.count
 	s.nextSeq = previous.nextSeq

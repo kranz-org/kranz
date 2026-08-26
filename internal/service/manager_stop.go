@@ -57,6 +57,11 @@ func (m *Manager) StopService(name string) error {
 		svc.AppendLog(fmt.Sprintf("[Kranz] Failed to stop %s: %v", name, stopErr))
 	}
 
+	exitCode := 0
+	if pm != nil {
+		exitCode = pm.ExitCode()
+	}
+	svc.RecordExit(exitCode, stopErr)
 	svc.SetPID(0)
 	svc.SetStatus(config.StatusStopped)
 	svc.AppendLog("[Kranz] Stopped")

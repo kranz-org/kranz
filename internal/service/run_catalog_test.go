@@ -1,0 +1,121 @@
+package service
+
+import (
+	"testing"
+	"time"
+
+	"github.com/kranz-org/kranz/internal/config"
+)
+
+func TestRunCatalogRetentionIsFairPerTarget(t *testing.T) {
+	catalog := NewRunCatalog(2)
+	api := ServiceRunTarget("api")
+	worker := ServiceRunTarget("worker")
+	for run := uint32(1); run <= 3; run++ {
+		catalog.Begin(RunSummary{Target: api, Run: run, Status: "running", StartedAt: time.Unix(int64(run), 0)})
+	}
+	catalog.Begin(RunSummary{Target: worker, Run: 1, Status: "running", StartedAt: time.Unix(1, 0)})
+
+	apiRuns := catalog.List(api)
+	if len(apiRuns) != 2 || apiRuns[0].Run != 2 || apiRuns[1].Run != 3 {
+		t.Fatalf("api runs = %#v, want #2 and #3", apiRuns)
+	}
+	workerRuns := catalog.List(worker)
+	if len(workerRuns) != 1 || workerRuns[0].Run != 1 {
+		t.Fatalf("worker history was displaced by api: %#v", workerRuns)
+	}
+}
+
+func TestRunCatalogReportsPartialAndUnavailableOutput(t *testing.T) {
+	catalog := NewRunCatalog(10)
+	target := ServiceRunTarget("api")
+	catalog.Begin(RunSummary{Target: target, Run: 1, Status: "running", StartedAt: time.Now()})
+	catalog.RecordOutput(target, 1, 5)
+	catalog.RecordOutput(target, 1, 7)
+	catalog.EvictOutput(target, 1, 5)
+
+	output := catalog.List(target)[0].Output
+	if output.State != RunOutputPartial || output.MissingLines != 1 || output.MissingBytes != 5 || output.RetainedLines != 1 || output.RetainedBytes != 7 {
+		t.Fatalf("partial output = %#v", output)
+	}
+	catalog.ClearOutput(target)
+	output = catalog.List(target)[0].Output
+	if output.State != RunOutputUnavailable || output.MissingLines != 2 || output.MissingBytes != 12 || output.RetainedLines != 0 {
+		t.Fatalf("unavailable output = %#v", output)
+	}
+}
+
+func TestManagerCatalogTracksServiceAndActionRuns(t *testing.T) {
+	cfg := &config.Config{Services: map[string]config.Service{
+		"api": {Command: "true", Actions: map[string]config.Action{"check": {Command: "true"}}},
+	}}
+	manager := NewManager(cfg)
+	if err := manager.StartService("api"); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.StopService("api"); err != nil {
+		t.Fatal(err)
+	}
+	serviceRuns := manager.RunSummaries(ServiceRunTarget("api"))
+	if len(serviceRuns) != 1 || serviceRuns[0].Run != 1 || serviceRuns[0].Live || serviceRuns[0].ExitCode == nil {
+		t.Fatalf("service summaries = %#v", serviceRuns)
+	}
+
+	id := config.ActionID{OwnerKind: config.ActionOwnerService, Owner: "api", Name: "check"}
+	if _, err := manager.RunAction(t.Context(), id); err != nil {
+		t.Fatal(err)
+	}
+	actionRuns := manager.RunSummaries(ActionRunTarget(id))
+	if len(actionRuns) != 1 || actionRuns[0].Run != 1 || actionRuns[0].Live || actionRuns[0].Status != ActionSucceeded.String() {
+		t.Fatalf("action summaries = %#v", actionRuns)
+	}
+}
+
+func TestManagerCatalogTracksInteractiveActionRuns(t *testing.T) {
+	interactive := true
+	id := config.ActionID{OwnerKind: config.ActionOwnerService, Owner: "api", Name: "shell"}
+	manager := NewManager(&config.Config{Services: map[string]config.Service{
+		"api": {Command: "true", Actions: map[string]config.Action{"shell": {Command: "true", Interactive: &interactive}}},
+	}})
+	_, lease, err := manager.AcquireInteractiveAction(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.CompleteInteractiveAction(id, lease, 0, 123, nil); err != nil {
+		t.Fatal(err)
+	}
+	runs := manager.RunSummaries(ActionRunTarget(id))
+	if len(runs) != 1 || runs[0].Live || runs[0].PID != 123 || runs[0].ExitCode == nil || *runs[0].ExitCode != 0 {
+		t.Fatalf("interactive summaries = %#v", runs)
+	}
+}
+
+func TestLogStreamEvictionUpdatesCatalogBoundary(t *testing.T) {
+	catalog := NewRunCatalog(10)
+	target := ServiceRunTarget("api")
+	catalog.Begin(RunSummary{Target: target, Run: 1, Status: "running", StartedAt: time.Now()})
+	stream := newLogStream(2)
+	stream.SetCatalog(catalog, target)
+	stream.BeginRunNumber(1)
+	stream.Append(time.Now(), "stdout", "one")
+	stream.Append(time.Now(), "stdout", "two")
+	stream.Append(time.Now(), "stdout", "three")
+
+	output := catalog.List(target)[0].Output
+	if output.State != RunOutputPartial || output.CapturedLines != 3 || output.RetainedLines != 2 || output.MissingLines != 1 || output.MissingBytes != 3 {
+		t.Fatalf("output boundary = %#v", output)
+	}
+}
+
+func TestFailedStartFinishesItsServiceRun(t *testing.T) {
+	manager := NewManager(&config.Config{Services: map[string]config.Service{
+		"api": {Command: "true", Shell: "/definitely/missing/kranz-shell"},
+	}})
+	if err := manager.StartService("api"); err == nil {
+		t.Fatal("start unexpectedly succeeded")
+	}
+	runs := manager.RunSummaries(ServiceRunTarget("api"))
+	if len(runs) != 1 || runs[0].Live || runs[0].ExitCode == nil || *runs[0].ExitCode != -1 || runs[0].Cause == nil || runs[0].Cause.Type != "start_failed" {
+		t.Fatalf("failed start summary = %#v", runs)
+	}
+}

@@ -107,6 +107,7 @@ func (m *Manager) startService(ctx context.Context, name string, recovery bool) 
 	pid, err := pm.Start(context.Background(), start.Command, start.Dir, start.Env, start.Shell)
 	if err != nil {
 		svc.SetDesiredRunning(false)
+		svc.RecordExit(-1, err)
 		svc.SetCause(&config.StateCause{Type: "start_failed", Message: err.Error()})
 		svc.SetStatus(config.StatusStopped)
 		svc.AppendLog("[Kranz] Start failed: " + err.Error())

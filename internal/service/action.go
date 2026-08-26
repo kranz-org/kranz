@@ -159,10 +159,13 @@ type ActionRunner struct {
 	shuttingDown bool
 	leaseSeq     atomic.Uint64
 	journal      *Journal
+	catalog      *RunCatalog
 }
 
 // SetJournal attaches the runtime transition journal action runs record into.
 func (r *ActionRunner) SetJournal(journal *Journal) { r.journal = journal }
+
+func (r *ActionRunner) SetRunCatalog(catalog *RunCatalog) { r.catalog = catalog }
 
 // recordActionTransition writes one action lifecycle fact. A service-owned
 // action also names its owner, so "what happened to api" can be answered
@@ -264,6 +267,8 @@ func (r *ActionRunner) RunDefinition(ctx context.Context, id config.ActionID, ac
 	r.nextRun[id] = run
 	r.states[id] = ActionResult{ID: id, Run: run, Status: ActionRunning, ExitCode: -1, StartedAt: started}
 	r.mu.Unlock()
+	r.catalog.Begin(RunSummary{Target: ActionRunTarget(id), Run: run, Status: ActionRunning.String(), StartedAt: started,
+		StartReason: "invoked"})
 
 	stream := r.logStreamFor(id)
 	if stream != nil {
@@ -285,6 +290,7 @@ func (r *ActionRunner) RunDefinition(ctx context.Context, id config.ActionID, ac
 	r.mu.Unlock()
 	r.recordActionTransition(id, run, ActionRunning, result.Status, result.ExitCode,
 		fmt.Sprintf("%s/%s #%d %s · exit %d", id.Owner, id.Name, run, result.Status, result.ExitCode))
+	r.catalog.Finish(ActionRunTarget(id), run, result.Status.String(), result.FinishedAt, result.ExitCode, nil)
 	return result, runErr
 }
 
@@ -357,6 +363,7 @@ func (r *ActionRunner) setActionPID(id config.ActionID, pid int) {
 	state.PID = pid
 	r.states[id] = state
 	r.mu.Unlock()
+	r.catalog.Update(ActionRunTarget(id), state.Run, "", pid, nil)
 }
 
 func (r *ActionRunner) setActionProcess(id config.ActionID, process *ProcessManager) {
@@ -593,6 +600,7 @@ func (r *ActionRunner) logStreamFor(id config.ActionID) *logStream {
 	stream, exists := r.logs[id]
 	if !exists {
 		stream = newLogStream(r.logBufSize)
+		stream.SetCatalog(r.catalog, ActionRunTarget(id))
 		r.logs[id] = stream
 	}
 	return stream

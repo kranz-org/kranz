@@ -40,17 +40,23 @@ type Manager struct {
 	prereqSatisfied      map[config.ActionID]bool
 	prereqRuns           map[config.ActionID]*prereqRun
 	journal              *Journal
+	runs                 *RunCatalog
 }
 
 // Journal returns the runtime transition journal shared by every service and
 // action this manager owns.
 func (m *Manager) Journal() *Journal { return m.journal }
 
+func (m *Manager) RunSummaries(target RunTarget) []RunSummary { return m.runs.List(target) }
+
+func (m *Manager) AllRunSummaries() []RunSummary { return m.runs.All() }
+
 // newService constructs a service already attached to this manager's journal,
 // so no construction path can produce a service whose changes go unrecorded.
 func (m *Manager) newService(name string, cfg config.Service) *Service {
 	svc := NewService(name, cfg, 1000)
 	svc.SetJournal(m.journal)
+	svc.SetRunCatalog(m.runs)
 	return svc
 }
 
@@ -200,8 +206,10 @@ func NewManager(cfg *config.Config) *Manager {
 		prereqSatisfied:      make(map[config.ActionID]bool),
 		prereqRuns:           make(map[config.ActionID]*prereqRun),
 		journal:              NewJournal(defaultJournalSize),
+		runs:                 NewRunCatalog(defaultRunCatalogSize),
 	}
 	m.actions.SetJournal(m.journal)
+	m.actions.SetRunCatalog(m.runs)
 
 	for name, svcCfg := range cfg.Services {
 		m.services[name] = m.newService(name, svcCfg)
