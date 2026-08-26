@@ -45,6 +45,19 @@ func TestRunCatalogReportsPartialAndUnavailableOutput(t *testing.T) {
 	}
 }
 
+func TestRunCatalogAllIsDeterministicWhenRunsStartTogether(t *testing.T) {
+	catalog := NewRunCatalog(10)
+	started := time.Now()
+	catalog.Begin(RunSummary{Target: ServiceRunTarget("worker"), Run: 1, StartedAt: started})
+	catalog.Begin(RunSummary{Target: ActionRunTarget(config.ActionID{OwnerKind: config.ActionOwnerService, Owner: "api", Name: "check"}), Run: 1, StartedAt: started})
+	catalog.Begin(RunSummary{Target: ServiceRunTarget("api"), Run: 1, StartedAt: started})
+
+	all := catalog.All()
+	if len(all) != 3 || all[0].Target.Kind != RunKindAction || all[1].Target.Name != "api" || all[2].Target.Name != "worker" {
+		t.Fatalf("All() order = %#v", all)
+	}
+}
+
 func TestManagerCatalogTracksServiceAndActionRuns(t *testing.T) {
 	cfg := &config.Config{Services: map[string]config.Service{
 		"api": {Command: "true", Actions: map[string]config.Action{"check": {Command: "true"}}},

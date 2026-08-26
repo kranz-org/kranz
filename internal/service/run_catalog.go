@@ -226,11 +226,30 @@ func (c *RunCatalog) All() []RunSummary {
 	}
 	sort.Slice(result, func(i, j int) bool {
 		if result[i].StartedAt.Equal(result[j].StartedAt) {
+			if result[i].Target != result[j].Target {
+				return runTargetLess(result[i].Target, result[j].Target)
+			}
 			return result[i].Run < result[j].Run
 		}
 		return result[i].StartedAt.Before(result[j].StartedAt)
 	})
 	return result
+}
+
+func runTargetLess(left, right RunTarget) bool {
+	if left.Kind != right.Kind {
+		return left.Kind < right.Kind
+	}
+	if left.Name != right.Name {
+		return left.Name < right.Name
+	}
+	if left.Action.OwnerKind != right.Action.OwnerKind {
+		return left.Action.OwnerKind < right.Action.OwnerKind
+	}
+	if left.Action.Owner != right.Action.Owner {
+		return left.Action.Owner < right.Action.Owner
+	}
+	return left.Action.Name < right.Action.Name
 }
 
 func (c *RunCatalog) update(target RunTarget, run uint32, update func(*RunSummary)) {
