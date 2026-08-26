@@ -27,6 +27,16 @@ func (m *Manager) startService(ctx context.Context, name string, recovery bool) 
 	if !ok {
 		return fmt.Errorf("service %q not found", name)
 	}
+	provenance := RunProvenanceFromContext(ctx)
+	if recovery {
+		provenance = RunProvenance{Surface: "runtime", ClientLabel: "availability policy", StartReason: "automatic_restart"}
+	} else if provenance.StartReason == "" {
+		if svc.stream.LastRun() == 0 {
+			provenance.StartReason = "first_start"
+		} else {
+			provenance.StartReason = "manual_start"
+		}
+	}
 	svc.lifecycleMu.Lock()
 	defer svc.lifecycleMu.Unlock()
 	if svc.Config.IsDetached() {
@@ -36,6 +46,7 @@ func (m *Manager) startService(ctx context.Context, name string, recovery bool) 
 		if err := m.runPrerequisites(ctx, svc); err != nil {
 			return err
 		}
+		svc.SetNextRunProvenance(provenance)
 		return m.startDetachedService(ctx, svc)
 	}
 
@@ -84,6 +95,7 @@ func (m *Manager) startService(ctx context.Context, name string, recovery bool) 
 		}
 	}
 
+	svc.SetNextRunProvenance(provenance)
 	svc.SetStatus(config.StatusStarting)
 	svc.AppendLog("[Kranz] Starting")
 
@@ -237,6 +249,10 @@ func (m *Manager) StartServices(names []string) error {
 // checks still apply.
 
 func (m *Manager) ForceStartServices(names []string) error {
+	return m.ForceStartServicesContext(context.Background(), names)
+}
+
+func (m *Manager) ForceStartServicesContext(ctx context.Context, names []string) error {
 	unique := make([]string, 0, len(names))
 	seen := make(map[string]bool, len(names))
 	for _, name := range names {
@@ -256,7 +272,7 @@ func (m *Manager) ForceStartServices(names []string) error {
 		if !svc.CanStart() {
 			continue
 		}
-		if err := m.StartService(name); err != nil {
+		if err := m.startService(ctx, name, false); err != nil {
 			wrapped := fmt.Errorf("%s: %w", name, err)
 			startErrors = append(startErrors, wrapped)
 			svc.AppendLog(fmt.Sprintf("[Kranz] Force start failed: %v", err))
@@ -381,13 +397,17 @@ func (m *Manager) StartByTags(tags []string) error {
 // StopAll stops every service in reverse dependency order.
 
 func (m *Manager) RestartService(name string) error {
-	return m.RestartServices([]string{name})
+	return m.RestartServicesContext(context.Background(), []string{name})
 }
 
 // RestartServices performs one stop/start plan while holding the reload lock,
 // so a watcher reload cannot split a multi-selector CLI request across config
 // generations.
 func (m *Manager) RestartServices(names []string) error {
+	return m.RestartServicesContext(context.Background(), names)
+}
+
+func (m *Manager) RestartServicesContext(ctx context.Context, names []string) error {
 	// Hold reloadMu for the whole operation so a concurrent config reload
 	// cannot swap or remove services mid-restart out from under this plan.
 	m.reloadMu.Lock()
@@ -426,8 +446,9 @@ func (m *Manager) RestartServices(names []string) error {
 	}
 
 	// Start dependencies before their dependents.
+	ctx = WithStartReason(ctx, "manual_restart")
 	for _, n := range affected {
-		if err := m.StartService(n); err != nil {
+		if err := m.startService(ctx, n, false); err != nil {
 			return fmt.Errorf("start service %q: %w", n, err)
 		}
 	}
@@ -438,6 +459,10 @@ func (m *Manager) RestartServices(names []string) error {
 // RestartAll restarts only services that were active when the operation began.
 
 func (m *Manager) RestartAll() error {
+	return m.RestartAllContext(context.Background())
+}
+
+func (m *Manager) RestartAllContext(ctx context.Context) error {
 	// See RestartService: block a concurrent reload for the whole operation.
 	m.reloadMu.Lock()
 	defer m.reloadMu.Unlock()
@@ -458,9 +483,10 @@ func (m *Manager) RestartAll() error {
 			}
 		}
 	}
+	ctx = WithStartReason(ctx, "manual_restart")
 	for _, name := range order {
 		if running[name] {
-			if err := m.StartService(name); err != nil {
+			if err := m.startService(ctx, name, false); err != nil {
 				return err
 			}
 		}

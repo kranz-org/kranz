@@ -51,6 +51,22 @@ func (m *Manager) RunSummaries(target RunTarget) []RunSummary { return m.runs.Li
 
 func (m *Manager) AllRunSummaries() []RunSummary { return m.runs.All() }
 
+// RecordConfigReload marks a new configuration generation inside every
+// continuing service run. Services restarted by ApplyConfig get a new run and
+// therefore do not receive a marker that would imply process continuity.
+func (m *Manager) RecordConfigReload(generation uint64, restarted []string) {
+	restartedSet := make(map[string]bool, len(restarted))
+	for _, name := range restarted {
+		restartedSet[name] = true
+	}
+	for _, svc := range m.Services() {
+		if restartedSet[svc.Name] || svc.Run() == 0 || svc.Status() == config.StatusStopped {
+			continue
+		}
+		svc.AppendLog(fmt.Sprintf("[Kranz] Config reloaded · generation %d", generation))
+	}
+}
+
 // newService constructs a service already attached to this manager's journal,
 // so no construction path can produce a service whose changes go unrecorded.
 func (m *Manager) newService(name string, cfg config.Service) *Service {

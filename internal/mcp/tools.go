@@ -25,7 +25,7 @@ const waitTransportGrace = 5 * time.Second
 // exactly, so a tool cannot appear without being listed here, and a listed
 // name cannot resolve to nothing.
 var toolNames = []string{
-	"status", "changes", "plan", "graph", "ports", "port_inspect", "logs", "wait", "health",
+	"status", "runs", "changes", "plan", "graph", "ports", "port_inspect", "logs", "wait", "health",
 	"action_list", "action_info", "action_result",
 	"doctor", "start", "stop", "restart", "action_run", "action_cancel", "logs_clear", "reload",
 }
@@ -46,6 +46,7 @@ var (
 func (s *Server) installTools() {
 	definitions := []toolDefinition{
 		{Name: "status", Description: "Return live status for selected services, including the structured cause of a state whose reason is not the state itself.", InputSchema: objectSchema(map[string]any{"selectors": selectorsProperty}), handler: s.statusTool},
+		{Name: "runs", Description: "Return the bounded service and action run catalog with provenance and output retention state.", InputSchema: objectSchema(map[string]any{}), handler: s.runsTool},
 		{Name: "changes", Description: "Return what changed in the runtime after a cursor: service and action transitions, detected-port changes, and configuration reloads.", InputSchema: objectSchema(map[string]any{
 			"since":            map[string]any{"type": "integer", "minimum": 0, "description": "Cursor from a previous changes or wait result. Zero reads the whole retained journal."},
 			"since_generation": map[string]any{"type": "integer", "minimum": 0, "description": "Alternative anchor: read everything after the reload that produced this configuration generation."},
@@ -89,6 +90,14 @@ func (s *Server) installTools() {
 			panic("MCP tool allow-list names an unimplemented tool: " + name)
 		}
 	}
+}
+
+func (s *Server) runsTool(_ context.Context, raw json.RawMessage) ResultEnvelope {
+	var args struct{}
+	if err := decodeArgs(raw, &args); err != nil {
+		return s.argError(err)
+	}
+	return s.envelope(map[string]any{"runs": s.api.Runs()})
 }
 
 func mutationSchema(includeDependencies bool) map[string]any {

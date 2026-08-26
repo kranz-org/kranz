@@ -83,6 +83,7 @@ type API interface {
 	// ForceStartServices starts exactly names, without expanding or
 	// waiting on dependencies.
 	ForceStartServices(names []string) error
+	ForceStartServicesContext(ctx context.Context, names []string) error
 	// StopAll stops every configured service in reverse dependency order.
 	StopAll() error
 	// RestartAll restarts every service that was active when called.
@@ -124,11 +125,14 @@ type API interface {
 	// lets an IPC-backed API implementation support interactive actions:
 	// neither a process handle nor a closure over one survives the wire.
 	AcquireInteractiveAction(id config.ActionID) (config.Action, string, error)
+	AcquireInteractiveActionContext(ctx context.Context, id config.ActionID) (config.Action, string, error)
 	// CompleteInteractiveAction finishes an AcquireInteractiveAction lease
 	// with the outcome the caller observed running the command: the error
 	// tea.ExecProcess reported, if any, plus the exit code and PID read
 	// from the command's ProcessState.
 	CompleteInteractiveAction(id config.ActionID, lease string, execErr error, exitCode, pid int) (ActionResult, error)
+	// Runs returns the bounded run catalog independently from retained output.
+	Runs() []RunSummary
 
 	// Logs returns the current buffered log entries for a service.
 	Logs(name string) []config.LogEntry

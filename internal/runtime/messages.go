@@ -50,6 +50,7 @@ const (
 	methodCancelAction                    = "cancelAction"
 	methodAcquireInteractiveAction        = "acquireInteractiveAction"
 	methodCompleteInteractiveAction       = "completeInteractiveAction"
+	methodRuns                            = "runs"
 	methodActionLogs                      = "actionLogs"
 	methodQueryLogs                       = "queryLogs"
 	methodClearLogStreams                 = "clearLogStreams"

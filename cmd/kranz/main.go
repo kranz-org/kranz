@@ -131,6 +131,11 @@ func execute(args []string, stdout, stderr io.Writer) int {
 			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
 		}
 		return 0
+	case "runs":
+		if err := runRuns(invocation.Globals, invocation.Args, stdout); err != nil {
+			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
+		}
+		return 0
 	case "graph":
 		if err := runGraph(invocation.Globals, invocation.Args, stdout); err != nil {
 			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
@@ -399,7 +404,8 @@ func runTUI(options kranzcli.GlobalOptions) (runErr error) {
 	record, lookupErr := registry.Resolve(lookupCtx, cfg.RuntimeName(), version)
 	cancelLookup()
 	if lookupErr == nil {
-		client, dialErr := kranzruntime.Dial(record.Socket, version)
+		client, dialErr := kranzruntime.DialWithIdentity(record.Socket, version,
+			kranzruntime.ClientIdentity{Surface: "tui", Label: "Kranz dashboard"})
 		if dialErr != nil {
 			return classifyRuntimeError(dialErr)
 		}
@@ -467,7 +473,8 @@ func runTUI(options kranzcli.GlobalOptions) (runErr error) {
 		}
 	}()
 
-	client, err := kranzruntime.Dial(metadata.Socket, version)
+	client, err := kranzruntime.DialWithIdentity(metadata.Socket, version,
+		kranzruntime.ClientIdentity{Surface: "tui", Label: "Kranz dashboard"})
 	if err != nil {
 		return fmt.Errorf("connect to runtime: %w", err)
 	}

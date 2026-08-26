@@ -120,7 +120,8 @@ func attachMCPRecord(reference string, record kranzruntime.SessionRecord) (*kran
 	if record.State != kranzruntime.SessionRunning {
 		return nil, record.SessionMetadata, "", nil, fmt.Errorf("runtime %s is %s; refusing to create a second supervisor", reference, record.State)
 	}
-	client, err := kranzruntime.Dial(record.Socket, version)
+	client, err := kranzruntime.DialWithIdentity(record.Socket, version,
+		kranzruntime.ClientIdentity{Surface: "mcp", Label: "Kranz MCP"})
 	if err != nil {
 		return nil, record.SessionMetadata, "", nil, fmt.Errorf("attach runtime %s: %w", reference, err)
 	}

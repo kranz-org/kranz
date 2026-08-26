@@ -158,3 +158,24 @@ func TestDetachedServiceRunStaysLiveAfterStartAction(t *testing.T) {
 		t.Fatalf("stopped detached summary = %#v", runs)
 	}
 }
+
+func TestConfigReloadMarkerStaysInsideContinuingRun(t *testing.T) {
+	manager := NewManager(&config.Config{Services: map[string]config.Service{
+		"api": {Command: "sleep 30", Shell: "/bin/sh"},
+	}})
+	t.Cleanup(func() { _ = manager.Shutdown() })
+	ctx := WithRunProvenance(t.Context(), RunProvenance{Surface: "tui", ClientLabel: "dashboard"})
+	if err := manager.StartServicesContext(ctx, []string{"api"}); err != nil {
+		t.Fatal(err)
+	}
+	manager.RecordConfigReload(2, nil)
+	svc, _ := manager.GetService("api")
+	entries := svc.LogEntries()
+	if len(entries) == 0 || entries[len(entries)-1].Run != 1 || entries[len(entries)-1].Raw != "[Kranz] Config reloaded · generation 2" {
+		t.Fatalf("reload marker entries = %#v", entries)
+	}
+	runs := manager.RunSummaries(ServiceRunTarget("api"))
+	if len(runs) != 1 || runs[0].Run != 1 || runs[0].Surface != "tui" || runs[0].ClientLabel != "dashboard" || runs[0].StartReason != "first_start" {
+		t.Fatalf("continuing run = %#v", runs)
+	}
+}

@@ -37,6 +37,21 @@ type (
 	ActionBusyError       = service.ActionBusyError
 	ActionExitError       = service.ActionExitError
 	ActionRunEvictedError = service.ActionRunEvictedError
+	RunKind               = service.RunKind
+	RunTarget             = service.RunTarget
+	RunOutputState        = service.RunOutputState
+	RunOutputSummary      = service.RunOutputSummary
+	RunSummary            = service.RunSummary
+)
+
+const (
+	RunKindService = service.RunKindService
+	RunKindAction  = service.RunKindAction
+)
+
+var (
+	ServiceRunTarget = service.ServiceRunTarget
+	ActionRunTarget  = service.ActionRunTarget
 )
 
 // Re-exported so a caller never has to import internal/service for a

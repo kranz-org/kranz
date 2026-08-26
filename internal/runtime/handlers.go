@@ -105,20 +105,20 @@ var handlers = map[string]handlerFunc{
 	methodForceStopServices: handler(func(_ context.Context, l *app.Local, req namesRequest) (emptyResponse, error) {
 		return emptyResponse{}, l.ForceStopServices(req.Names)
 	}),
-	methodForceStartServices: handler(func(_ context.Context, l *app.Local, req namesRequest) (emptyResponse, error) {
-		return emptyResponse{}, l.ForceStartServices(req.Names)
+	methodForceStartServices: handler(func(ctx context.Context, l *app.Local, req namesRequest) (emptyResponse, error) {
+		return emptyResponse{}, l.ForceStartServicesContext(ctx, req.Names)
 	}),
 	methodStopAll: handler(func(_ context.Context, l *app.Local, _ emptyRequest) (emptyResponse, error) {
 		return emptyResponse{}, l.StopAll()
 	}),
-	methodRestartAll: handler(func(_ context.Context, l *app.Local, _ emptyRequest) (emptyResponse, error) {
-		return emptyResponse{}, l.RestartAll()
+	methodRestartAll: handler(func(ctx context.Context, l *app.Local, _ emptyRequest) (emptyResponse, error) {
+		return emptyResponse{}, l.RestartAllContext(ctx)
 	}),
-	methodRestartService: handler(func(_ context.Context, l *app.Local, req nameRequest) (emptyResponse, error) {
-		return emptyResponse{}, l.RestartService(req.Name)
+	methodRestartService: handler(func(ctx context.Context, l *app.Local, req nameRequest) (emptyResponse, error) {
+		return emptyResponse{}, l.RestartServicesContext(ctx, []string{req.Name})
 	}),
-	methodRestartServices: handler(func(_ context.Context, l *app.Local, req namesRequest) (emptyResponse, error) {
-		return emptyResponse{}, l.RestartServices(req.Names)
+	methodRestartServices: handler(func(ctx context.Context, l *app.Local, req namesRequest) (emptyResponse, error) {
+		return emptyResponse{}, l.RestartServicesContext(ctx, req.Names)
 	}),
 	methodHasRunningServices: handler(func(_ context.Context, l *app.Local, _ emptyRequest) (boolResponse, error) {
 		return boolResponse{Value: l.HasRunningServices()}, nil
@@ -143,8 +143,8 @@ var handlers = map[string]handlerFunc{
 	methodCancelAction: handler(func(_ context.Context, l *app.Local, req actionIDRequest) (cancelActionResponse, error) {
 		return cancelActionResponse{Cancelled: l.CancelAction(req.ID)}, nil
 	}),
-	methodAcquireInteractiveAction: handler(func(_ context.Context, l *app.Local, req actionIDRequest) (acquireInteractiveActionResponse, error) {
-		action, lease, err := l.AcquireInteractiveAction(req.ID)
+	methodAcquireInteractiveAction: handler(func(ctx context.Context, l *app.Local, req actionIDRequest) (acquireInteractiveActionResponse, error) {
+		action, lease, err := l.AcquireInteractiveActionContext(ctx, req.ID)
 		return acquireInteractiveActionResponse{Action: action, Lease: lease}, err
 	}),
 	methodCompleteInteractiveAction: handler(func(_ context.Context, l *app.Local, req completeInteractiveActionRequest) (app.ActionResult, error) {
@@ -153,6 +153,9 @@ var handlers = map[string]handlerFunc{
 			execErr = fmt.Errorf("%s", req.ExecErr)
 		}
 		return l.CompleteInteractiveAction(req.ID, req.Lease, execErr, req.ExitCode, req.PID)
+	}),
+	methodRuns: handler(func(_ context.Context, l *app.Local, _ emptyRequest) ([]app.RunSummary, error) {
+		return l.Runs(), nil
 	}),
 	methodActionLogs: handler(func(_ context.Context, l *app.Local, req actionIDRequest) (logsResponse, error) {
 		return logsResponse{Entries: l.ActionLogs(req.ID)}, nil

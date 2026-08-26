@@ -286,6 +286,10 @@ func (l *Local) ForceStartServices(names []string) error {
 	return l.manager.ForceStartServices(names)
 }
 
+func (l *Local) ForceStartServicesContext(ctx context.Context, names []string) error {
+	return l.manager.ForceStartServicesContext(ctx, names)
+}
+
 func (l *Local) StopAll() error {
 	return l.manager.StopAll()
 }
@@ -294,12 +298,20 @@ func (l *Local) RestartAll() error {
 	return l.manager.RestartAll()
 }
 
+func (l *Local) RestartAllContext(ctx context.Context) error {
+	return l.manager.RestartAllContext(ctx)
+}
+
 func (l *Local) RestartService(name string) error {
 	return l.manager.RestartService(name)
 }
 
 func (l *Local) RestartServices(names []string) error {
 	return l.manager.RestartServices(names)
+}
+
+func (l *Local) RestartServicesContext(ctx context.Context, names []string) error {
+	return l.manager.RestartServicesContext(ctx, names)
 }
 
 func (l *Local) HasRunningServices() bool {
@@ -335,9 +347,15 @@ func (l *Local) AcquireInteractiveAction(id config.ActionID) (config.Action, str
 	return l.manager.AcquireInteractiveAction(id)
 }
 
+func (l *Local) AcquireInteractiveActionContext(ctx context.Context, id config.ActionID) (config.Action, string, error) {
+	return l.manager.AcquireInteractiveActionContext(ctx, id)
+}
+
 func (l *Local) CompleteInteractiveAction(id config.ActionID, lease string, execErr error, exitCode, pid int) (ActionResult, error) {
 	return l.manager.CompleteInteractiveAction(id, lease, exitCode, pid, execErr)
 }
+
+func (l *Local) Runs() []RunSummary { return l.manager.AllRunSummaries() }
 
 func (l *Local) Logs(name string) []config.LogEntry {
 	svc, ok := l.manager.GetService(name)

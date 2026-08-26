@@ -267,8 +267,12 @@ func (r *ActionRunner) RunDefinition(ctx context.Context, id config.ActionID, ac
 	r.nextRun[id] = run
 	r.states[id] = ActionResult{ID: id, Run: run, Status: ActionRunning, ExitCode: -1, StartedAt: started}
 	r.mu.Unlock()
+	provenance := RunProvenanceFromContext(ctx)
+	if provenance.StartReason == "" {
+		provenance.StartReason = "invoked"
+	}
 	r.catalog.Begin(RunSummary{Target: ActionRunTarget(id), Run: run, Status: ActionRunning.String(), StartedAt: started,
-		StartReason: "invoked"})
+		Surface: provenance.Surface, ClientLabel: provenance.ClientLabel, StartReason: provenance.StartReason})
 
 	stream := r.logStreamFor(id)
 	if stream != nil {
@@ -632,21 +636,15 @@ func (r *ActionRunner) ClearActionLogs(id config.ActionID) {
 
 // startOutputPump copies a process's captured output into stream until the
 // returned stop function is called, which sweeps whatever arrived last. It
-// reads by offset rather than draining, so the ActionResult snapshot the caller
-// builds from the same buffers stays complete.
+// drains only the canonical capture queue; per-source buffers remain intact for
+// the ActionResult snapshot the caller builds at completion.
 func startOutputPump(stream *logStream, process *ProcessManager) func() {
 	if stream == nil || process == nil {
 		return func() {}
 	}
-	stdoutOffset, stderrOffset := 0, 0
 	sweep := func() {
-		lines := process.Stdout().Lines()
-		for ; stdoutOffset < len(lines); stdoutOffset++ {
-			stream.Append(time.Now(), "stdout", lines[stdoutOffset])
-		}
-		lines = process.Stderr().Lines()
-		for ; stderrOffset < len(lines); stderrOffset++ {
-			stream.Append(time.Now(), "stderr", lines[stderrOffset])
+		for _, entry := range process.DrainCapturedOutput() {
+			stream.Append(entry.CapturedAt, entry.Source, entry.Text)
 		}
 	}
 	done, finished := make(chan struct{}), make(chan struct{})
@@ -663,8 +661,8 @@ func startOutputPump(stream *logStream, process *ProcessManager) func() {
 			}
 		}
 	}()
-	// The offsets are owned by the pump goroutine; the final sweep runs only
-	// after it has exited, so the two never advance them concurrently.
+	// The capture queue has one consumer; the final sweep runs only after the
+	// pump goroutine exits, so the two never drain concurrently.
 	return func() {
 		close(done)
 		<-finished

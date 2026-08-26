@@ -16,22 +16,60 @@ import (
 
 // ProcessManager owns one child process and its bounded stdout/stderr buffers.
 type ProcessManager struct {
-	mu       sync.RWMutex
-	stopMu   sync.Mutex
-	cmd      *exec.Cmd
-	stdout   *ringbuffer.RingBuffer
-	stderr   *ringbuffer.RingBuffer
-	waitDone chan struct{}
-	waitErr  error
+	mu        sync.RWMutex
+	stopMu    sync.Mutex
+	outputMu  sync.Mutex
+	cmd       *exec.Cmd
+	stdout    *ringbuffer.RingBuffer
+	stderr    *ringbuffer.RingBuffer
+	output    []CapturedOutput
+	outputSeq uint64
+	waitDone  chan struct{}
+	waitErr   error
 }
 
-type ringBufferWriter struct {
-	buffer *ringbuffer.RingBuffer
+// CapturedOutput is one stdout/stderr write ordered at the instant Kranz
+// receives it. Consumers split Text into lines only after preserving Sequence.
+type CapturedOutput struct {
+	Sequence   uint64
+	CapturedAt time.Time
+	Source     string
+	Text       string
 }
 
-func (w ringBufferWriter) Write(data []byte) (int, error) {
-	w.buffer.Write(string(data))
+type processOutputWriter struct {
+	process *ProcessManager
+	buffer  *ringbuffer.RingBuffer
+	source  string
+}
+
+func (w processOutputWriter) Write(data []byte) (int, error) {
+	text := string(data)
+	w.process.captureOutput(w.buffer, w.source, text)
 	return len(data), nil
+}
+
+func (pm *ProcessManager) captureOutput(buffer *ringbuffer.RingBuffer, source, text string) {
+	pm.outputMu.Lock()
+	// The same lock serializes both per-source retention and canonical capture,
+	// so a goroutine cannot publish its stdout chunk and then lose the sequence
+	// race to a later stderr chunk before recording the shared order.
+	buffer.Write(text)
+	pm.outputSeq++
+	pm.output = append(pm.output, CapturedOutput{
+		Sequence: pm.outputSeq, CapturedAt: time.Now(), Source: source, Text: text,
+	})
+	pm.outputMu.Unlock()
+}
+
+// DrainCapturedOutput returns stdout and stderr writes in canonical capture
+// order. The per-source buffers remain intact for action result snapshots.
+func (pm *ProcessManager) DrainCapturedOutput() []CapturedOutput {
+	pm.outputMu.Lock()
+	defer pm.outputMu.Unlock()
+	entries := append([]CapturedOutput(nil), pm.output...)
+	pm.output = pm.output[:0]
+	return entries
 }
 
 // StopOptions customizes graceful shutdown for one process.
@@ -81,8 +119,8 @@ func (pm *ProcessManager) Start(ctx context.Context, command, dir string, env ma
 
 	// Non-file writers make os/exec own the stream-copy goroutines. Wait then
 	// cannot complete until both streams have been copied into their buffers.
-	cmd.Stdout = ringBufferWriter{buffer: pm.stdout}
-	cmd.Stderr = ringBufferWriter{buffer: pm.stderr}
+	cmd.Stdout = processOutputWriter{process: pm, buffer: pm.stdout, source: "stdout"}
+	cmd.Stderr = processOutputWriter{process: pm, buffer: pm.stderr, source: "stderr"}
 
 	if err := cmd.Start(); err != nil {
 		return 0, fmt.Errorf("start process: %w", err)

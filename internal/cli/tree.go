@@ -122,6 +122,7 @@ func DefaultTree() *Command {
 		{Name: "list", Summary: "list services, actions, or tags", Usage: "kranz list [services|actions|tags]"},
 		{Name: "info", Summary: "show project or service details", Usage: "kranz info [SERVICE]"},
 		{Name: "status", Summary: "show runtime status", Usage: "kranz status [SELECTOR ...]"},
+		{Name: "runs", Summary: "list retained service and action runs", Usage: "kranz runs [TARGET ...]"},
 		{Name: "plan", Summary: "show the resolved start plan", Usage: "kranz plan [SELECTOR ...]"},
 		{Name: "graph", Summary: "print the dependency graph", Usage: "kranz graph [--format text|json|dot]", Options: []Option{
 			{Flags: "--format FORMAT", Summary: "text, json, or dot; defaults to text", Values: []string{"text", "json", "dot"}},

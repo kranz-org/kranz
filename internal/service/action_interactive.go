@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -59,7 +60,7 @@ func (r *ActionRunner) PrepareInteractive(id config.ActionID) (*exec.Cmd, func(e
 	r.states[id] = ActionResult{ID: id, Run: run, Status: ActionRunning, ExitCode: -1, StartedAt: started}
 	r.mu.Unlock()
 	r.catalog.Begin(RunSummary{Target: ActionRunTarget(id), Run: run, Status: ActionRunning.String(), StartedAt: started,
-		StartReason: "interactive handoff"})
+		Surface: "tui", ClientLabel: "interactive terminal", StartReason: "interactive_handoff"})
 
 	finish := func(runErr error) ActionResult {
 		result := ActionResult{
@@ -101,6 +102,10 @@ func (r *ActionRunner) PrepareInteractive(id config.ActionID) (*exec.Cmd, func(e
 // opaque lease token; CompleteInteractive finishes the accounting once the
 // caller has run the command itself and observed its outcome.
 func (r *ActionRunner) AcquireInteractive(id config.ActionID) (config.Action, string, error) {
+	return r.AcquireInteractiveContext(context.Background(), id)
+}
+
+func (r *ActionRunner) AcquireInteractiveContext(ctx context.Context, id config.ActionID) (config.Action, string, error) {
 	r.mu.Lock()
 	if r.shuttingDown {
 		r.mu.Unlock()
@@ -134,8 +139,12 @@ func (r *ActionRunner) AcquireInteractive(id config.ActionID) (config.Action, st
 	r.nextRun[id] = run
 	r.states[id] = ActionResult{ID: id, Run: run, Status: ActionRunning, ExitCode: -1, StartedAt: started}
 	r.mu.Unlock()
+	provenance := RunProvenanceFromContext(ctx)
+	if provenance.StartReason == "" {
+		provenance.StartReason = "interactive_handoff"
+	}
 	r.catalog.Begin(RunSummary{Target: ActionRunTarget(id), Run: run, Status: ActionRunning.String(), StartedAt: started,
-		StartReason: "interactive handoff"})
+		Surface: provenance.Surface, ClientLabel: provenance.ClientLabel, StartReason: provenance.StartReason})
 	return action, lease, nil
 }
 
@@ -203,7 +212,11 @@ func (m *Manager) PrepareInteractiveAction(id config.ActionID) (*exec.Cmd, func(
 // AcquireInteractiveAction reserves an interactive action for a delivery
 // surface that runs the command itself, out of process from the runtime.
 func (m *Manager) AcquireInteractiveAction(id config.ActionID) (config.Action, string, error) {
-	return m.actions.AcquireInteractive(id)
+	return m.AcquireInteractiveActionContext(context.Background(), id)
+}
+
+func (m *Manager) AcquireInteractiveActionContext(ctx context.Context, id config.ActionID) (config.Action, string, error) {
+	return m.actions.AcquireInteractiveContext(ctx, id)
 }
 
 // CompleteInteractiveAction finishes an AcquireInteractiveAction lease with

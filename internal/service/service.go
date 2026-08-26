@@ -21,8 +21,9 @@ type Service struct {
 	State   config.ServiceState
 	stateMu sync.RWMutex
 
-	stream  *logStream
-	catalog *RunCatalog
+	stream            *logStream
+	catalog           *RunCatalog
+	nextRunProvenance RunProvenance
 
 	// journal records this service's transitions for readers that need what
 	// happened rather than what is. It is nil for services constructed outside
@@ -165,6 +166,12 @@ func (s *Service) SetRunCatalog(catalog *RunCatalog) {
 	s.stream.SetCatalog(catalog, ServiceRunTarget(s.Name))
 }
 
+func (s *Service) SetNextRunProvenance(provenance RunProvenance) {
+	s.stateMu.Lock()
+	s.nextRunProvenance = normalizeRunProvenance(provenance)
+	s.stateMu.Unlock()
+}
+
 // SetStatus atomically updates lifecycle status and transition timestamps, and
 // records the transition. Every lifecycle path funnels through here, so the
 // journal cannot miss a change some other path made.
@@ -185,8 +192,11 @@ func (s *Service) SetStatus(status config.ServiceStatus) {
 		s.State.ExitCode = 0
 		s.State.ExitError = ""
 		s.State.Cause = nil
+		provenance := normalizeRunProvenance(s.nextRunProvenance)
+		s.nextRunProvenance = RunProvenance{}
 		s.catalog.Begin(RunSummary{Target: ServiceRunTarget(s.Name), Run: s.State.Run, Status: status.String(),
-			StartedAt: s.State.StartedAt, StartReason: "start"})
+			StartedAt: s.State.StartedAt, Surface: provenance.Surface, ClientLabel: provenance.ClientLabel,
+			StartReason: provenance.StartReason})
 	}
 	if status == config.StatusRunning && s.State.StartedAt.IsZero() {
 		s.State.StartedAt = time.Now()

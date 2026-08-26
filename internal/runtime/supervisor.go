@@ -12,6 +12,7 @@ import (
 
 	"github.com/kranz-org/kranz/internal/app"
 	"github.com/kranz-org/kranz/internal/config"
+	"github.com/kranz-org/kranz/internal/service"
 )
 
 // backgroundReloadInterval is how often the Supervisor's own watcher checks
@@ -194,7 +195,8 @@ func (s *Supervisor) handleConn(conn *net.UnixConn) {
 	}
 
 	c := newCodec(conn)
-	if !s.handshake(c) {
+	provenance, ok := s.handshake(c)
+	if !ok {
 		return
 	}
 
@@ -219,7 +221,8 @@ func (s *Supervisor) handleConn(conn *net.UnixConn) {
 			}
 			pendingMu.Unlock()
 		case messageRequest:
-			ctx, cancel := context.WithCancel(context.Background())
+			base := service.WithRunProvenance(context.Background(), provenance)
+			ctx, cancel := context.WithCancel(base)
 			pendingMu.Lock()
 			pending[msg.ID] = cancel
 			pendingMu.Unlock()
@@ -297,14 +300,14 @@ func (l *connectionLeases) releaseAll(local *app.Local) {
 // server decodes before any method dispatch table applies, matching the
 // README's requirement that hello, inspect, and down stay readable across
 // protocol versions.
-func (s *Supervisor) handshake(c *codec) bool {
+func (s *Supervisor) handshake(c *codec) (service.RunProvenance, bool) {
 	msg, err := c.receive()
 	if err != nil || msg.Type != messageRequest || msg.Method != methodHello {
-		return false
+		return service.RunProvenance{}, false
 	}
 	var req helloRequest
 	if err := json.Unmarshal(msg.Body, &req); err != nil {
-		return false
+		return service.RunProvenance{}, false
 	}
 	if req.ProtocolMin > protocolVersion || req.ProtocolMax < protocolVersion {
 		payload := errorPayload{
@@ -318,7 +321,7 @@ func (s *Supervisor) handshake(c *codec) bool {
 		}
 		body, _ := json.Marshal(payload)
 		_ = c.send(envelope{Type: messageError, ID: msg.ID, Body: body})
-		return false
+		return service.RunProvenance{}, false
 	}
 	resp := helloResponse{
 		ProtocolMin: protocolVersion, ProtocolMax: protocolVersion,
@@ -326,9 +329,12 @@ func (s *Supervisor) handshake(c *codec) bool {
 	}
 	body, err := json.Marshal(resp)
 	if err != nil {
-		return false
+		return service.RunProvenance{}, false
 	}
-	return c.send(envelope{Type: messageResponse, ID: msg.ID, Body: body}) == nil
+	if c.send(envelope{Type: messageResponse, ID: msg.ID, Body: body}) != nil {
+		return service.RunProvenance{}, false
+	}
+	return service.RunProvenance{Surface: req.Surface, ClientLabel: req.ClientLabel}, true
 }
 
 func (s *Supervisor) dispatch(ctx context.Context, c *codec, msg envelope, leases *connectionLeases) {

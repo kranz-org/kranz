@@ -33,7 +33,8 @@ func runAttach(options kranzcli.GlobalOptions, args []string) (runErr error) {
 		return fmt.Errorf("open runtime directory %s: %w", record.Directory, err)
 	}
 	defer func() { runErr = errors.Join(runErr, os.Chdir(originalDirectory)) }()
-	client, err := kranzruntime.Dial(record.Socket, version)
+	client, err := kranzruntime.DialWithIdentity(record.Socket, version,
+		kranzruntime.ClientIdentity{Surface: "tui", Label: "Kranz attach"})
 	if err != nil {
 		return classifyRuntimeError(err)
 	}

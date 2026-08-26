@@ -84,6 +84,7 @@ func (l *Local) Reload(force bool) (ReloadResult, error) {
 	l.loadedAt = time.Now()
 	l.lastReloadErr = ""
 	l.cfgMu.Unlock()
+	l.manager.RecordConfigReload(generation, result.Restarted)
 	l.recordReloadTransition(generation, result)
 	if stamps, err := readConfigStamps(l.watchPathsSnapshot()); err == nil {
 		l.recordReloadStamps(stamps)

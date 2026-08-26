@@ -45,6 +45,8 @@ type helloRequest struct {
 	ProtocolMin   int    `json:"protocol_min"`
 	ProtocolMax   int    `json:"protocol_max"`
 	ClientVersion string `json:"client_version"`
+	Surface       string `json:"surface,omitempty"`
+	ClientLabel   string `json:"client_label,omitempty"`
 }
 
 // helloResponse is the server's answer once it has picked a protocol version

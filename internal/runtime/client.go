@@ -43,16 +43,29 @@ type Client struct {
 	doneOnce  sync.Once
 }
 
+type ClientIdentity struct {
+	Surface string
+	Label   string
+}
+
 // Dial connects to a Supervisor listening on socketPath and performs the
 // hello handshake. clientVersion is advertised to the server for its own
 // diagnostics; it does not affect protocol negotiation in this stream, since
 // client and server are always built from the same binary.
 func Dial(socketPath, clientVersion string) (*Client, error) {
-	return DialContext(context.Background(), socketPath, clientVersion)
+	return DialWithIdentity(socketPath, clientVersion, ClientIdentity{Surface: "cli", Label: "kranz CLI"})
+}
+
+func DialWithIdentity(socketPath, clientVersion string, identity ClientIdentity) (*Client, error) {
+	return DialContextWithIdentity(context.Background(), socketPath, clientVersion, identity)
 }
 
 // DialContext bounds both connection establishment and the hello handshake.
 func DialContext(ctx context.Context, socketPath, clientVersion string) (*Client, error) {
+	return DialContextWithIdentity(ctx, socketPath, clientVersion, ClientIdentity{Surface: "cli", Label: "kranz CLI"})
+}
+
+func DialContextWithIdentity(ctx context.Context, socketPath, clientVersion string, identity ClientIdentity) (*Client, error) {
 	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
 	if err != nil {
 		return nil, fmt.Errorf("dial %s: %w", socketPath, err)
@@ -77,7 +90,8 @@ func DialContext(ctx context.Context, socketPath, clientVersion string) (*Client
 		return nil, err
 	}
 
-	helloBody, err := json.Marshal(helloRequest{ProtocolMin: protocolVersion, ProtocolMax: protocolVersion, ClientVersion: clientVersion})
+	helloBody, err := json.Marshal(helloRequest{ProtocolMin: protocolVersion, ProtocolMax: protocolVersion,
+		ClientVersion: clientVersion, Surface: identity.Surface, ClientLabel: identity.Label})
 	if err != nil {
 		_ = conn.Close()
 		return nil, err
@@ -347,7 +361,11 @@ func (c *Client) ForceStopServices(names []string) error {
 }
 
 func (c *Client) ForceStartServices(names []string) error {
-	_, err := call[namesRequest, emptyResponse](c, context.Background(), methodForceStartServices, namesRequest{Names: names})
+	return c.ForceStartServicesContext(context.Background(), names)
+}
+
+func (c *Client) ForceStartServicesContext(ctx context.Context, names []string) error {
+	_, err := call[namesRequest, emptyResponse](c, ctx, methodForceStartServices, namesRequest{Names: names})
 	return err
 }
 
@@ -408,7 +426,11 @@ func (c *Client) CancelAction(id config.ActionID) bool {
 }
 
 func (c *Client) AcquireInteractiveAction(id config.ActionID) (config.Action, string, error) {
-	resp, err := call[actionIDRequest, acquireInteractiveActionResponse](c, context.Background(), methodAcquireInteractiveAction, actionIDRequest{ID: id})
+	return c.AcquireInteractiveActionContext(context.Background(), id)
+}
+
+func (c *Client) AcquireInteractiveActionContext(ctx context.Context, id config.ActionID) (config.Action, string, error) {
+	resp, err := call[actionIDRequest, acquireInteractiveActionResponse](c, ctx, methodAcquireInteractiveAction, actionIDRequest{ID: id})
 	return resp.Action, resp.Lease, err
 }
 
@@ -418,6 +440,11 @@ func (c *Client) CompleteInteractiveAction(id config.ActionID, lease string, exe
 		req.ExecErr = execErr.Error()
 	}
 	return call[completeInteractiveActionRequest, app.ActionResult](c, context.Background(), methodCompleteInteractiveAction, req)
+}
+
+func (c *Client) Runs() []app.RunSummary {
+	runs, _ := call[emptyRequest, []app.RunSummary](c, context.Background(), methodRuns, emptyRequest{})
+	return runs
 }
 
 func (c *Client) Logs(name string) []config.LogEntry {

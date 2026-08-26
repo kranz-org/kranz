@@ -68,7 +68,8 @@ type RunSummary struct {
 	PID         int                `json:"pid,omitempty"`
 	ExitCode    *int               `json:"exit_code,omitempty"`
 	Cause       *config.StateCause `json:"cause,omitempty"`
-	Initiator   string             `json:"initiator,omitempty"`
+	Surface     string             `json:"surface"`
+	ClientLabel string             `json:"client_label,omitempty"`
 	StartReason string             `json:"start_reason,omitempty"`
 	Live        bool               `json:"live"`
 	Output      RunOutputSummary   `json:"output"`

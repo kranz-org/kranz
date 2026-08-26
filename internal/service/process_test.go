@@ -46,6 +46,32 @@ func TestProcessManagerWaitIncludesShortLivedOutput(t *testing.T) {
 	}
 }
 
+func TestProcessManagerCapturesStdoutAndStderrInOneSequence(t *testing.T) {
+	pm := NewProcessManager(32)
+	stdout := processOutputWriter{process: pm, buffer: pm.stdout, source: "stdout"}
+	stderr := processOutputWriter{process: pm, buffer: pm.stderr, source: "stderr"}
+	_, _ = stdout.Write([]byte("out one"))
+	_, _ = stderr.Write([]byte("err one"))
+	_, _ = stdout.Write([]byte("out two"))
+
+	entries := pm.DrainCapturedOutput()
+	if len(entries) != 3 {
+		t.Fatalf("captured entries = %#v", entries)
+	}
+	wantSources := []string{"stdout", "stderr", "stdout"}
+	for index, entry := range entries {
+		if entry.Sequence != uint64(index+1) || entry.Source != wantSources[index] || entry.CapturedAt.IsZero() {
+			t.Fatalf("entry %d = %#v", index, entry)
+		}
+	}
+	if remaining := pm.DrainCapturedOutput(); len(remaining) != 0 {
+		t.Fatalf("second drain = %#v", remaining)
+	}
+	if got := strings.Join(pm.Stdout().Lines(), ""); got != "out oneout two" {
+		t.Fatalf("stdout snapshot = %q", got)
+	}
+}
+
 func TestProcessManagerUsesUnixSignalExitConvention(t *testing.T) {
 	pm := NewProcessManager(32)
 	if _, err := pm.Start(context.Background(), "kill -TERM $$", ".", nil, "sh"); err != nil {

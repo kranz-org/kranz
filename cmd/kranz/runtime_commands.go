@@ -92,7 +92,8 @@ func startRuntime(options kranzcli.GlobalOptions, mode string) (*runtimeHost, *c
 	}
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- supervisor.Serve() }()
-	client, err := kranzruntime.Dial(metadata.Socket, version)
+	client, err := kranzruntime.DialWithIdentity(metadata.Socket, version,
+		kranzruntime.ClientIdentity{Surface: mode, Label: "kranz " + mode})
 	if err != nil {
 		_ = supervisor.Close()
 		<-serveErr

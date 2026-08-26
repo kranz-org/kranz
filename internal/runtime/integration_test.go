@@ -17,6 +17,10 @@ import (
 // tears both down. It is the RPC-boundary equivalent of the manual smoke
 // test поток 1 ran by hand against examples/*/kranz.yaml.
 func startTestSupervisor(t *testing.T, cfg *config.Config, configPaths []string) (*Client, func()) {
+	return startTestSupervisorIdentity(t, cfg, configPaths, ClientIdentity{Surface: "cli", Label: "kranz CLI"})
+}
+
+func startTestSupervisorIdentity(t *testing.T, cfg *config.Config, configPaths []string, identity ClientIdentity) (*Client, func()) {
 	t.Helper()
 	local := app.NewLocal(cfg, configPaths, app.Options{})
 	supervisor := NewSupervisor(local)
@@ -36,7 +40,7 @@ func startTestSupervisor(t *testing.T, cfg *config.Config, configPaths []string)
 	var client *Client
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		client, err = Dial(socketPath, "test")
+		client, err = DialWithIdentity(socketPath, "test", identity)
 		if err == nil {
 			break
 		}
@@ -216,6 +220,26 @@ func TestSupervisorClientRunNonInteractiveAction(t *testing.T) {
 	state, ok := client.ActionState(id)
 	if !ok || state.Status != app.ActionSucceeded {
 		t.Fatalf("action state = %#v, ok=%v", state, ok)
+	}
+}
+
+func TestRunCatalogPreservesConnectionProvenanceAcrossRPC(t *testing.T) {
+	cfg := &config.Config{Project: "RPC provenance", ActionGroups: map[string]config.ActionGroup{
+		"ops": {Actions: map[string]config.Action{"ping": {Command: "echo pong"}}},
+	}}
+	client, cleanup := startTestSupervisorIdentity(t, cfg, nil, ClientIdentity{Surface: "mcp", Label: "agent session"})
+	defer cleanup()
+
+	id := config.ActionID{OwnerKind: config.ActionOwnerGroup, Owner: "ops", Name: "ping"}
+	if _, err := client.RunAction(context.Background(), id); err != nil {
+		t.Fatal(err)
+	}
+	runs := client.Runs()
+	if len(runs) != 1 {
+		t.Fatalf("runs = %#v, want one", runs)
+	}
+	if runs[0].Surface != "mcp" || runs[0].ClientLabel != "agent session" || runs[0].StartReason != "invoked" {
+		t.Fatalf("run provenance = %+v", runs[0])
 	}
 }
 

@@ -203,12 +203,12 @@ func (l *Local) ExecutePlan(ctx context.Context, request PlanRequest, token stri
 		if request.IncludeDependencies {
 			err = l.StartServicesContext(ctx, plan.Targets)
 		} else {
-			err = l.ForceStartServices(plan.Targets)
+			err = l.ForceStartServicesContext(ctx, plan.Targets)
 		}
 	case "stop":
 		err = l.StopServices(plan.Targets)
 	case "restart":
-		err = l.RestartServices(plan.Targets)
+		err = l.RestartServicesContext(ctx, plan.Targets)
 	case "action":
 		var actionResult ActionResult
 		// A delivery request is only waiting for an action result; it does not

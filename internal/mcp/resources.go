@@ -14,6 +14,7 @@ func (s *Server) installResources() {
 		{URI: "kranz://config", Name: "config", Title: "Redacted effective configuration", Description: "Effective config and provenance paths with secret-like environment values redacted.", MimeType: "application/json", handler: s.configResource},
 		{URI: "kranz://services", Name: "services", Title: "Services", Description: "Declared services and their live runtime snapshots.", MimeType: "application/json", handler: s.servicesResource},
 		{URI: "kranz://actions", Name: "actions", Title: "Actions", Description: "Service and project actions in declaration order.", MimeType: "application/json", handler: s.actionsResource},
+		{URI: "kranz://runs", Name: "runs", Title: "Run catalog", Description: "Bounded service and action run summaries with provenance and retention state.", MimeType: "application/json", handler: s.runsResource},
 		{URI: "kranz://graph", Name: "graph", Title: "Dependency and prerequisite graph", Description: "Nodes for services, action groups, and actions, with dependency, prerequisite, and ownership edges.", MimeType: "application/json", handler: s.graphResource},
 		{URI: "kranz://tags", Name: "tags", Title: "Service tags", Description: "The shared service/tag selector index.", MimeType: "application/json", handler: s.tagsResource},
 		{URI: "kranz://capabilities", Name: "capabilities", Title: "MCP capabilities", Description: "Explicit Kranz MCP allow-list and unavailable unsafe operations.", MimeType: "application/json", handler: s.capabilitiesResource},
@@ -23,6 +24,10 @@ func (s *Server) installResources() {
 		s.resources[definition.URI] = definition
 		s.resourceOrder = append(s.resourceOrder, definition.URI)
 	}
+}
+
+func (s *Server) runsResource(context.Context) ResultEnvelope {
+	return s.envelope(map[string]any{"runs": s.api.Runs()})
 }
 
 func (s *Server) envelope(data any) ResultEnvelope {

@@ -330,8 +330,8 @@ func TestCapabilitySurfaceIsExactAllowList(t *testing.T) {
 			t.Fatalf("unsafe tool %q is reachable", forbidden)
 		}
 	}
-	if got := len(server.resourceOrder); got != 7 {
-		t.Fatalf("resources = %d, want 7", got)
+	if got := len(server.resourceOrder); got != 8 {
+		t.Fatalf("resources = %d, want 8", got)
 	}
 	for _, definition := range server.listTools() {
 		if definition.InputSchema["additionalProperties"] != false {
