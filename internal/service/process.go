@@ -273,7 +273,11 @@ func (pm *ProcessManager) Wait() error {
 func (pm *ProcessManager) ExitCode() int {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
-	if pm.cmd == nil || pm.cmd.ProcessState == nil {
+	// exec.Cmd.Wait writes ProcessState before reap closes waitDone. Reading it
+	// while the process is still being reaped races inside os/exec even though
+	// our pointer is protected. The close is both the completion signal and the
+	// memory barrier that makes ProcessState safe to inspect.
+	if pm.cmd == nil || pm.waitDone == nil || !channelClosed(pm.waitDone) || pm.cmd.ProcessState == nil {
 		return -1
 	}
 	if status, ok := pm.cmd.ProcessState.Sys().(syscall.WaitStatus); ok && status.Signaled() {

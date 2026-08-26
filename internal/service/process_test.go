@@ -57,6 +57,24 @@ func TestProcessManagerUsesUnixSignalExitConvention(t *testing.T) {
 	}
 }
 
+func TestProcessManagerExitCodeStaysUnknownUntilReaped(t *testing.T) {
+	pm := NewProcessManager(10)
+	if _, err := pm.Start(t.Context(), "sleep 0.1", "", nil, "/bin/sh"); err != nil {
+		t.Fatal(err)
+	}
+	for range 100 {
+		if code := pm.ExitCode(); code != -1 {
+			t.Fatalf("ExitCode() while running = %d, want -1", code)
+		}
+	}
+	if err := pm.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	if code := pm.ExitCode(); code != 0 {
+		t.Fatalf("ExitCode() after reap = %d, want 0", code)
+	}
+}
+
 func TestShutdownCommandFailureStillKillsManagedProcess(t *testing.T) {
 	pm := NewProcessManager(32)
 	if _, err := pm.Start(context.Background(), "while :; do sleep 1; done", ".", nil, "sh"); err != nil {
