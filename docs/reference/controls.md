@@ -56,7 +56,7 @@ directions.
 | `e` / `Shift+E` | Export selected run to clipboard / chosen file |
 
 The log header names the history position explicitly: `ALL RUNS · INCLUDES NEW`
-keeps accepting new runs, `LATEST RUN · #N` shows the newest run in isolation,
+keeps accepting new runs, `LATEST RUN #N` shows the newest run in isolation,
 and `HISTORY · RUN #N` means a newer run exists. A pinned panel is frozen and
 shows `Shift+3 UNPIN` in its title; while any pin exists the footer starts with
 `[Shift+3] unpin`, and the shortcut works from every panel.
@@ -66,9 +66,10 @@ shows `Shift+3 UNPIN` in its title; while any pin exists the footer starts with
 selection remains stable until `l` returns to the latest run. The all-runs view
 scrolls across the complete retained output of service and action runs.
 
-The in-app `?` reference is a single scrollable column split into Navigation,
-Services & Actions, Logs & Run History, Log Search, Appearance, and Application
-sections.
+The in-app `?` reference is a compact, scrollable single column split into
+Navigation, Services & Actions, Logs & Run History, Log Search, Appearance, and
+Application sections. Neutral section headings are visually distinct from the
+accent-coloured shortcuts.
 
 ## Application
 

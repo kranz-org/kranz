@@ -64,7 +64,7 @@ func (m *Model) renderActionLogPanel(width, height int) string {
 	selectedRun, state, lines := m.actionLogContent(id, action, state)
 	name := actionRunName(id.Name, selectedRun)
 	title := "[3] ACTION OUTPUT" + ContextBarStyle.Render(" │ ") + actionStatusIndicator(state.Status) + " " + ServiceNameStyle.Render(name) + ContextBarStyle.Render(" · "+state.Status.String())
-	title += " " + RunningBadgeStyle.Render(m.runViewLabel())
+	title += ContextBarStyle.Render(" · ") + RunningBadgeStyle.Render(m.runViewLabel())
 	if state.Status == app.ActionRunning {
 		title += StartingBadgeStyle.Render(" RUNNING")
 	}
@@ -268,7 +268,7 @@ func (m *Model) renderLogPanelMode(svc *app.ServiceSnapshot, width, height int, 
 		}
 		title += SearchInputStyle.Render(fmt.Sprintf("  %s /%s/ · %d", modeLabel, searcher.Pattern(), len(searchMatches)))
 	}
-	title += " " + RunningBadgeStyle.Render(runLabel)
+	title += ContextBarStyle.Render(" · ") + RunningBadgeStyle.Render(runLabel)
 	matchSet := make(map[int]bool, len(searchMatches))
 	for _, idx := range searchMatches {
 		matchSet[idx] = true

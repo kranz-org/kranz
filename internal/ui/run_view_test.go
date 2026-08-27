@@ -49,13 +49,13 @@ func TestRunLabelsSeparateAutoUpdatingLatestAndHistoryViews(t *testing.T) {
 		t.Fatalf("combined label = %q", got)
 	}
 	model.selectLatestRun()
-	if got := model.runViewLabel(); got != "LATEST RUN · #2" {
+	if got := model.runViewLabel(); got != "LATEST RUN #2" {
 		t.Fatalf("latest label = %q", got)
 	}
 
 	finishTestServiceRun(t, model, "api", 0, "run three")
 	model.refreshServices()
-	if got := model.runViewLabel(); got != "LATEST RUN · #3" || model.selectedRun != 3 {
+	if got := model.runViewLabel(); got != "LATEST RUN #3" || model.selectedRun != 3 {
 		t.Fatalf("latest view did not follow the new run: label=%q run=%d", got, model.selectedRun)
 	}
 	model.moveRun(-1, false)
@@ -68,7 +68,7 @@ func TestRunLabelsSeparateAutoUpdatingLatestAndHistoryViews(t *testing.T) {
 		t.Fatalf("history view followed a new run: label=%q run=%d", got, model.selectedRun)
 	}
 	model.selectLatestRun()
-	if got := model.runViewLabel(); got != "LATEST RUN · #4" {
+	if got := model.runViewLabel(); got != "LATEST RUN #4" {
 		t.Fatalf("returned latest label = %q", got)
 	}
 }
@@ -122,7 +122,7 @@ func TestRunListIncludesRetentionAndProvenanceFields(t *testing.T) {
 	model.refreshServices()
 	model.openRunList()
 	plain := ansi.Strip(model.renderRunListView())
-	for _, expected := range []string{"#1", "exit 7", "runtime", "complete", "Filter: all"} {
+	for _, expected := range []string{"RUN", "STATUS", "START", "DURATION", "EXIT", "REASON", "INITIATOR", "OUTPUT", "#1", "7", "runtime", "complete", "Filter: all"} {
 		if !strings.Contains(plain, expected) {
 			t.Fatalf("run list missing %q:\n%s", expected, plain)
 		}
@@ -261,7 +261,7 @@ func TestActionOutputDefaultsToSingleLatestRun(t *testing.T) {
 	}
 	model.focusedAction = &id
 	plain := ansi.Strip(model.renderActionLogPanel(100, 12))
-	if model.runMode != runViewSingle || model.selectedRun != 1 || !strings.Contains(plain, "LATEST RUN · #1") || !strings.Contains(plain, "action-output") {
+	if model.runMode != runViewSingle || model.selectedRun != 1 || !strings.Contains(plain, "succeeded · LATEST RUN #1") || !strings.Contains(plain, "action-output") {
 		t.Fatalf("action did not open latest single run: mode=%d run=%d\n%s", model.runMode, model.selectedRun, plain)
 	}
 }

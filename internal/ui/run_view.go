@@ -229,7 +229,7 @@ func (m *Model) runViewLabel() string {
 		return "NO RUNS YET"
 	}
 	if m.selectedRun == latest {
-		return fmt.Sprintf("LATEST RUN · #%d", m.selectedRun)
+		return fmt.Sprintf("LATEST RUN #%d", m.selectedRun)
 	}
 	if latest > m.selectedRun {
 		return fmt.Sprintf("HISTORY · RUN #%d · %d NEWER · [L] LATEST", m.selectedRun, latest-m.selectedRun)
@@ -398,6 +398,9 @@ func (m *Model) renderRunListView() string {
 	}
 	if len(runs) == 0 {
 		lines = append(lines, "  No runs match this filter")
+	} else {
+		lines = append(lines, DetailLabelStyle.Render(fmt.Sprintf("  %-5s %-10s  %-8s  %8s  %-8s  %-18s  %-18s  %s",
+			"RUN", "STATUS", "START", "DURATION", "EXIT", "REASON", "INITIATOR", "OUTPUT")))
 	}
 	for index, run := range runs {
 		exit := "-"
@@ -412,7 +415,7 @@ func (m *Model) renderRunListView() string {
 		if run.ClientLabel != "" {
 			initiator += ":" + run.ClientLabel
 		}
-		line := fmt.Sprintf("  #%d  %-10s  %s  %8s  exit %-3s  %-18s  %-18s  %s", run.Run, run.Status,
+		line := fmt.Sprintf("  %-5s %-10s  %-8s  %8s  %-8s  %-18s  %-18s  %s", fmt.Sprintf("#%d", run.Run), run.Status,
 			run.StartedAt.Local().Format("15:04:05"), duration.Round(time.Millisecond), exit, run.StartReason, initiator, run.Output.State)
 		if index == m.runListCursor {
 			line = SelectionStyle.Render(line)

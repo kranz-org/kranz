@@ -801,12 +801,12 @@ func TestHelpWrapsDescriptionsAndScrollsWithoutTruncatingThem(t *testing.T) {
 	for _, line := range model.helpBodyLines() {
 		width := lipgloss.Width(line)
 		widest = max(widest, width)
-		if width > 74 {
-			t.Fatalf("help line width = %d, want at most 74: %q", width, ansi.Strip(line))
+		if width > 64 {
+			t.Fatalf("help line width = %d, want at most 64: %q", width, ansi.Strip(line))
 		}
 	}
-	if widest <= 66 {
-		t.Fatalf("help did not become materially wider: widest line = %d", widest)
+	if widest < 60 {
+		t.Fatalf("help became unnecessarily narrow: widest line = %d", widest)
 	}
 	lastSection := -1
 	for _, section := range []string{"NAVIGATION", "SERVICES & ACTIONS", "LOGS & RUN HISTORY", "LOG SEARCH", "APPEARANCE", "APPLICATION"} {
@@ -821,6 +821,9 @@ func TestHelpWrapsDescriptionsAndScrollsWithoutTruncatingThem(t *testing.T) {
 	initial := ansi.Strip(model.renderHelpView())
 	if !strings.Contains(initial, "[↑/k] Up") || !strings.Contains(initial, "[↓/j] Down") || lipgloss.Height(model.renderHelpView()) != model.height {
 		t.Fatalf("scrollable help layout is invalid:\n%s", initial)
+	}
+	if got := model.helpVisibleBodyHeight(); got != 8 {
+		t.Fatalf("help visible body height = %d, want compact 8 rows at terminal height 24", got)
 	}
 	for range model.maxHelpOffset() {
 		_, _ = model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyDown})
@@ -848,8 +851,14 @@ func TestHelpUsesOneWideColumnAndRespectsTerminalBackground(t *testing.T) {
 			t.Fatalf("help still renders two shortcut columns: %q", plain)
 		}
 	}
-	if widest <= 100 || widest > 105 {
-		t.Fatalf("help body width = %d, want the new 101–105 cell range", widest)
+	if widest < 74 || widest > 78 {
+		t.Fatalf("help body width = %d, want compact 74–78 cell range", widest)
+	}
+	if got := model.helpVisibleBodyHeight(); got != 16 {
+		t.Fatalf("help visible body height = %d, want 16 at terminal height 32", got)
+	}
+	if reflect.DeepEqual(HelpSectionStyle.GetForeground(), HelpKeyStyle.GetForeground()) {
+		t.Fatal("help section headers still use the shortcut accent color")
 	}
 	if !reflect.DeepEqual(ModalStyle.GetBackground(), lipgloss.Color(model.activeTheme.SurfaceAlt)) {
 		t.Fatalf("terminal-owned help background = %#v, want modal surface %s", ModalStyle.GetBackground(), model.activeTheme.SurfaceAlt)

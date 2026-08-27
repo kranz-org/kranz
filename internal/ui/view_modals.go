@@ -100,14 +100,14 @@ func helpSections() []helpSection {
 }
 
 func (m *Model) helpBodyLines() []string {
-	availableWidth := max(20, min(105, m.width-6))
+	availableWidth := max(20, min(78, m.width-16))
 	sections := helpSections()
 	lines := make([]string, 0, 64)
 	for sectionIndex, section := range sections {
 		if sectionIndex > 0 {
 			lines = append(lines, "")
 		}
-		lines = append(lines, HelpKeyStyle.Bold(true).Render(section.title))
+		lines = append(lines, HelpSectionStyle.Render(section.title))
 		for _, entry := range section.entries {
 			lines = append(lines, renderHelpCell(entry.key, entry.desc, availableWidth)...)
 		}
@@ -116,7 +116,7 @@ func (m *Model) helpBodyLines() []string {
 }
 
 func (m *Model) helpVisibleBodyHeight() int {
-	return max(1, m.height-10)
+	return min(24, max(1, m.height-16))
 }
 
 func (m *Model) maxHelpOffset() int {

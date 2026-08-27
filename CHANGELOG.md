@@ -39,6 +39,9 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ### Fixed
 
+- Run labels and action status separators are visually cleaner, the run catalog
+  has an explicit column header, and the shortcut reference is narrower,
+  shorter, and gives section headings a distinct neutral hierarchy.
 - The isolated latest-run view now follows subsequent starts until the user
   explicitly enters history. Combined action output scrolls across all retained
   runs instead of using the latest result as its viewport boundary, and the
