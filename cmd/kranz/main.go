@@ -73,11 +73,16 @@ func execute(args []string, stdout, stderr io.Writer) int {
 		return writeVersion(stdout, stderr, invocation.Globals.Output)
 	}
 	if invocation.Command() == "mcp" {
-		if len(invocation.Args) != 0 {
-			_, _ = fmt.Fprintln(stderr, "Kranz MCP: mcp does not accept positional arguments")
+		attachOnly := false
+		for _, arg := range invocation.Args {
+			if arg == "--attach-only" {
+				attachOnly = true
+				continue
+			}
+			_, _ = fmt.Fprintf(stderr, "Kranz MCP: unknown mcp option or argument %q\n", arg)
 			return kranzcli.ExitUsage
 		}
-		if err := runMCP(invocation.Globals, stdout, stderr); err != nil {
+		if err := runMCP(invocation.Globals, attachOnly, stdout, stderr); err != nil {
 			_, _ = fmt.Fprintf(stderr, "Kranz MCP: %v\n", err)
 			return 1
 		}

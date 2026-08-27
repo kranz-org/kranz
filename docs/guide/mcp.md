@@ -38,14 +38,16 @@ kranz mcp --help
 ```
 
 The bridge uses foreground stdio. Register it in an MCP client with an absolute
-project directory, then let the client start and supervise the command.
+project directory and `--attach-only`, then let the client start and supervise
+the command. This makes a missing TUI/background runtime a loud error rather
+than creating an empty project that looks successfully connected.
 
 ## Register the server
 
 ### Codex
 
 ```bash
-codex mcp add kranz -- kranz mcp -C /path/to/project
+codex mcp add kranz -- kranz mcp -C /path/to/project --attach-only
 codex mcp list
 ```
 
@@ -54,7 +56,7 @@ Codex also supports a project-scoped `.codex/config.toml`:
 ```toml
 [mcp_servers.kranz]
 command = "kranz"
-args = ["mcp", "-C", "/path/to/project"]
+args = ["mcp", "-C", "/path/to/project", "--attach-only"]
 ```
 
 The Codex CLI, IDE extension, and ChatGPT desktop app on the same host share
@@ -67,7 +69,7 @@ for client-side configuration and approval options.
 Run this from the project to keep the registration local to that checkout:
 
 ```bash
-claude mcp add --scope local kranz -- kranz mcp -C /path/to/project
+claude mcp add --scope local kranz -- kranz mcp -C /path/to/project --attach-only
 claude mcp get kranz
 ```
 
@@ -79,7 +81,7 @@ claude mcp get kranz
   "mcp": {
     "kranz": {
       "type": "local",
-      "command": ["kranz", "mcp", "-C", "/path/to/project"],
+      "command": ["kranz", "mcp", "-C", "/path/to/project", "--attach-only"],
       "enabled": true
     }
   }
@@ -116,10 +118,22 @@ the process which owns this runtime is an MCP bridge. Another user's runtime is
 named from that user's selected project configuration, not from their account
 name and not automatically `kranz`.
 
+Each MCP connection has one fixed runtime binding. Use the `runtimes` tool (or
+`kranz://runtimes`) before interpreting an empty status or a missing selector:
+it lists other sessions and marks the current one. A cross-runtime
+`selector_not_found` also reports `available_in` when, for example, `im-core`
+exists in `myclass` while this connection is bound to `harness`.
+
 Global project selection is unchanged. `kranz -C DIR mcp`, `kranz -f FILE mcp`,
 and `kranz -p NAME_OR_ID mcp` use the same config discovery and runtime registry
 as the CLI. Global flags can appear before or after `mcp`.
 Run `kranz mcp --help` for the selected build's project-selection options.
+
+`-C DIR` discovers the project at that directory; without `--attach-only` it
+may create and own the runtime when none exists. `-p NAME|ID` binds by runtime
+identity and never creates one. For an agent that moves between projects, use
+separate named registrations pinned with `-p`, rather than relying on the
+client's startup working directory to follow the conversation.
 
 Try prompts that describe an outcome rather than protocol calls:
 
@@ -137,6 +151,11 @@ keep running. If no runtime exists for the configured project, MCP creates one
 foreground owner runtime; closing that owner performs normal managed-process
 cleanup. Ambiguous, incompatible, stale, or unreachable registry entries fail
 instead of creating a competing supervisor.
+
+An owner fallback is explicit in `kranz://session` as
+`owner_reason: created_missing_runtime`, together with a hint when other
+runtimes were already live. `--attach-only` disables that fallback and prints
+the available runtimes instead.
 
 `kranz down` against an MCP-owned runtime waits until the old session has left
 the registry before reporting `Stopped`. It also disconnects every attached MCP

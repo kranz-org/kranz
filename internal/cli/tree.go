@@ -143,7 +143,9 @@ func DefaultTree() *Command {
 			{Flags: "--force", Summary: "discard a runtime that no longer answers its socket"},
 		}},
 		{Name: "attach", Summary: "open the TUI for an active runtime"},
-		{Name: "mcp", Summary: "serve the selected runtime over MCP stdio", Usage: "kranz mcp"},
+		{Name: "mcp", Summary: "serve the selected runtime over MCP stdio", Usage: "kranz mcp [--attach-only]", Options: []Option{
+			{Flags: "--attach-only", Summary: "fail instead of creating a missing runtime; recommended for agent clients"},
+		}},
 		{Name: "logs", Summary: "show and clear logs", Default: "show", Children: []*Command{
 			{Name: "show", Summary: "show service and action logs", Usage: "kranz logs [SELECTOR ...] [--tail N | --all] [--since D]\n  [--run N | --runs N] [--source S] [--with-actions]\n  [--plain | --no-timestamps | --no-labels] [--follow]", Options: []Option{
 				{Flags: "--tail N", Summary: "show the last N lines; a service defaults to 50"},

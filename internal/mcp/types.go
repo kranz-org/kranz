@@ -29,6 +29,7 @@ type SessionIdentity struct {
 	RuntimeMode     string `json:"runtime_mode"`
 	ConnectionMode  string `json:"connection_mode"`
 	OwnerKind       string `json:"owner_kind"`
+	OwnerReason     string `json:"owner_reason,omitempty"`
 	KranzVersion    string `json:"kranz_version"`
 	ProtocolVersion int    `json:"runtime_protocol_version"`
 }

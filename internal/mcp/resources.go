@@ -2,15 +2,19 @@ package mcp
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"github.com/kranz-org/kranz/internal/app"
 	"github.com/kranz-org/kranz/internal/config"
+	kranzruntime "github.com/kranz-org/kranz/internal/runtime"
 	"gopkg.in/yaml.v3"
 )
 
 func (s *Server) installResources() {
 	definitions := []resourceDefinition{
 		{URI: "kranz://session", Name: "session", Title: "Kranz runtime session", Description: "Runtime identity, ownership mode, protocol, and generation.", MimeType: "application/json", handler: s.sessionResource},
+		{URI: "kranz://runtimes", Name: "runtimes", Title: "Running Kranz runtimes", Description: "Registry sessions visible to this user, with the current MCP binding flagged.", MimeType: "application/json", handler: s.runtimesResource},
 		{URI: "kranz://config", Name: "config", Title: "Redacted effective configuration", Description: "Effective config and provenance paths with secret-like environment values redacted.", MimeType: "application/json", handler: s.configResource},
 		{URI: "kranz://services", Name: "services", Title: "Services", Description: "Declared services and their live runtime snapshots.", MimeType: "application/json", handler: s.servicesResource},
 		{URI: "kranz://actions", Name: "actions", Title: "Actions", Description: "Service and project actions in declaration order.", MimeType: "application/json", handler: s.actionsResource},
@@ -35,12 +39,51 @@ func (s *Server) envelope(data any) ResultEnvelope {
 }
 
 func (s *Server) errorEnvelope(err error) ResultEnvelope {
-	return ResultEnvelope{SchemaVersion: SchemaVersion, Generation: s.api.Project().Generation, Session: s.session, Error: causalError(err)}
+	causal := causalError(err)
+	if causal != nil && causal.Code == "selector_not_found" {
+		selector, _ := causal.Details["selector"].(string)
+		causal.Message = fmt.Sprintf("service or tag %q was not found in runtime %q", selector, s.session.Name)
+		causal.Hint = "This MCP connection is bound to one runtime. Read kranz://runtimes before concluding the service is unavailable."
+		causal.Details["current_runtime"] = s.session.Name
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		matches, discoveryErr := s.selectorMatches(ctx, selector)
+		cancel()
+		if discoveryErr == nil && len(matches) > 0 {
+			causal.Hint = fmt.Sprintf("This selector matches another running runtime. This MCP connection remains bound to %q; register or attach an MCP server with -p for the matching runtime.", s.session.Name)
+			causal.Details["available_in"] = matches
+		}
+	}
+	return ResultEnvelope{SchemaVersion: SchemaVersion, Generation: s.api.Project().Generation, Session: s.session, Error: causal}
 }
 
 func (s *Server) sessionResource(context.Context) ResultEnvelope {
 	project := s.api.Project()
-	return s.envelope(map[string]any{"identity": s.session, "generation": project.Generation, "loaded_at": project.LoadedAt, "last_reload_error": project.LastReloadError})
+	data := map[string]any{"identity": s.session, "generation": project.Generation, "loaded_at": project.LoadedAt, "last_reload_error": project.LastReloadError}
+	if s.session.OwnerReason != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		entries, err := s.runtimeEntries(ctx)
+		cancel()
+		if err == nil {
+			others := make([]RuntimeEntry, 0)
+			for _, entry := range entries {
+				if !entry.Current && entry.State == kranzruntime.SessionRunning {
+					others = append(others, entry)
+				}
+			}
+			if len(others) > 0 {
+				data["owner_hint"] = map[string]any{"message": "MCP created the selected runtime because it was missing; other runtimes were already running.", "other_running_runtimes": others}
+			}
+		}
+	}
+	return s.envelope(data)
+}
+
+func (s *Server) runtimesResource(ctx context.Context) ResultEnvelope {
+	entries, err := s.runtimeEntries(ctx)
+	if err != nil {
+		return s.errorEnvelope(err)
+	}
+	return s.envelope(map[string]any{"runtimes": entries})
 }
 
 func (s *Server) configResource(context.Context) ResultEnvelope {

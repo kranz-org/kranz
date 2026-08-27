@@ -1,6 +1,7 @@
 package config
 
 import (
+	"net/url"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -8,9 +9,7 @@ import (
 
 var secretKeyFragments = []string{"PASSWORD", "PASSWD", "SECRET", "TOKEN", "APIKEY", "API_KEY", "PRIVATE_KEY", "ACCESS_KEY", "CREDENTIAL", "AUTH", "SESSION_KEY", "SIGNING", "DSN"}
 
-// IsSecretKey is the shared config-show/MCP redaction rule. Redaction is by
-// key because a secret value is indistinguishable from ordinary text once it
-// has left its environment-variable context.
+// IsSecretKey is the shared config-show/MCP environment-key redaction rule.
 func IsSecretKey(name string) bool {
 	upper := strings.ToUpper(name)
 	for _, fragment := range secretKeyFragments {
@@ -19,6 +18,22 @@ func IsSecretKey(name string) bool {
 		}
 	}
 	return false
+}
+
+func isCredentialURL(value string) bool {
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User == nil {
+		return false
+	}
+	_, hasPassword := parsed.User.Password()
+	return hasPassword
+}
+
+func redactEnvironmentValue(name, value string) (string, bool) {
+	if IsSecretKey(name) || isCredentialURL(value) {
+		return "[redacted]", true
+	}
+	return value, false
 }
 
 // RedactYAMLNode replaces secret-looking environment values anywhere in an
@@ -32,10 +47,11 @@ func RedactYAMLNode(node *yaml.Node) {
 			key, value := node.Content[index], node.Content[index+1]
 			if key.Value == "env" && value.Kind == yaml.MappingNode {
 				for envIndex := 0; envIndex+1 < len(value.Content); envIndex += 2 {
-					if IsSecretKey(value.Content[envIndex].Value) {
-						value.Content[envIndex+1].Value = "[redacted]"
-						value.Content[envIndex+1].Tag = "!!str"
-						value.Content[envIndex+1].Style = 0
+					envValue := value.Content[envIndex+1]
+					if redacted, changed := redactEnvironmentValue(value.Content[envIndex].Value, envValue.Value); changed {
+						envValue.Value = redacted
+						envValue.Tag = "!!str"
+						envValue.Style = 0
 					}
 				}
 				continue

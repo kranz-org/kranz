@@ -13,14 +13,17 @@ window boundaries.
 ## Command
 
 ```bash
-kranz mcp [-C DIR] [-f FILE] [-p NAME_OR_ID]
+kranz mcp [-C DIR] [-f FILE] [-p NAME_OR_ID] [--attach-only]
 kranz mcp --help
 ```
 
 Install the ordinary Kranz binary, then register this command as a local stdio
-server in the coding-agent client. Use an absolute `-C` path when the client may
-start outside the project. The [MCP guide](../guide/mcp) has ready-to-copy Codex,
-Claude Code, and OpenCode configurations plus a first-connection check.
+server in the coding-agent client. Use `--attach-only` for agent registrations:
+it refuses to create a missing runtime and names the runtimes that are already
+running. Use an absolute `-C` path for a project-scoped client, or `-p NAME|ID`
+to bind a connection to a known live runtime from any directory. The [MCP
+guide](../guide/mcp) has ready-to-copy configurations and a first-connection
+check.
 
 Do not run `kranz mcp` directly in an interactive terminal to test it: stdout
 is the protocol transport, not a human-readable prompt. Use the configured MCP
@@ -31,6 +34,7 @@ client or the repository's [minimal example client](../examples/mcp-shared-runti
 | URI | Contents |
 | --- | --- |
 | `kranz://session` | Runtime/session identity, protocol, ownership, generation |
+| `kranz://runtimes` | Registry sessions, service counts, and the current fixed binding |
 | `kranz://config` | Effective config with shared secret redaction, loader diagnostics, and provenance |
 | `kranz://services` | Definitions, snapshots, and computed `primary_action` |
 | `kranz://actions` | Service/group actions and current state |
@@ -40,7 +44,7 @@ client or the repository's [minimal example client](../examples/mcp-shared-runti
 
 ## Tools
 
-Observation tools are `status`, `changes`, `plan`, `graph`, `ports`,
+Observation tools are `runtimes`, `status`, `changes`, `plan`, `graph`, `ports`,
 `port_inspect`, `logs`, `wait`, `health`, `doctor`, `action_list`,
 `action_info`, and `action_result`. Mutations are explicit: `start`, `stop`,
 `restart`, `action_run`, `action_cancel`, `logs_clear`, and `reload`. There is
@@ -54,6 +58,12 @@ Actions always use `OWNER/ACTION`. `start` defaults
 `include_dependencies` to true; false keeps the resolved exact targets.
 Lifecycle mutations require at least one explicit selector; an omitted or empty
 list cannot turn an agent request into a project-wide start, stop, or restart.
+
+One MCP connection remains bound to one runtime. The `runtimes` tool and
+`kranz://runtimes` resource show every registry session visible to the user and
+flag the current binding. If a service/tag misses here but matches another
+running runtime, `selector_not_found` names that runtime in `available_in`
+instead of letting the caller conclude the service is globally unavailable.
 
 `logs` accepts `tail` (maximum 1000), `since` as RFC3339 or a duration,
 `sources`, `run`, `runs`, `with_actions`, and an opaque cursor. The server
@@ -112,6 +122,12 @@ Stable causal codes include `selector_not_found`, `service_unavailable`,
 `service_unavailable` is the runtime declining to answer for a service the
 configuration still declares — a reload race, or an attached runtime that went
 away mid-call.
+
+`owner_reason: created_missing_runtime` means this MCP process used the
+non-attach fallback because its selected runtime did not exist. The session
+resource also names other runtimes that were already running. Agent
+registrations should normally use `--attach-only`; omit it only when the MCP
+process is deliberately allowed to own and clean up a new stack.
 
 The allow-list cannot reach project-wide down/force-down, `StopAll`, raw force
 start/stop, shutdown, external PID/port release, arbitrary shell execution,

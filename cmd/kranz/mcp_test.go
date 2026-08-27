@@ -369,6 +369,33 @@ func TestMCPAttachesToForegroundRuntimeAndLeavesItRunning(t *testing.T) {
 	}
 }
 
+func TestMCPAttachOnlyRefusesPhantomRuntimeAndListsRunningAlternatives(t *testing.T) {
+	runningOptions, runningName := writeMCPProject(t)
+	host, _, err := startRuntime(runningOptions, "foreground")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = host.client.Shutdown(); _ = host.Close() }()
+
+	missingOptions, missingName := writeMCPProject(t)
+	client, _, _, owner, err := connectMCP(missingOptions, true)
+	if client != nil || owner != nil || err == nil {
+		t.Fatalf("client=%v owner=%v err=%v", client, owner, err)
+	}
+	if !strings.Contains(err.Error(), `runtime "`+missingName+`" is not running`) || !strings.Contains(err.Error(), "--attach-only") || !strings.Contains(err.Error(), runningName) {
+		t.Fatalf("attach-only error = %v", err)
+	}
+	registry, registryErr := kranzruntime.DefaultRegistry()
+	if registryErr != nil {
+		t.Fatal(registryErr)
+	}
+	_, resolveErr := registry.ResolveForAttach(context.Background(), missingName, version)
+	var notFound *kranzruntime.SessionNotFoundError
+	if !errors.As(resolveErr, &notFound) {
+		t.Fatalf("attach-only created a phantom runtime: %v", resolveErr)
+	}
+}
+
 func TestMCPExplicitMissingProjectNeverCreatesOwner(t *testing.T) {
 	options, _ := writeMCPProject(t)
 	options.Project = "definitely-missing-mcp-runtime"

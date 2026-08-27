@@ -51,7 +51,9 @@ of starting a second development stack.
 - **Clear ownership** — disconnecting an attached agent does not stop the stack.
 
 Register the existing binary as a stdio MCP server running
-`kranz mcp -C /path/to/project`.
+`kranz mcp -C /path/to/project --attach-only`. The explicit attach policy keeps
+an agent from silently creating an empty runtime when the intended TUI session
+is not running.
 
 See [Coding agents and one live runtime](https://kranz-org.github.io/kranz/guide/mcp)
 for ownership behavior and examples, and the [MCP reference](https://kranz-org.github.io/kranz/reference/mcp)

@@ -45,6 +45,14 @@ func TestEveryDocumentedOptionIsAcceptedByItsCommand(t *testing.T) {
 		for _, option := range command.Options {
 			for _, spelling := range optionSpellings(option, directory) {
 				t.Run(strings.Join(append(append([]string(nil), path...), spelling...), " "), func(t *testing.T) {
+					if kranzcli.PathString(path) == "mcp" {
+						var stdout, stderr bytes.Buffer
+						_ = execute(append([]string{"-C", directory, "mcp"}, spelling...), &stdout, &stderr)
+						if strings.Contains(stderr.String(), "unknown mcp option") {
+							t.Fatalf("help documents %s, but MCP rejects it: %s", option.Flags, stderr.String())
+						}
+						return
+					}
 					args := append([]string{"-C", directory, "--output=json"}, path...)
 					var stdout, stderr bytes.Buffer
 					if code := execute(append(args, spelling...), &stdout, &stderr); code == 0 {

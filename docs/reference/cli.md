@@ -169,14 +169,14 @@ a client of that session and does not add another mode or another `ps` row.
 ### Serving a runtime to a coding agent
 
 ```bash
-kranz mcp                           # stdio MCP server on the selected runtime
+kranz mcp --attach-only             # attach-only stdio MCP server (recommended)
 ```
 
 `mcp` speaks the Model Context Protocol on stdin and stdout, so stdout carries
 JSON-RPC framing and nothing else; `--output` is refused and diagnostics go to
-stderr. It attaches to the runtime the ordinary selection rules pick, and only
-creates one of its own when that project has no runtime at all. See the [MCP
-reference](./mcp.md).
+stderr. One connection stays bound to one runtime. `--attach-only` refuses a
+missing runtime and lists other live sessions; without it, MCP can create and
+own the selected project when none exists. See the [MCP reference](./mcp.md).
 
 ### Logs
 

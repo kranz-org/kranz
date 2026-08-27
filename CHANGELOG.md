@@ -21,6 +21,12 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 - `kranz runs` and MCP run retention metadata expose the oldest retained run,
   independent run/entry/byte budgets, evicted summaries, and complete,
   partial, or unavailable output state.
+- MCP runtime discovery through `kranz://runtimes` and the read-only `runtimes`
+  tool. Results flag the connection's fixed binding; cross-runtime selector
+  misses name matching sessions instead of implying global unavailability.
+- `kranz mcp --attach-only` for agent registrations that must fail rather than
+  silently create a missing runtime. Deliberate owner fallback now reports
+  `owner_reason: created_missing_runtime` and hints about other live sessions.
 
 ### Changed
 
@@ -33,6 +39,8 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ### Fixed
 
+- Config and MCP service views now redact credential-bearing URLs even when
+  their environment variable name is not itself secret-looking.
 - Replacing an in-process runtime can no longer capture the outgoing owner's
   project directory as its restore point, which could leave an embedded client
   or test process in a deleted temporary directory after shutdown.

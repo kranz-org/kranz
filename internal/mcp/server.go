@@ -40,6 +40,9 @@ type Server struct {
 	toolOrder     []string
 	resources     map[string]resourceDefinition
 	resourceOrder []string
+
+	runtimeListOverride   func(context.Context) ([]RuntimeEntry, error)
+	selectorMatchOverride func(context.Context, string) ([]RuntimeSelectorMatch, error)
 }
 
 func NewServer(api app.API, session SessionIdentity, stdin io.Reader, stdout, stderr io.Writer) *Server {

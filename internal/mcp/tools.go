@@ -25,7 +25,7 @@ const waitTransportGrace = 5 * time.Second
 // exactly, so a tool cannot appear without being listed here, and a listed
 // name cannot resolve to nothing.
 var toolNames = []string{
-	"status", "runs", "changes", "plan", "graph", "ports", "port_inspect", "logs", "wait", "health",
+	"runtimes", "status", "runs", "changes", "plan", "graph", "ports", "port_inspect", "logs", "wait", "health",
 	"action_list", "action_info", "action_result",
 	"doctor", "start", "stop", "restart", "action_run", "action_cancel", "logs_clear", "reload",
 }
@@ -45,6 +45,7 @@ var (
 
 func (s *Server) installTools() {
 	definitions := []toolDefinition{
+		{Name: "runtimes", Description: "List Kranz runtime sessions visible to this user and flag the runtime this MCP connection is bound to.", InputSchema: objectSchema(map[string]any{}), handler: s.runtimesTool},
 		{Name: "status", Description: "Return live status for selected services, including the structured cause of a state whose reason is not the state itself.", InputSchema: objectSchema(map[string]any{"selectors": selectorsProperty}), handler: s.statusTool},
 		{Name: "runs", Description: "Return the bounded service and action run catalog with provenance and output retention state.", InputSchema: objectSchema(map[string]any{}), handler: s.runsTool},
 		{Name: "changes", Description: "Return what changed in the runtime after a cursor: service and action transitions, detected-port changes, and configuration reloads.", InputSchema: objectSchema(map[string]any{
@@ -90,6 +91,18 @@ func (s *Server) installTools() {
 			panic("MCP tool allow-list names an unimplemented tool: " + name)
 		}
 	}
+}
+
+func (s *Server) runtimesTool(ctx context.Context, raw json.RawMessage) ResultEnvelope {
+	var args struct{}
+	if err := decodeArgs(raw, &args); err != nil {
+		return s.argError(err)
+	}
+	entries, err := s.runtimeEntries(ctx)
+	if err != nil {
+		return s.errorEnvelope(err)
+	}
+	return s.envelope(map[string]any{"runtimes": entries})
 }
 
 func (s *Server) runsTool(_ context.Context, raw json.RawMessage) ResultEnvelope {

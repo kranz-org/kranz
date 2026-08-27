@@ -15,6 +15,7 @@ defaults:
   env:
     LOG_LEVEL: debug
     DATABASE_PASSWORD: hunter2
+    DATABASE_URL: postgresql://app:database-secret@db.example/app
 services:
   zulu:
     command: sleep 60
@@ -40,7 +41,7 @@ func secretsDirectory(t *testing.T) string {
 func TestConfigShowRedactsSecretEnvironmentValues(t *testing.T) {
 	output := runInspection(t, secretsDirectory(t), "config", "show")
 
-	for _, secret := range []string{"hunter2", "abc123"} {
+	for _, secret := range []string{"hunter2", "abc123", "database-secret"} {
 		if strings.Contains(output, secret) {
 			t.Errorf("config show leaked %q:\n%s", secret, output)
 		}

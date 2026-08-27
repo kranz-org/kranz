@@ -14,6 +14,7 @@ import (
 
 	"github.com/kranz-org/kranz/internal/app"
 	"github.com/kranz-org/kranz/internal/config"
+	kranzruntime "github.com/kranz-org/kranz/internal/runtime"
 )
 
 func testServer(t *testing.T) (*Server, *app.Local) {
@@ -21,7 +22,11 @@ func testServer(t *testing.T) (*Server, *app.Local) {
 	interactive := true
 	confirm := true
 	cfg := &config.Config{Project: "demo", Services: map[string]config.Service{
-		"api": {Command: "exit 0", Tags: []string{"backend"}, Env: map[string]string{"API_TOKEN": "super-secret"}, Actions: map[string]config.Action{
+		"api": {Command: "exit 0", Tags: []string{"backend"}, Env: map[string]string{
+			"API_TOKEN":    "super-secret",
+			"DATABASE_URL": "postgresql://app:database-secret@db.example/app",
+			"PUBLIC_URL":   "https://example.com",
+		}, Actions: map[string]config.Action{
 			"shell":   {Command: "sh", Interactive: &interactive},
 			"migrate": {Command: "printf 'migrated\\n'", Shell: "/bin/sh"},
 			"deploy":  {Command: "exit 0", Shell: "/bin/sh", Confirm: &confirm},
@@ -55,15 +60,18 @@ func TestConfigResourceUsesSharedRedaction(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(payload)
-	if strings.Contains(text, "super-secret") {
+	if strings.Contains(text, "super-secret") || strings.Contains(text, "database-secret") {
 		t.Fatalf("config leaked a secret: %s", text)
 	}
-	if !strings.Contains(text, `"API_TOKEN":"[redacted]"`) {
+	if !strings.Contains(text, `"API_TOKEN":"[redacted]"`) || !strings.Contains(text, `"DATABASE_URL":"[redacted]"`) {
 		t.Fatalf("redacted value missing: %s", text)
+	}
+	if !strings.Contains(text, `"PUBLIC_URL":"https://example.com"`) {
+		t.Fatalf("public URL was redacted: %s", text)
 	}
 	services := server.resources["kranz://services"].handler(context.Background())
 	payload, _ = json.Marshal(services)
-	if strings.Contains(string(payload), "super-secret") || !strings.Contains(string(payload), "[redacted]") {
+	if strings.Contains(string(payload), "super-secret") || strings.Contains(string(payload), "database-secret") || !strings.Contains(string(payload), "[redacted]") {
 		t.Fatalf("services redaction = %s", payload)
 	}
 }
@@ -330,8 +338,8 @@ func TestCapabilitySurfaceIsExactAllowList(t *testing.T) {
 			t.Fatalf("unsafe tool %q is reachable", forbidden)
 		}
 	}
-	if got := len(server.resourceOrder); got != 8 {
-		t.Fatalf("resources = %d, want 8", got)
+	if got := len(server.resourceOrder); got != 9 {
+		t.Fatalf("resources = %d, want 9", got)
 	}
 	for _, definition := range server.listTools() {
 		if definition.InputSchema["additionalProperties"] != false {
@@ -342,6 +350,61 @@ func TestCapabilitySurfaceIsExactAllowList(t *testing.T) {
 		t.Fatal("generic/unsafe tool dispatch succeeded")
 	}
 }
+
+func TestRuntimesToolAndResourceFlagCurrentBinding(t *testing.T) {
+	server, _ := testServer(t)
+	entries := []RuntimeEntry{
+		{ID: "session-1", Name: "harness", State: kranzruntime.SessionRunning, Current: true},
+		{ID: "other-1", Name: "myclass", State: kranzruntime.SessionRunning, Services: intPointer(4)},
+	}
+	server.runtimeListOverride = func(context.Context) ([]RuntimeEntry, error) { return entries, nil }
+	for _, result := range []ResultEnvelope{
+		server.tools["runtimes"].handler(context.Background(), json.RawMessage(`{}`)),
+		server.resources["kranz://runtimes"].handler(context.Background()),
+	} {
+		if result.Error != nil {
+			t.Fatalf("runtimes = %#v", result.Error)
+		}
+		payload, _ := json.Marshal(result.Data)
+		if !strings.Contains(string(payload), `"name":"harness"`) || !strings.Contains(string(payload), `"current":true`) || !strings.Contains(string(payload), `"name":"myclass"`) {
+			t.Fatalf("runtimes payload = %s", payload)
+		}
+	}
+}
+
+func TestSelectorNotFoundNamesCurrentAndMatchingRuntime(t *testing.T) {
+	server, _ := testServer(t)
+	server.session.Name = "harness"
+	server.selectorMatchOverride = func(_ context.Context, selector string) ([]RuntimeSelectorMatch, error) {
+		if selector != "im-core" {
+			t.Fatalf("selector = %q", selector)
+		}
+		return []RuntimeSelectorMatch{{Runtime: "myclass", ID: "ec52bcfb", Kind: "service", Service: "im-core"}}, nil
+	}
+	result := server.tools["status"].handler(context.Background(), json.RawMessage(`{"selectors":["im-core"]}`))
+	if result.Error == nil || result.Error.Code != "selector_not_found" || !strings.Contains(result.Error.Message, `runtime "harness"`) || !strings.Contains(result.Error.Hint, "another running runtime") {
+		t.Fatalf("error = %#v", result.Error)
+	}
+	payload, _ := json.Marshal(result.Error.Details)
+	if !strings.Contains(string(payload), `"runtime":"myclass"`) || !strings.Contains(string(payload), `"service":"im-core"`) {
+		t.Fatalf("details = %s", payload)
+	}
+}
+
+func TestOwnerFallbackSessionNamesOtherRunningRuntimes(t *testing.T) {
+	server, _ := testServer(t)
+	server.session.OwnerReason = "created_missing_runtime"
+	server.runtimeListOverride = func(context.Context) ([]RuntimeEntry, error) {
+		return []RuntimeEntry{{ID: "session-1", Name: "harness", Current: true, State: kranzruntime.SessionRunning}, {ID: "other", Name: "myclass", State: kranzruntime.SessionRunning}}, nil
+	}
+	result := server.resources["kranz://session"].handler(context.Background())
+	payload, _ := json.Marshal(result)
+	if !strings.Contains(string(payload), `"owner_reason":"created_missing_runtime"`) || !strings.Contains(string(payload), `"other_running_runtimes"`) || !strings.Contains(string(payload), `"name":"myclass"`) {
+		t.Fatalf("session = %s", payload)
+	}
+}
+
+func intPointer(value int) *int { return &value }
 
 func TestEveryResultCarriesIdentityGenerationAndSchema(t *testing.T) {
 	server, _ := testServer(t)
