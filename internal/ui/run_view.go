@@ -209,16 +209,19 @@ func (m *Model) runSummary(target app.RunTarget, run uint32) (app.RunSummary, bo
 
 func (m *Model) runViewLabel() string {
 	if !m.syncRunTarget() || m.runMode == runViewCombined {
-		return "ALL"
+		return "ALL RUNS · INCLUDES NEW"
 	}
 	latest := latestRun(m.runsForTarget(m.runTarget))
-	label := fmt.Sprintf("RUN #%d", m.selectedRun)
-	if m.selectedRun == latest {
-		label += " · LIVE/LATEST"
-	} else if latest > m.selectedRun {
-		label += fmt.Sprintf(" · %d NEWER", latest-m.selectedRun)
+	if latest == 0 {
+		return "NO RUNS YET"
 	}
-	return label
+	if m.selectedRun == latest {
+		return fmt.Sprintf("LATEST RUN · #%d", m.selectedRun)
+	}
+	if latest > m.selectedRun {
+		return fmt.Sprintf("HISTORY · RUN #%d · %d NEWER · [L] LATEST", m.selectedRun, latest-m.selectedRun)
+	}
+	return fmt.Sprintf("HISTORY · RUN #%d", m.selectedRun)
 }
 
 func runTargetLabel(target app.RunTarget) string {
@@ -230,9 +233,9 @@ func runTargetLabel(target app.RunTarget) string {
 
 func (m *Model) pinnedRunViewLabel() string {
 	if m.pinnedRunMode == runViewSingle {
-		return fmt.Sprintf("RUN #%d · SNAPSHOT", m.pinnedRun)
+		return fmt.Sprintf("FROZEN · RUN #%d", m.pinnedRun)
 	}
-	return fmt.Sprintf("ALL ≤ #%d · SNAPSHOT", m.pinnedRun)
+	return fmt.Sprintf("FROZEN · RUNS THROUGH #%d", m.pinnedRun)
 }
 
 func (m *Model) pinnedEntries(target app.RunTarget) []config.LogEntry {
@@ -254,7 +257,7 @@ func (m *Model) pinnedEntries(target app.RunTarget) []config.LogEntry {
 
 func (m *Model) renderPinnedActionRunPanel(target app.RunTarget, width, height int) string {
 	contentWidth, contentHeight := max(1, width-2), max(1, height-2)
-	title := "[3] PINNED ACTION" + ContextBarStyle.Render(" │ ") + ServiceNameStyle.Render(runTargetLabel(target)) +
+	title := "[3] PINNED ACTION [Shift+3 UNPIN]" + ContextBarStyle.Render(" │ ") + ServiceNameStyle.Render(runTargetLabel(target)) +
 		" " + RunningBadgeStyle.Render(m.pinnedRunViewLabel())
 	entries := m.pinnedEntries(target)
 	if len(entries) == 0 {

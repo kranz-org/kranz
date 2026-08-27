@@ -138,7 +138,7 @@ func TestShiftThreePinsLogsAboveFocusedLogs(t *testing.T) {
 
 	rendered := model.renderLogColumn(64, model.height-2)
 	plain := ansi.Strip(rendered)
-	for _, expected := range []string{"PINNED LOGS", "api log remains visible", "[3] LOGS", "worker", "WORKER matched line"} {
+	for _, expected := range []string{"PINNED [Shift+3 UNPIN]", "api log remains visible", "[3] LOGS", "worker", "WORKER matched line"} {
 		if !strings.Contains(plain, expected) {
 			t.Errorf("split logs do not contain %q:\n%s", expected, plain)
 		}
@@ -180,7 +180,7 @@ func TestThreeSwitchesAndScrollsPinnedLogsIndependently(t *testing.T) {
 		t.Fatalf("pinned/current viewports = %d/%v and %d/%v", model.pinnedOffset, model.pinnedFollow, model.logOffset, model.followMode)
 	}
 	plain := ansi.Strip(model.renderLogColumn(64, model.height-2))
-	if !strings.Contains(plain, "PINNED LOGS") || !strings.Contains(plain, "BROWSING") {
+	if !strings.Contains(plain, "PINNED [Shift+3 UNPIN]") || !strings.Contains(plain, "BROWSING") {
 		t.Fatalf("focused pinned viewport does not expose its browsing state:\n%s", plain)
 	}
 	pressKey(model, '3')
@@ -200,18 +200,18 @@ func TestThreeSwitchesAndScrollsPinnedLogsIndependently(t *testing.T) {
 	}
 }
 
-func TestShiftThreeReplacesAndUnpinsPinnedService(t *testing.T) {
+func TestShiftThreeUnpinsFromAnyPanelThenPinsCurrentService(t *testing.T) {
 	model := newTestModel()
 	defer model.Shutdown()
 	pressKey(model, '#')
 	model.moveFocus(1)
 	pressKey(model, '#')
-	if model.pinnedLog != "worker" {
-		t.Fatalf("replacement pinned service = %q", model.pinnedLog)
+	if model.pinnedLog != "" || model.PinnedService() != nil {
+		t.Fatalf("pinned service was not cleared from current panel: %q", model.pinnedLog)
 	}
 	pressKey(model, '#')
-	if model.pinnedLog != "" || model.PinnedService() != nil {
-		t.Fatalf("pinned service was not cleared: %q", model.pinnedLog)
+	if model.pinnedLog != "worker" {
+		t.Fatalf("current service was not pinned after unpin: %q", model.pinnedLog)
 	}
 }
 

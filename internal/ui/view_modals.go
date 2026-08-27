@@ -42,8 +42,8 @@ func (m *Model) renderHelpView() string {
 func helpEntries() []helpEntry {
 	return []helpEntry{
 		{"1 / 2 / 3", "Focus panels; 1 switches Services/Tags when the list is focused"},
-		{"Shift+3", "Pin focused service logs above the active log panel"},
-		{"3 again", "Switch focus between pinned and current logs"},
+		{"Shift+3", "Pin the current run; if a pin exists, unpin it from any panel"},
+		{"3", "Switch focus between pinned and current logs"},
 		{"Tab / Shift+Tab", "Focus the next or previous panel, including pinned logs"},
 		{"↑/↓ j/k", "Navigate or scroll focused panel"},
 		{"←/→", "Cycle Services/Tags while the list panel is focused"},

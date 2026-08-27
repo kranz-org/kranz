@@ -13,7 +13,7 @@ modal actions, search controls, and the theme picker.
 | `t`, `←` / `→`, or `1` again | Switch Services and Tags |
 | `Tab` / `Shift+Tab` | Focus next or previous panel |
 | `↑` / `↓`, `j` / `k` | Navigate or scroll |
-| `Shift+3` | Pin or unpin focused service logs |
+| `Shift+3` | Pin the current run, or unpin the existing view from any panel |
 | `Enter` | Expand/collapse tags, services, actions, or action groups |
 
 ## Lifecycle and actions
@@ -54,6 +54,12 @@ directions.
 | `v` | Open the filterable run list |
 | `Shift+3` | Pin the selected `{target, run, view mode}` snapshot |
 | `e` / `Shift+E` | Export selected run to clipboard / chosen file |
+
+The log header names the history position explicitly: `ALL RUNS · INCLUDES NEW`
+keeps accepting new runs, `LATEST RUN · #N` shows the newest run in isolation,
+and `HISTORY · RUN #N` means a newer run exists. A pinned panel is frozen and
+shows `Shift+3 UNPIN` in its title; while any pin exists the footer starts with
+`[Shift+3] unpin`, and the shortcut works from every panel.
 
 ## Application
 

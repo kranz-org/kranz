@@ -28,7 +28,7 @@ func (m *Model) renderLogColumn(width, height int) string {
 	topHeight, bottomHeight := m.logColumnLayout(height)
 	top := m.renderPinnedRunPanel(pinnedTarget, width, topHeight)
 	if topHeight == collapsedPanelHeight {
-		top = renderCollapsedPanel("[3] PINNED LOGS │ "+runTargetLabel(pinnedTarget), width)
+		top = renderCollapsedPanel("[3] PINNED [Shift+3 UNPIN] │ "+runTargetLabel(pinnedTarget), width)
 	}
 	focused := m.FocusedService()
 	bottom := m.renderLogPanel(focused, width, bottomHeight)
@@ -213,7 +213,7 @@ func (m *Model) renderLogPanelMode(svc *app.ServiceSnapshot, width, height int, 
 	if pinned {
 		panelStyle = m.panelStyle(panelPinnedLogs)
 		titleStyle = m.panelTitleStyle(panelPinnedLogs)
-		titlePrefix = "[3] PINNED LOGS"
+		titlePrefix = "[3] PINNED [Shift+3 UNPIN]"
 		followMode, logOffset, logAnchor, logPaused = m.pinnedFollow, m.pinnedOffset, m.pinnedAnchor, false
 	}
 	if svc == nil {
@@ -236,10 +236,9 @@ func (m *Model) renderLogPanelMode(svc *app.ServiceSnapshot, width, height int, 
 	if m.showLogTime {
 		title += " " + RunningBadgeStyle.Render("TIME")
 	}
+	runLabel := m.pinnedRunViewLabel()
 	if !pinned {
-		title += " " + RunningBadgeStyle.Render(m.runViewLabel())
-	} else {
-		title += " " + RunningBadgeStyle.Render(m.pinnedRunViewLabel())
+		runLabel = m.runViewLabel()
 	}
 
 	sourceEntries := m.app.Logs(svc.Name)
@@ -264,6 +263,7 @@ func (m *Model) renderLogPanelMode(svc *app.ServiceSnapshot, width, height int, 
 		}
 		title += SearchInputStyle.Render(fmt.Sprintf("  %s /%s/ · %d", modeLabel, searcher.Pattern(), len(searchMatches)))
 	}
+	title += " " + RunningBadgeStyle.Render(runLabel)
 	matchSet := make(map[int]bool, len(searchMatches))
 	for _, idx := range searchMatches {
 		matchSet[idx] = true

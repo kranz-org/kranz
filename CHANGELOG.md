@@ -39,6 +39,10 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ### Fixed
 
+- Run-view titles now distinguish auto-updating combined output, the latest
+  isolated run, and historical runs without conflating "live" process state
+  with history position. Pinned panels show the `Shift+3` unpin action, which
+  now removes the existing pin from any focused panel.
 - Config and MCP service views now redact credential-bearing URLs even when
   their environment variable name is not itself secret-looking.
 - Replacing an in-process runtime can no longer capture the outgoing owner's

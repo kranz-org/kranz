@@ -103,7 +103,7 @@ func DefaultKeyMap() KeyMap {
 		),
 		PinLogs: key.NewBinding(
 			key.WithKeys("#", "shift+3"),
-			key.WithHelp("Shift+3", "pin/unpin focused logs"),
+			key.WithHelp("Shift+3", "pin current/unpin existing"),
 		),
 		Reload: key.NewBinding(
 			key.WithKeys("ctrl+l"),

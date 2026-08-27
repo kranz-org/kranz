@@ -340,11 +340,20 @@ func (m *Model) contextMessage() string {
 	if toast != "" {
 		return toast + " "
 	}
-	if svc := m.FocusedService(); svc != nil {
-		mode := "filter"
-		if m.searchMode == searchHighlight {
-			mode = "highlight"
+	mode := "filter"
+	if m.activeSearchMode() == searchHighlight {
+		mode = "highlight"
+	}
+	if target, ok := m.pinnedRunTarget(); ok {
+		searchTarget := runTargetLabel(target)
+		if m.panelFocus != panelPinnedLogs {
+			if svc := m.FocusedService(); svc != nil {
+				searchTarget = svc.Name
+			}
 		}
+		return fmt.Sprintf("[Shift+3] unpin %s · [/] regex %s · %s ", runTargetLabel(target), mode, searchTarget)
+	}
+	if svc := m.FocusedService(); svc != nil {
 		return fmt.Sprintf("[/] regex %s · %s ", mode, svc.Name)
 	}
 	return "[?] help "

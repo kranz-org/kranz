@@ -31,8 +31,34 @@ func TestSingleRunViewerNavigatesStableServiceRuns(t *testing.T) {
 	if !strings.Contains(plain, "first failed output") || strings.Contains(plain, "second successful output") {
 		t.Fatalf("single run leaked another run:\n%s", plain)
 	}
-	if !strings.Contains(plain, "1 NEWER") {
+	if !strings.Contains(plain, "HISTORY · RUN #1 · 1 NEWER · [L] LATEST") {
 		t.Fatalf("historical run has no newer-runs indicator:\n%s", plain)
+	}
+}
+
+func TestRunLabelsSeparateAutoUpdatingLatestAndHistoryViews(t *testing.T) {
+	model := newTestModel()
+	defer model.Shutdown()
+
+	finishTestServiceRun(t, model, "api", 0, "run one")
+	finishTestServiceRun(t, model, "api", 0, "run two")
+	model.refreshServices()
+	if got := model.runViewLabel(); got != "ALL RUNS · INCLUDES NEW" {
+		t.Fatalf("combined label = %q", got)
+	}
+	model.selectLatestRun()
+	if got := model.runViewLabel(); got != "LATEST RUN · #2" {
+		t.Fatalf("latest label = %q", got)
+	}
+
+	finishTestServiceRun(t, model, "api", 0, "run three")
+	model.refreshServices()
+	if got := model.runViewLabel(); got != "HISTORY · RUN #2 · 1 NEWER · [L] LATEST" {
+		t.Fatalf("history label = %q", got)
+	}
+	model.selectLatestRun()
+	if got := model.runViewLabel(); got != "LATEST RUN · #3" {
+		t.Fatalf("returned latest label = %q", got)
 	}
 }
 
@@ -96,8 +122,33 @@ func TestPinnedHistoricalRunRemainsImmutableAfterNewStart(t *testing.T) {
 	if !strings.Contains(plain, "run one snapshot") || strings.Contains(plain, "run two output") || strings.Contains(plain, "run three output") {
 		t.Fatalf("pinned run changed after newer starts:\n%s", plain)
 	}
-	if !strings.Contains(plain, "RUN #1 · SNAPSHOT") {
+	if !strings.Contains(plain, "FROZEN · RUN #1") || !strings.Contains(plain, "Shift+3 UNPIN") {
 		t.Fatalf("pin identity is not explicit:\n%s", plain)
+	}
+}
+
+func TestFocusedPinnedPanelCanAlwaysBeUnpinned(t *testing.T) {
+	model := newTestModel()
+	defer model.Shutdown()
+	model.width, model.height, model.ready = 100, 28, true
+	finishTestServiceRun(t, model, "api", 0, "pinned history")
+	model.refreshServices()
+	model.selectLatestRun()
+	model.togglePinnedLog()
+	model.moveFocus(1) // The current panel now points at another service.
+	model.panelFocus = panelPinnedLogs
+	model.notifMu.Lock()
+	model.toastMessage = ""
+	model.notifMu.Unlock()
+
+	panel := ansi.Strip(model.renderLogColumn(80, model.height-2))
+	footer := ansi.Strip(model.contextMessage())
+	if !strings.Contains(panel, "Shift+3 UNPIN") || !strings.Contains(footer, "[Shift+3] unpin") {
+		t.Fatalf("unpin control is not visible:\npanel=%s\nfooter=%s", panel, footer)
+	}
+	pressKey(model, '#')
+	if model.hasPinnedRunView() || model.panelFocus != panelLogs {
+		t.Fatalf("focused pinned panel was not closed: pinned=%v focus=%v", model.hasPinnedRunView(), model.panelFocus)
 	}
 }
 
@@ -158,7 +209,7 @@ func TestActionOutputDefaultsToSingleLatestRun(t *testing.T) {
 	}
 	model.focusedAction = &id
 	plain := ansi.Strip(model.renderActionLogPanel(100, 12))
-	if model.runMode != runViewSingle || model.selectedRun != 1 || !strings.Contains(plain, "RUN #1 · LIVE/LATEST") || !strings.Contains(plain, "action-output") {
+	if model.runMode != runViewSingle || model.selectedRun != 1 || !strings.Contains(plain, "LATEST RUN · #1") || !strings.Contains(plain, "action-output") {
 		t.Fatalf("action did not open latest single run: mode=%d run=%d\n%s", model.runMode, model.selectedRun, plain)
 	}
 }

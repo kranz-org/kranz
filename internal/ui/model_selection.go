@@ -118,6 +118,10 @@ func (m *Model) toggleAllSelection() {
 }
 
 func (m *Model) togglePinnedLog() {
+	if m.hasPinnedRunView() {
+		m.unpinRunView()
+		return
+	}
 	if m.focusedActionGroup != "" {
 		return
 	}
@@ -132,18 +136,6 @@ func (m *Model) togglePinnedLog() {
 	if m.runMode == runViewSingle && m.selectedRun > 0 {
 		run = m.selectedRun
 	}
-	if m.pinnedTarget == target && m.pinnedRunMode == m.runMode && m.pinnedRun == run ||
-		m.pinnedTarget.Kind == "" && target.Kind == app.RunKindService && m.pinnedLog == target.Name {
-		m.pinnedLog = ""
-		m.pinnedTarget = app.RunTarget{}
-		m.pinnedRun = 0
-		m.pinnedOffset, m.pinnedAnchor, m.pinnedFollow = 0, 0, true
-		if m.panelFocus == panelPinnedLogs {
-			m.panelFocus = panelLogs
-		}
-		m.addNotification("logs", "Pinned log closed", config.LogInfo)
-		return
-	}
 	m.pinnedTarget, m.pinnedRunMode, m.pinnedRun = target, m.runMode, run
 	m.pinnedLog = ""
 	if target.Kind == app.RunKindService {
@@ -154,6 +146,17 @@ func (m *Model) togglePinnedLog() {
 	}
 	m.pinnedOffset, m.pinnedAnchor, m.pinnedFollow = 0, 0, true
 	m.addNotification("logs", fmt.Sprintf("Pinned logs: %s#%d", runTargetLabel(target), run), config.LogInfo)
+}
+
+func (m *Model) unpinRunView() {
+	m.pinnedLog = ""
+	m.pinnedTarget = app.RunTarget{}
+	m.pinnedRun = 0
+	m.pinnedOffset, m.pinnedAnchor, m.pinnedFollow = 0, 0, true
+	if m.panelFocus == panelPinnedLogs {
+		m.panelFocus = panelLogs
+	}
+	m.addNotification("logs", "Pinned run closed", config.LogInfo)
 }
 
 func (m *Model) toggleListMode() {
