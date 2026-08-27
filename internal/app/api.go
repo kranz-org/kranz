@@ -133,6 +133,8 @@ type API interface {
 	CompleteInteractiveAction(id config.ActionID, lease string, execErr error, exitCode, pid int) (ActionResult, error)
 	// Runs returns the bounded run catalog independently from retained output.
 	Runs() []RunSummary
+	RunRetention() []RunRetentionBoundary
+	ExportRun(target RunTarget, run uint32) (RunExport, error)
 
 	// Logs returns the current buffered log entries for a service.
 	Logs(name string) []config.LogEntry

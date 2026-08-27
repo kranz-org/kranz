@@ -42,6 +42,7 @@ type (
 	RunOutputState        = service.RunOutputState
 	RunOutputSummary      = service.RunOutputSummary
 	RunSummary            = service.RunSummary
+	RunRetentionBoundary  = service.RunRetentionBoundary
 )
 
 const (
@@ -103,6 +104,15 @@ type ServiceSnapshot struct {
 	CanStart       bool                `json:"can_start"`
 	CanStop        bool                `json:"can_stop"`
 	Health         HealthSnapshot      `json:"health"`
+}
+
+// RunExport is a detached, explicit snapshot suitable for clipboard or file
+// export. It includes identity/provenance and retention metadata beside the
+// exact canonical entries that remain available.
+type RunExport struct {
+	Summary   RunSummary           `json:"summary"`
+	Retention RunRetentionBoundary `json:"retention"`
+	Entries   []config.LogEntry    `json:"entries"`
 }
 
 // ServiceStartPlanned reports whether a service is running, starting, or

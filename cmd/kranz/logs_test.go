@@ -71,8 +71,8 @@ func TestServiceRunAppearsOnlyWhenTheWindowSpansRuns(t *testing.T) {
 	if got := streamsSpanningRuns(single); got["api"] {
 		t.Error("one run must not be labelled as spanning")
 	}
-	if got := logEventLabel(single[0], false); got != "api stdout" {
-		t.Errorf("single-run label = %q", got)
+	if got := logEventLabel(single[0], false); got != "api#2 stdout" {
+		t.Errorf("stable single-run label = %q", got)
 	}
 	if got := streamsSpanningRuns(spanning); !got["api"] {
 		t.Error("two runs of one service must be labelled")

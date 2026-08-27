@@ -58,6 +58,9 @@ func runLogs(options kranzcli.GlobalOptions, args []string, stdout io.Writer) er
 	if err != nil {
 		return classifyLogQueryError(err)
 	}
+	if err := writeLogRetentionNotices(stdout, options.Output, result.Retention, parsed); err != nil {
+		return err
+	}
 	if err := writeLogEvents(stdout, options.Output, result.Events, parsed); err != nil {
 		return err
 	}
@@ -87,6 +90,19 @@ func runLogs(options kranzcli.GlobalOptions, args []string, stdout io.Writer) er
 			}
 		}
 	}
+}
+
+func writeLogRetentionNotices(stdout io.Writer, format kranzcli.OutputFormat, notices []app.RunOutputNotice, options logOptions) error {
+	if format == kranzcli.OutputJSON {
+		return nil
+	}
+	for _, notice := range notices {
+		marker := fmt.Sprintf("[Kranz] Output truncated · %s#%d · missing %d lines / %d bytes · retained %d lines / %d bytes", notice.Stream, notice.Run, notice.Output.MissingLines, notice.Output.MissingBytes, notice.Output.RetainedLines, notice.Output.RetainedBytes)
+		if _, err := fmt.Fprintln(stdout, logEventPrefix(app.LogEvent{Timestamp: time.Now(), Stream: notice.Stream, Run: notice.Run, Source: "kranz"}, options, true)+marker); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func runLogsClear(options kranzcli.GlobalOptions, args []string, stdout io.Writer) error {
@@ -274,13 +290,10 @@ func parseLogSources(value string) ([]string, error) {
 
 const logTimestampLayout = "2006-01-02T15:04:05.000Z07:00"
 
-// logEventLabel names the stream a line came from, and its run when the run is
-// what distinguishes it. An action's output is always read as one numbered
-// invocation among several, so it always carries the number; a service reads
-// as one continuous stream, and the number is noise until the window actually
-// spans more than one start.
-func logEventLabel(event app.LogEvent, showRun bool) string {
-	if event.Run > 0 && (event.Kind == "action" || showRun) {
+// logEventLabel always publishes the stable absolute run identity. Relative
+// selectors remain query syntax only; output never invents a second identity.
+func logEventLabel(event app.LogEvent, _ bool) string {
+	if event.Run > 0 {
 		return fmt.Sprintf("%s#%d %s", event.Stream, event.Run, event.Source)
 	}
 	return event.Stream + " " + event.Source

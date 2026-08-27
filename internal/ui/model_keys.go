@@ -49,6 +49,8 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleThemeKeys(msg)
 	case ModeRunList:
 		return m.handleRunListKeys(msg)
+	case ModeRunExport:
+		return m.handleRunExportKeys(msg)
 	default:
 		if msg.String() == "esc" || msg.String() == "q" {
 			m.mode = ModeNormal
@@ -84,6 +86,12 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if key.Matches(msg, m.keys.Search) {
 		return m, m.openSearchEditor()
+	}
+	if msg.String() == "e" {
+		return m, m.copySelectedRun()
+	}
+	if msg.String() == "E" {
+		return m, m.openRunExport()
 	}
 	if m.handleLogKey(msg) {
 		return m, nil

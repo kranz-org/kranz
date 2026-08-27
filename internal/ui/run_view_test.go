@@ -2,9 +2,12 @@ package ui
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/kranz-org/kranz/internal/config"
 )
@@ -128,6 +131,34 @@ func TestActionOutputDefaultsToSingleLatestRun(t *testing.T) {
 	plain := ansi.Strip(model.renderActionLogPanel(100, 12))
 	if model.runMode != runViewSingle || model.selectedRun != 1 || !strings.Contains(plain, "RUN #1 · LIVE/LATEST") || !strings.Contains(plain, "action-output") {
 		t.Fatalf("action did not open latest single run: mode=%d run=%d\n%s", model.runMode, model.selectedRun, plain)
+	}
+}
+
+func TestRunExportFileIncludesIdentityProvenanceAndTruncationMetadata(t *testing.T) {
+	model := newTestModel()
+	defer model.Shutdown()
+	finishTestServiceRun(t, model, "api", 0, "export me")
+	model.refreshServices()
+	model.selectLatestRun()
+	directory := t.TempDir()
+	model.workingDirectory = directory
+	model.openRunExport()
+	model.exportInput.SetValue("selected.log")
+	_, command := model.handleRunExportKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	if command == nil {
+		t.Fatal("file export returned no command")
+	}
+	message := command()
+	_, _ = model.Update(message)
+	payload, err := os.ReadFile(filepath.Join(directory, "selected.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(payload)
+	for _, expected := range []string{"Kranz run: api#1", "Surface: runtime", "Output: complete", "Retention: oldest #1", "[seq=", "export me"} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("export missing %q:\n%s", expected, text)
+		}
 	}
 }
 

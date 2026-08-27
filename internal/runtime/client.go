@@ -447,6 +447,15 @@ func (c *Client) Runs() []app.RunSummary {
 	return runs
 }
 
+func (c *Client) RunRetention() []app.RunRetentionBoundary {
+	boundaries, _ := call[emptyRequest, []app.RunRetentionBoundary](c, context.Background(), methodRunRetention, emptyRequest{})
+	return boundaries
+}
+
+func (c *Client) ExportRun(target app.RunTarget, run uint32) (app.RunExport, error) {
+	return call[exportRunRequest, app.RunExport](c, context.Background(), methodExportRun, exportRunRequest{Target: target, Run: run})
+}
+
 func (c *Client) Logs(name string) []config.LogEntry {
 	resp, _ := call[nameRequest, logsResponse](c, context.Background(), methodLogs, nameRequest{Name: name})
 	return resp.Entries

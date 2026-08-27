@@ -48,6 +48,12 @@ directions.
 | `c` | Confirm clear focused logs |
 | `h` | Health history |
 | `n` | Notifications when highlight search is inactive |
+| `x` | Toggle Combined/Single run |
+| `[` / `]` | Previous/next run |
+| `Shift+F` / `l` | Previous failed run / latest run |
+| `v` | Open the filterable run list |
+| `Shift+3` | Pin the selected `{target, run, view mode}` snapshot |
+| `e` / `Shift+E` | Export selected run to clipboard / chosen file |
 
 ## Application
 

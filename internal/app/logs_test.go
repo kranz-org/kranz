@@ -179,3 +179,31 @@ func TestServiceLogsAreAddressableByRun(t *testing.T) {
 		t.Fatalf("service run = %#v", snapshot)
 	}
 }
+
+func TestQueryLogsResolvesLatestFromCatalogAndReportsExactRetentionGap(t *testing.T) {
+	local := logQueryTestLocal(t)
+	local.SetServiceStatusForTest("api", config.StatusStarting)
+	for index := 0; index < 10010; index++ {
+		local.AppendLogForTest("api", "x")
+	}
+
+	summaries := local.manager.RunSummaries(ServiceRunTarget("api"))
+	if len(summaries) != 1 || summaries[0].Output.MissingLines == 0 {
+		t.Fatalf("summary = %#v", summaries)
+	}
+	result, err := local.QueryLogs(LogQuery{Selectors: []string{"api"}, Run: -1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Retention) != 1 || result.Retention[0].Run != 1 || result.Retention[0].Output != summaries[0].Output {
+		t.Fatalf("retention = %#v; summary = %#v", result.Retention, summaries[0])
+	}
+	if !result.Truncated || len(result.Events) == 0 {
+		t.Fatalf("result = %#v", result)
+	}
+	for _, event := range result.Events {
+		if event.Run != 1 {
+			t.Fatalf("latest catalog run returned #%d", event.Run)
+		}
+	}
+}

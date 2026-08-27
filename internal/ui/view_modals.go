@@ -72,6 +72,7 @@ func helpEntries() []helpEntry {
 		{"x", "Toggle Combined/Single run log view"},
 		{"[ / ]", "Previous/next run; Shift+F finds the previous failed run"},
 		{"v", "Open the run catalog; l returns to latest"},
+		{"e / E", "Export selected run to clipboard / a file path"},
 		{"c", "Clear focused or pinned service logs after confirmation"},
 		{"q", "Quit"},
 		{"?", "Show this help"},

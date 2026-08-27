@@ -53,6 +53,8 @@ func (m *Model) View() string {
 		content = m.renderThemeView()
 	case ModeRunList:
 		content = m.renderRunListView()
+	case ModeRunExport:
+		content = m.renderRunExportView()
 	default:
 		content = m.renderMainView()
 	}

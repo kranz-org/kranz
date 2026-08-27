@@ -97,7 +97,7 @@ func (s *Server) runsTool(_ context.Context, raw json.RawMessage) ResultEnvelope
 	if err := decodeArgs(raw, &args); err != nil {
 		return s.argError(err)
 	}
-	return s.envelope(map[string]any{"runs": s.api.Runs()})
+	return s.envelope(map[string]any{"runs": s.api.Runs(), "retention": s.api.RunRetention()})
 }
 
 func mutationSchema(includeDependencies bool) map[string]any {

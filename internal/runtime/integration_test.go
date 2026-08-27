@@ -241,6 +241,22 @@ func TestRunCatalogPreservesConnectionProvenanceAcrossRPC(t *testing.T) {
 	if runs[0].Surface != "mcp" || runs[0].ClientLabel != "agent session" || runs[0].StartReason != "invoked" {
 		t.Fatalf("run provenance = %+v", runs[0])
 	}
+	boundaries := client.RunRetention()
+	if len(boundaries) != 1 || boundaries[0].Target != app.ActionRunTarget(id) || boundaries[0].OldestRetainedRun != 1 || boundaries[0].MaxEntries == 0 || boundaries[0].MaxBytes == 0 {
+		t.Fatalf("retention = %#v", boundaries)
+	}
+	exported, err := client.ExportRun(app.ActionRunTarget(id), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exported.Summary.Surface != "mcp" || exported.Summary.ClientLabel != "agent session" || exported.Retention != boundaries[0] || len(exported.Entries) == 0 {
+		t.Fatalf("export = %#v", exported)
+	}
+	for index, entry := range exported.Entries {
+		if entry.Run != 1 || entry.Sequence == 0 || entry.Timestamp.IsZero() || entry.Source == "" {
+			t.Fatalf("export entry %d = %#v", index, entry)
+		}
+	}
 }
 
 func TestExecutePlanPreservesFailedActionRunAcrossIPC(t *testing.T) {

@@ -372,6 +372,13 @@ func (m *Model) renderRunListView() string {
 		filter = "all"
 	}
 	lines := []string{ModalTitleStyle.Render(" Run history "), "", ContextBarStyle.Render("  Filter: " + filter + " · Tab changes filter"), ""}
+	for _, boundary := range m.app.RunRetention() {
+		if boundary.Target == m.runTarget {
+			lines = append(lines, ContextBarStyle.Render(fmt.Sprintf("  Oldest retained #%d · budgets %d runs / %d entries / %d bytes · evicted %d summaries",
+				boundary.OldestRetainedRun, boundary.MaxRuns, boundary.MaxEntries, boundary.MaxBytes, boundary.EvictedRuns)), "")
+			break
+		}
+	}
 	if len(runs) == 0 {
 		lines = append(lines, "  No runs match this filter")
 	}

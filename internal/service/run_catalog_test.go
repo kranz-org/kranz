@@ -171,11 +171,49 @@ func TestConfigReloadMarkerStaysInsideContinuingRun(t *testing.T) {
 	manager.RecordConfigReload(2, nil)
 	svc, _ := manager.GetService("api")
 	entries := svc.LogEntries()
-	if len(entries) == 0 || entries[len(entries)-1].Run != 1 || entries[len(entries)-1].Raw != "[Kranz] Config reloaded · generation 2" {
+	if len(entries) == 0 || entries[len(entries)-1].Run != 1 || entries[len(entries)-1].Raw != "[Kranz] Config reloaded · generation 2 · api#1" {
 		t.Fatalf("reload marker entries = %#v", entries)
 	}
 	runs := manager.RunSummaries(ServiceRunTarget("api"))
 	if len(runs) != 1 || runs[0].Run != 1 || runs[0].Surface != "tui" || runs[0].ClientLabel != "dashboard" || runs[0].StartReason != "first_start" {
 		t.Fatalf("continuing run = %#v", runs)
+	}
+}
+
+func TestLogStreamEnforcesByteAndEntryBudgetsIndependently(t *testing.T) {
+	catalog := NewRunCatalog(10)
+	target := ServiceRunTarget("api")
+	stream := newLogStreamWithLimits(10, 5)
+	stream.SetCatalog(catalog, target)
+	run := stream.BeginRun()
+	catalog.Begin(RunSummary{Target: target, Run: run, Status: "running", StartedAt: time.Now()})
+	stream.Append(time.Now(), "stdout", "aaa")
+	stream.Append(time.Now(), "stderr", "bbbb")
+
+	entries := stream.Entries()
+	if len(entries) != 1 || entries[0].Raw != "bbbb" || entries[0].Source != "stderr" {
+		t.Fatalf("retained entries = %#v", entries)
+	}
+	summary := catalog.List(target)[0]
+	if summary.Output.CapturedLines != 2 || summary.Output.CapturedBytes != 7 || summary.Output.RetainedLines != 1 ||
+		summary.Output.RetainedBytes != 4 || summary.Output.MissingLines != 1 || summary.Output.MissingBytes != 3 || summary.Output.State != RunOutputPartial {
+		t.Fatalf("output retention = %+v", summary.Output)
+	}
+	boundary := catalog.Boundaries()[0]
+	if boundary.MaxEntries != 10 || boundary.MaxBytes != 5 || boundary.OldestRetainedRun != 1 {
+		t.Fatalf("boundary = %+v", boundary)
+	}
+}
+
+func TestRunCatalogPublishesOldestBoundaryAfterSummaryEviction(t *testing.T) {
+	catalog := NewRunCatalog(2)
+	target := ServiceRunTarget("api")
+	catalog.SetOutputLimits(target, 100, 1024)
+	for run := uint32(1); run <= 3; run++ {
+		catalog.Begin(RunSummary{Target: target, Run: run, Status: "running", StartedAt: time.Now()})
+	}
+	boundary := catalog.Boundaries()[0]
+	if boundary.OldestRetainedRun != 2 || boundary.EvictedRuns != 1 || boundary.MaxRuns != 2 {
+		t.Fatalf("boundary = %+v", boundary)
 	}
 }

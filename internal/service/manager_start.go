@@ -97,7 +97,7 @@ func (m *Manager) startService(ctx context.Context, name string, recovery bool) 
 
 	svc.SetNextRunProvenance(provenance)
 	svc.SetStatus(config.StatusStarting)
-	svc.AppendLog("[Kranz] Starting")
+	svc.AppendLog(fmt.Sprintf("[Kranz] Starting · %s#%d", svc.Name, svc.Run()))
 
 	pm := NewProcessManager(1000)
 	start := svc.Config.StartAction()
@@ -128,7 +128,7 @@ func (m *Manager) startService(ctx context.Context, name string, recovery bool) 
 
 	svc.SetPID(pid)
 	svc.SetStatus(config.StatusRunning)
-	svc.AppendLog(fmt.Sprintf("[Kranz] Started · PID %d", pid))
+	svc.AppendLog(fmt.Sprintf("[Kranz] Started · PID %d · %s#%d", pid, svc.Name, svc.Run()))
 	svc.ResetNewLogCount()
 
 	monitorStop := make(chan struct{})
@@ -181,7 +181,7 @@ func (m *Manager) startDetachedService(ctx context.Context, svc *Service) error 
 	}
 	svc.SetDesiredRunning(true)
 	svc.SetStatus(config.StatusStarting)
-	svc.AppendLog("[Kranz] Starting detached service")
+	svc.AppendLog(fmt.Sprintf("[Kranz] Starting detached service · %s#%d", svc.Name, svc.Run()))
 	id := lifecycleActionID(svc.Name, "start")
 	result, err := m.actions.RunDefinition(ctx, id, *start)
 	m.appendLifecycleResult(svc, "start", result)

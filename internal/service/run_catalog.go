@@ -75,19 +75,42 @@ type RunSummary struct {
 	Output      RunOutputSummary   `json:"output"`
 }
 
+// RunRetentionBoundary describes the independent catalog and output budgets
+// for one target and the oldest summary still addressable in this session.
+type RunRetentionBoundary struct {
+	Target            RunTarget `json:"target"`
+	MaxRuns           int       `json:"max_runs"`
+	MaxEntries        int       `json:"max_entries"`
+	MaxBytes          uint64    `json:"max_bytes"`
+	OldestRetainedRun uint32    `json:"oldest_retained_run,omitempty"`
+	EvictedRuns       uint64    `json:"evicted_runs"`
+}
+
 // RunCatalog retains a fair, per-target bounded history. A noisy target can
 // evict only its own old summaries, never another service or action's history.
 type RunCatalog struct {
 	mu               sync.RWMutex
 	maxRunsPerTarget int
 	runs             map[RunTarget][]RunSummary
+	boundaries       map[RunTarget]RunRetentionBoundary
 }
 
 func NewRunCatalog(maxRunsPerTarget int) *RunCatalog {
 	if maxRunsPerTarget <= 0 {
 		maxRunsPerTarget = defaultRunCatalogSize
 	}
-	return &RunCatalog{maxRunsPerTarget: maxRunsPerTarget, runs: make(map[RunTarget][]RunSummary)}
+	return &RunCatalog{maxRunsPerTarget: maxRunsPerTarget, runs: make(map[RunTarget][]RunSummary), boundaries: make(map[RunTarget]RunRetentionBoundary)}
+}
+
+func (c *RunCatalog) SetOutputLimits(target RunTarget, maxEntries int, maxBytes uint64) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	boundary := c.boundaries[target]
+	boundary.Target, boundary.MaxRuns, boundary.MaxEntries, boundary.MaxBytes = target, c.maxRunsPerTarget, maxEntries, maxBytes
+	c.boundaries[target] = boundary
+	c.mu.Unlock()
 }
 
 func (c *RunCatalog) Begin(summary RunSummary) {
@@ -110,9 +133,32 @@ func (c *RunCatalog) Begin(summary RunSummary) {
 	}
 	history = append(history, cloneRunSummary(summary))
 	if len(history) > c.maxRunsPerTarget {
+		boundary := c.boundaries[summary.Target]
+		boundary.Target, boundary.MaxRuns = summary.Target, c.maxRunsPerTarget
+		boundary.EvictedRuns += uint64(len(history) - c.maxRunsPerTarget)
+		c.boundaries[summary.Target] = boundary
 		history = append([]RunSummary(nil), history[len(history)-c.maxRunsPerTarget:]...)
 	}
 	c.runs[summary.Target] = history
+}
+
+func (c *RunCatalog) Boundaries() []RunRetentionBoundary {
+	if c == nil {
+		return nil
+	}
+	c.mu.RLock()
+	result := make([]RunRetentionBoundary, 0, len(c.boundaries))
+	for target, boundary := range c.boundaries {
+		boundary.Target = target
+		boundary.MaxRuns = c.maxRunsPerTarget
+		if history := c.runs[target]; len(history) > 0 {
+			boundary.OldestRetainedRun = history[0].Run
+		}
+		result = append(result, boundary)
+	}
+	c.mu.RUnlock()
+	sort.Slice(result, func(i, j int) bool { return runTargetLess(result[i].Target, result[j].Target) })
+	return result
 }
 
 func (c *RunCatalog) Update(target RunTarget, run uint32, status string, pid int, cause *config.StateCause) {

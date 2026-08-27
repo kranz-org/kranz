@@ -215,17 +215,22 @@ kranz logs analytics/stats --run -1       # the latest run
 kranz logs analytics/stats --run -2       # the run before it
 kranz logs analytics/stats --runs 3       # the last three runs
 kranz logs api --run -1                   # only the newest start of a service
+kranz runs                                # bounded catalog and retention limits
+kranz runs api analytics/stats            # narrow catalog by target
 ```
 
-A service reads as one continuous stream, so its lines are labelled with a run
-number only when the window you asked for spans more than one start. An action
-reads as one invocation among several and always carries its number.
+Every line carries its stable absolute identity (`api#7` or
+`analytics/stats#3`). Relative values are query syntax only and are never
+printed as identities.
 
 A positive `--run` is the absolute run number Kranz assigned. A negative one is
-an offset from the newest run still buffered, so `-1` keeps meaning "the latest"
-however many older runs have aged out, and `-2` is the one before it. Asking for
-a run that has already been evicted prints nothing rather than failing: the run
-is gone, not misnamed.
+an offset from the newest run in the independent run catalog, so `-1` keeps
+meaning "the latest" even after its output has aged out. When a retained run
+has lost its output prefix, text output prints the exact missing lines/bytes
+marker before the available tail. `kranz runs` publishes the oldest retained
+run, catalog/output budgets, evicted summary count, provenance, and output
+state (`complete`, `partial`, or `unavailable`). The catalog belongs to the
+live runtime session and is not restored after `down`.
 
 ### Actions
 

@@ -62,11 +62,22 @@ type LogWindow struct {
 }
 
 type LogResult struct {
-	Events     []LogEvent `json:"events"`
-	Truncated  bool       `json:"truncated"`
-	NextCursor string     `json:"next_cursor,omitempty"`
-	Generation uint64     `json:"generation"`
-	Window     LogWindow  `json:"window"`
+	Events     []LogEvent        `json:"events"`
+	Retention  []RunOutputNotice `json:"retention,omitempty"`
+	Truncated  bool              `json:"truncated"`
+	NextCursor string            `json:"next_cursor,omitempty"`
+	Generation uint64            `json:"generation"`
+	Window     LogWindow         `json:"window"`
+}
+
+// RunOutputNotice makes a known retention gap observable without fabricating
+// log events. It is returned for every selected run whose captured prefix is
+// no longer available.
+type RunOutputNotice struct {
+	Stream    string           `json:"stream"`
+	Run       uint32           `json:"run"`
+	Output    RunOutputSummary `json:"output"`
+	OldestRun uint32           `json:"oldest_retained_run,omitempty"`
 }
 
 // LogQueryError provides a stable causal code without importing a delivery
@@ -142,6 +153,25 @@ func queryLogs(local *Local, query LogQuery) (LogResult, error) {
 		if target.isAction() {
 			entries = local.ActionLogs(target.action)
 		}
+		runTarget := serviceRunTargetForLogTarget(target)
+		summaries := local.manager.RunSummaries(runTarget)
+		low, high, selected := selectedRunRange(summaries, query.Run, query.Runs)
+		if query.Run != 0 || query.Runs != 0 {
+			entries = filterEntriesByRange(entries, low, high, selected)
+			for _, summary := range summaries {
+				if selected && summary.Run >= low && summary.Run <= high && summary.Output.MissingLines > 0 {
+					notice := RunOutputNotice{Stream: target.address, Run: summary.Run, Output: summary.Output}
+					for _, boundary := range local.manager.RunRetentionBoundaries() {
+						if boundary.Target == runTarget {
+							notice.OldestRun = boundary.OldestRetainedRun
+							break
+						}
+					}
+					result.Retention = append(result.Retention, notice)
+					result.Truncated = true
+				}
+			}
+		}
 		window := LogStreamWindow{Stream: target.address}
 		if len(entries) > 0 {
 			window.OldestSequence = entries[0].Sequence
@@ -154,7 +184,6 @@ func queryLogs(local *Local, query LogQuery) (LogResult, error) {
 			}
 		}
 		windows = append(windows, window)
-		entries = filterEntriesByRun(entries, query.Run, query.Runs)
 		for _, entry := range entries {
 			if entry.Sequence <= cursor.After[target.address] {
 				continue
@@ -294,24 +323,30 @@ func findActionID(cfg *config.Config, address string) (config.ActionID, bool) {
 	return config.ActionID{}, false
 }
 
-func filterEntriesByRun(entries []config.LogEntry, run, runs int) []config.LogEntry {
+func serviceRunTargetForLogTarget(target logTarget) RunTarget {
+	if target.isAction() {
+		return ActionRunTarget(target.action)
+	}
+	return ServiceRunTarget(target.service)
+}
+
+func selectedRunRange(summaries []RunSummary, run, runs int) (low, high uint32, ok bool) {
 	if run == 0 && runs == 0 {
-		return entries
+		return 0, 0, false
 	}
 	var latest uint32
-	for _, entry := range entries {
-		latest = max(latest, entry.Run)
+	for _, summary := range summaries {
+		latest = max(latest, summary.Run)
 	}
 	if latest == 0 {
-		return nil
+		return 0, 0, false
 	}
-	var low, high uint32
 	if run > 0 {
 		low, high = uint32(run), uint32(run)
 	} else if run < 0 {
 		offset := uint32(-run) - 1
 		if offset >= latest {
-			return nil
+			return 0, 0, false
 		}
 		low, high = latest-offset, latest-offset
 	} else {
@@ -321,6 +356,13 @@ func filterEntriesByRun(entries []config.LogEntry, run, runs int) []config.LogEn
 		} else {
 			low = latest - uint32(runs) + 1
 		}
+	}
+	return low, high, true
+}
+
+func filterEntriesByRange(entries []config.LogEntry, low, high uint32, ok bool) []config.LogEntry {
+	if !ok {
+		return nil
 	}
 	return slices.DeleteFunc(append([]config.LogEntry(nil), entries...), func(entry config.LogEntry) bool { return entry.Run < low || entry.Run > high })
 }

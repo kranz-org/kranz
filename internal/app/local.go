@@ -357,6 +357,8 @@ func (l *Local) CompleteInteractiveAction(id config.ActionID, lease string, exec
 
 func (l *Local) Runs() []RunSummary { return l.manager.AllRunSummaries() }
 
+func (l *Local) RunRetention() []RunRetentionBoundary { return l.manager.RunRetentionBoundaries() }
+
 func (l *Local) Logs(name string) []config.LogEntry {
 	svc, ok := l.manager.GetService(name)
 	if !ok {

@@ -27,7 +27,7 @@ func (s *Server) installResources() {
 }
 
 func (s *Server) runsResource(context.Context) ResultEnvelope {
-	return s.envelope(map[string]any{"runs": s.api.Runs()})
+	return s.envelope(map[string]any{"runs": s.api.Runs(), "retention": s.api.RunRetention()})
 }
 
 func (s *Server) envelope(data any) ResultEnvelope {

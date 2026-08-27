@@ -35,6 +35,7 @@ const (
 	ModeConfirmThemeSave
 	ModeThemes
 	ModeRunList
+	ModeRunExport
 )
 
 type runViewMode uint8
@@ -137,6 +138,10 @@ type actionResultMsg struct {
 
 type shutdownResultMsg struct{ err error }
 type shellFinishedMsg struct{ err error }
+type runExportResultMsg struct {
+	path string
+	err  error
+}
 type backgroundColorMsg struct {
 	dark bool
 	err  error
@@ -202,6 +207,7 @@ type Model struct {
 	logSearcher      *kranzlog.Searcher
 	pinnedSearcher   *kranzlog.Searcher
 	searchInput      textinput.Model
+	exportInput      textinput.Model
 	searchNudge      time.Time
 	currentMatch     int
 	pinnedMatch      int
@@ -217,6 +223,8 @@ type Model struct {
 	runListCursor    int
 	runStatusFilter  string
 	runViewports     map[runViewportKey]runViewportState
+	exportTarget     app.RunTarget
+	exportRun        uint32
 
 	mode       ViewMode
 	width      int
@@ -366,6 +374,7 @@ func NewModelWithOptions(cfg *config.Config, version string, options ModelOption
 		pinnedSearcher:      kranzlog.NewSearcher(),
 		runViewports:        make(map[runViewportKey]runViewportState),
 		searchInput:         newSearchInput(),
+		exportInput:         newRunExportInput(),
 		themeColorInput:     newThemeColorInput(),
 		currentMatch:        -1,
 		pinnedMatch:         -1,
@@ -455,6 +464,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.searchInput, searchCommand = m.searchInput.Update(msg)
 		} else if m.mode == ModeThemes && m.themeColorEditing {
 			m.themeColorInput, searchCommand = m.themeColorInput.Update(msg)
+		} else if m.mode == ModeRunExport {
+			m.exportInput, searchCommand = m.exportInput.Update(msg)
 		}
 		return m, tea.Batch(m.enableMouseTracking(time.Now()), searchCommand)
 	case tea.KeyMsg:
@@ -489,6 +500,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.addNotification("shell", "Returned to Kranz", config.LogInfo)
 		}
 		return m, tea.Batch(tea.ClearScreen, m.probeTerminalBackground(true))
+	case runExportResultMsg:
+		if msg.err != nil {
+			m.addNotification("export", "Run export failed: "+msg.err.Error(), config.LogError)
+		} else {
+			m.addNotification("export", "Run exported to "+msg.path, config.LogInfo)
+		}
+		m.mode = ModeNormal
+		return m, nil
 	case backgroundColorMsg:
 		m.backgroundProbeBusy = false
 		m.lastBackgroundProbe = time.Now()

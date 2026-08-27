@@ -40,9 +40,9 @@ func (m *Manager) monitorProcess(name string, svc *Service, pm *ProcessManager, 
 				svc.SetPID(0)
 				shouldEvaluate = true
 				if m.successfulExit(svc.Config, exitCode) {
-					svc.AppendLog(fmt.Sprintf("[Kranz] Process exited · code %d", exitCode))
+					svc.AppendLog(fmt.Sprintf("[Kranz] Process exited · code %d · %s#%d", exitCode, svc.Name, svc.Run()))
 				} else {
-					svc.AppendLog(fmt.Sprintf("[Kranz] Process failed · exit code %d", exitCode))
+					svc.AppendLog(fmt.Sprintf("[Kranz] Process failed · exit code %d · %s#%d", exitCode, svc.Name, svc.Run()))
 				}
 			}
 			svc.lifecycleMu.Unlock()

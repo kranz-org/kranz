@@ -18,10 +18,18 @@ func runRuns(options kranzcli.GlobalOptions, targets []string, stdout io.Writer)
 	}
 	defer closeClient()
 	runs := filterRuns(client.Runs(), targets)
+	retention := filterRunRetention(client.RunRetention(), targets)
 	if options.Output == kranzcli.OutputJSON {
-		return kranzcli.WriteJSON(stdout, runs)
+		return kranzcli.WriteJSON(stdout, struct {
+			Runs      []app.RunSummary           `json:"runs"`
+			Retention []app.RunRetentionBoundary `json:"retention"`
+		}{Runs: runs, Retention: retention})
 	}
 	w := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
+	for _, boundary := range retention {
+		_, _ = fmt.Fprintf(w, "RETENTION\t%s\toldest #%d\t%d runs / %d entries / %d bytes\tevicted %d runs\n",
+			runTargetName(boundary.Target), boundary.OldestRetainedRun, boundary.MaxRuns, boundary.MaxEntries, boundary.MaxBytes, boundary.EvictedRuns)
+	}
 	_, _ = fmt.Fprintln(w, "RUN\tSTATUS\tSTARTED\tDURATION\tEXIT\tREASON\tINITIATOR\tOUTPUT")
 	for _, run := range runs {
 		exit := "-"
@@ -37,6 +45,23 @@ func runRuns(options kranzcli.GlobalOptions, targets []string, stdout io.Writer)
 			run.StartReason, runInitiator(run), run.Output.State)
 	}
 	return w.Flush()
+}
+
+func filterRunRetention(boundaries []app.RunRetentionBoundary, targets []string) []app.RunRetentionBoundary {
+	if len(targets) == 0 {
+		return boundaries
+	}
+	selected := make(map[string]bool, len(targets))
+	for _, target := range targets {
+		selected[strings.ToLower(target)] = true
+	}
+	result := make([]app.RunRetentionBoundary, 0, len(boundaries))
+	for _, boundary := range boundaries {
+		if selected[strings.ToLower(runTargetName(boundary.Target))] {
+			result = append(result, boundary)
+		}
+	}
+	return result
 }
 
 func runTargetName(target app.RunTarget) string {

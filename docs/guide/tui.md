@@ -118,6 +118,10 @@ runtime. A restart from either is reflected immediately in this TUI.
 | `s` | Start, stop with confirmation, or run a focused action |
 | `r` | Review and confirm a restart |
 | `/` | Search logs with a regular expression |
+| `x` | Toggle Combined/Single run logs |
+| `[` / `]` | Move to the previous/next run |
+| `v` | Open run history; filter and select with keyboard or mouse |
+| `e` / `Shift+E` | Export the selected run to clipboard / a chosen file |
 | `Ctrl+T` | Open the theme and appearance picker |
 | `Ctrl+L` | Reload configuration |
 | `?` | Open help |

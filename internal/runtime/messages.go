@@ -51,6 +51,8 @@ const (
 	methodAcquireInteractiveAction        = "acquireInteractiveAction"
 	methodCompleteInteractiveAction       = "completeInteractiveAction"
 	methodRuns                            = "runs"
+	methodRunRetention                    = "runRetention"
+	methodExportRun                       = "exportRun"
 	methodActionLogs                      = "actionLogs"
 	methodQueryLogs                       = "queryLogs"
 	methodClearLogStreams                 = "clearLogStreams"
@@ -95,6 +97,11 @@ type actionIDRequest struct {
 type actionResultRequest struct {
 	ID  config.ActionID `json:"id"`
 	Run int             `json:"run"`
+}
+
+type exportRunRequest struct {
+	Target app.RunTarget `json:"target"`
+	Run    uint32        `json:"run"`
 }
 
 type reloadRequest struct {
