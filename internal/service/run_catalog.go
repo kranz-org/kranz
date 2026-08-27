@@ -350,8 +350,15 @@ func (c *RunCatalog) update(target RunTarget, run uint32, update func(*RunSummar
 	}
 }
 
+// cloneRunSummary detaches every pointer a summary carries. A caller that
+// holds a summary returned by List or All must not be able to reach back into
+// catalog state that is only safe to touch under the mutex.
 func cloneRunSummary(summary RunSummary) RunSummary {
 	summary.Cause = cloneStateCause(summary.Cause)
+	if summary.ExitCode != nil {
+		exit := *summary.ExitCode
+		summary.ExitCode = &exit
+	}
 	return summary
 }
 

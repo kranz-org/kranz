@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -301,7 +302,17 @@ func (m *Model) handleOverlayMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	switch m.mode {
 	case ModeRunList:
 		runs := m.filteredRunList()
-		for index, run := range runs {
+		// "#1" is a prefix of "#12", and renderedTextHit matches any occurrence
+		// covering the clicked cell. Ascending order therefore let run #1 claim
+		// a click on run #12 as soon as a target had ten runs. Testing the
+		// longest label first makes the most specific row win its own cells.
+		order := make([]int, len(runs))
+		for index := range order {
+			order[index] = index
+		}
+		sort.SliceStable(order, func(i, j int) bool { return runs[order[i]].Run > runs[order[j]].Run })
+		for _, index := range order {
+			run := runs[index]
 			if renderedTextHit(rendered, msg.X, msg.Y, fmt.Sprintf("#%d", run.Run)) {
 				m.runListCursor = index
 				m.saveRunViewport()

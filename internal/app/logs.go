@@ -125,6 +125,10 @@ func queryLogs(local *Local, query LogQuery) (LogResult, error) {
 	if err != nil {
 		return result, err
 	}
+	// An explicit --run is a claim about a specific execution and must fail when
+	// nothing answers it. The implicit -1 below is only a default window, so it
+	// has to stay silent for a target that has simply never run.
+	explicitRun := query.Run
 	if query.DefaultTail > 0 && query.Tail == 0 && query.Since.IsZero() && query.Run == 0 && query.Runs == 0 {
 		allActions := len(targets) > 0 && !slices.ContainsFunc(targets, func(target logTarget) bool { return !target.isAction() })
 		if allActions {
@@ -148,6 +152,11 @@ func queryLogs(local *Local, query LogQuery) (LogResult, error) {
 
 	events := make([]LogEvent, 0)
 	windows := make([]LogStreamWindow, 0, len(targets))
+	// An exact --run address either resolves somewhere or it does not. Reporting
+	// success with no events left a typo, a deleted run, and a run that produced
+	// no output looking identical, which no other selector in this API does.
+	runAddressed := explicitRun == 0
+	retained := make([]string, 0, len(targets))
 	for _, target := range targets {
 		entries := local.Logs(target.service)
 		if target.isAction() {
@@ -156,6 +165,12 @@ func queryLogs(local *Local, query LogQuery) (LogResult, error) {
 		runTarget := serviceRunTargetForLogTarget(target)
 		summaries := local.manager.RunSummaries(runTarget)
 		low, high, selected := selectedRunRange(summaries, query.Run, query.Runs)
+		if explicitRun != 0 {
+			if selected && slices.ContainsFunc(summaries, func(summary RunSummary) bool { return summary.Run == low }) {
+				runAddressed = true
+			}
+			retained = append(retained, describeRetainedRuns(target.address, summaries))
+		}
 		if query.Run != 0 || query.Runs != 0 {
 			entries = filterEntriesByRange(entries, low, high, selected)
 			for _, summary := range summaries {
@@ -198,6 +213,13 @@ func queryLogs(local *Local, query LogQuery) (LogResult, error) {
 				continue
 			}
 			events = append(events, normalizedEvents(target, entry)...)
+		}
+	}
+	if !runAddressed {
+		return LogResult{Generation: project.Generation, Events: []LogEvent{}}, &LogQueryError{
+			Code:    "run_not_retained",
+			Message: fmt.Sprintf("run %s is not retained by anything this query selected", formatRunAddress(explicitRun)),
+			Hint:    "Retained runs: " + strings.Join(retained, "; ") + ".",
 		}
 	}
 	sort.SliceStable(events, func(i, j int) bool {
@@ -328,6 +350,32 @@ func serviceRunTargetForLogTarget(target logTarget) RunTarget {
 		return ActionRunTarget(target.action)
 	}
 	return ServiceRunTarget(target.service)
+}
+
+// formatRunAddress spells a --run value the way the user wrote it, so a
+// negative offset is not silently reported as the absolute number it resolved
+// to — or failed to resolve to.
+func formatRunAddress(run int) string {
+	if run < 0 {
+		return fmt.Sprintf("offset %d", run)
+	}
+	return fmt.Sprintf("#%d", run)
+}
+
+// describeRetainedRuns names what one stream can still answer for, so the error
+// tells the user where to aim next instead of only that they missed.
+func describeRetainedRuns(address string, summaries []RunSummary) string {
+	if len(summaries) == 0 {
+		return address + " has no retained runs"
+	}
+	low, high := summaries[0].Run, summaries[0].Run
+	for _, summary := range summaries {
+		low, high = min(low, summary.Run), max(high, summary.Run)
+	}
+	if low == high {
+		return fmt.Sprintf("%s #%d", address, low)
+	}
+	return fmt.Sprintf("%s #%d-#%d", address, low, high)
 }
 
 func selectedRunRange(summaries []RunSummary, run, runs int) (low, high uint32, ok bool) {

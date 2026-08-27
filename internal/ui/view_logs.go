@@ -61,12 +61,16 @@ func (m *Model) renderActionLogPanel(width, height int) string {
 	if !exists {
 		return renderTitledPanel(m.panelStyle(panelLogs), m.panelTitleStyle(panelLogs), contentWidth, contentHeight, "[3] ACTION OUTPUT", []string{"", "Select an action"})
 	}
-	selectedRun, state, lines := m.actionLogContent(id, action, state)
-	name := actionRunName(id.Name, selectedRun)
-	title := "[3] ACTION OUTPUT" + ContextBarStyle.Render(" │ ") + actionStatusIndicator(state.Status) + " " + ServiceNameStyle.Render(name) + ContextBarStyle.Render(" · "+state.Status.String())
+	_, state, lines := m.actionLogContent(id, action, state)
+	// The run label already names the run, so a "stats#3" suffix restated it —
+	// and in combined mode it named one run while the panel showed all of them.
+	// The status word trails the label rather than preceding it: an action's
+	// word appears for exactly as long as the run lasts, so in front of the
+	// label it shifted the run position sideways on every single invocation.
+	title := "[3] ACTION OUTPUT" + ContextBarStyle.Render(" │ ") + actionStatusIndicator(state.Status) + " " + ServiceNameStyle.Render(id.Name)
 	title += ContextBarStyle.Render(" · ") + RunningBadgeStyle.Render(m.runViewLabel())
-	if state.Status == app.ActionRunning {
-		title += StartingBadgeStyle.Render(" RUNNING")
+	if word := actionStatusWord(state.Status); word != "" {
+		title += ContextBarStyle.Render(" · ") + word
 	}
 	if len(lines) == 0 {
 		return renderTitledPanel(m.panelStyle(panelLogs), m.panelTitleStyle(panelLogs), contentWidth, contentHeight, title, []string{"", ContextBarStyle.Render("Press s to run this action")})
@@ -226,6 +230,10 @@ func (m *Model) renderLogPanelMode(svc *app.ServiceSnapshot, width, height int, 
 	}
 
 	visualState := m.serviceVisualState(svc)
+	runLabel := m.pinnedRunViewLabel()
+	if !pinned {
+		runLabel = m.runViewLabel()
+	}
 	title := titlePrefix + ContextBarStyle.Render(" │ ") + serviceStatusIndicator(visualState) + " " + ServiceNameStyle.Render(svc.Name) +
 		ContextBarStyle.Render(" · "+strings.ToLower(serviceStatusLabel(svc.State.Status, visualState)))
 	if !followMode {
@@ -240,10 +248,6 @@ func (m *Model) renderLogPanelMode(svc *app.ServiceSnapshot, width, height int, 
 	}
 	if m.showLogTime {
 		title += " " + RunningBadgeStyle.Render("TIME")
-	}
-	runLabel := m.pinnedRunViewLabel()
-	if !pinned {
-		runLabel = m.runViewLabel()
 	}
 
 	sourceEntries := m.app.Logs(svc.Name)
@@ -268,6 +272,10 @@ func (m *Model) renderLogPanelMode(svc *app.ServiceSnapshot, width, height int, 
 		}
 		title += SearchInputStyle.Render(fmt.Sprintf("  %s /%s/ · %d", modeLabel, searcher.Pattern(), len(searchMatches)))
 	}
+	// The run label keeps the trailing slot it has always had. The title
+	// truncates from the right, and at a narrow width the badges ahead of it —
+	// BROWSING, PAUSED, and the search pattern — are what explain a viewport
+	// that has stopped moving, so they are the ones that must survive.
 	title += ContextBarStyle.Render(" · ") + RunningBadgeStyle.Render(runLabel)
 	matchSet := make(map[int]bool, len(searchMatches))
 	for _, idx := range searchMatches {

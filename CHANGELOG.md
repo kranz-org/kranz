@@ -4,6 +4,8 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-08-28
+
 ### Added
 
 - Stable absolute `SERVICE#N` and `OWNER/ACTION#N` identities across the TUI,
@@ -40,8 +42,42 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
   while output always prints the absolute `#N` identity. A retained run whose
   prefix was evicted reports exact missing lines and bytes before its tail.
 
+- Run view labels are a fraction instead of a phrase: `ALL RUNS`, `RUN #3/3`,
+  and `RUN #2/3 · [L] LATEST` replace `ALL RUNS · INCLUDES NEW`,
+  `LATEST RUN #3`, and `HISTORY · RUN #2 · 1 NEWER · [L] LATEST`. The words
+  LATEST, HISTORY, and "N NEWER" each restated what the fraction already says.
+- The action output title no longer repeats the run number in the target name,
+  which in combined mode named a single run while the panel showed all of them,
+  and no longer prints "succeeded" beside the `✓` that already means it. A word
+  appears only where the indicator cannot carry the outcome: `×` covers both
+  failed and timed out. That word now trails the run label instead of preceding
+  it, so starting and finishing a run no longer slides the run position
+  sideways under the cursor.
+- The run list's filter moved into the `[Tab]` shortcut and is offered only
+  when a filter would divide the list, and retention budgets appear only
+  alongside a gap they explain, in readable units. On an intact history both
+  lines only reported that nothing had been lost.
+
 ### Fixed
 
+- The TUI run list now windows itself to the terminal height and shows a
+  `position/total` indicator. A target retains up to a hundred runs, and the
+  unwindowed modal grew past the screen, so the overlay clipped the selection
+  and the shortcut footer while the cursor kept moving invisibly.
+- Clicking a run in the run list now selects that run rather than one whose
+  number is a prefix of it, so `#12` is no longer read as `#1`.
+- The run list's `Tab` cycle now offers only the filters the focused target's
+  history can satisfy. Services and actions use disjoint status vocabularies —
+  a service that exits cleanly is `stopped` and never `succeeded` — so the
+  fixed cycle always contained options that could match nothing.
+- `logs --run N` for a run that is not retained now fails with
+  `run_not_retained` and names the range each selected stream can answer for.
+  Returning an empty success made a typo, a deleted run, and a run that
+  produced no output indistinguishable.
+- `kranz runs` prints retention and run summaries as two separate tables. They
+  share no columns, and one tabwriter stretched the run table's `DURATION`
+  column to fit a retention budget string. A target with no retained runs now
+  shows `-` instead of `#0`.
 - Run labels and action status separators are visually cleaner, the run catalog
   has an explicit column header, and the shortcut reference is narrower,
   shorter, and gives section headings a distinct neutral hierarchy.

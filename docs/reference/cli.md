@@ -233,6 +233,11 @@ run, catalog/output budgets, evicted summary count, provenance, and output
 state (`complete`, `partial`, or `unavailable`). The catalog belongs to the
 live runtime session and is not restored after `down`.
 
+An explicit `--run` that nothing retains exits `4` with `run_not_retained` and
+names the range each selected stream can answer for, so a typo, a deleted run,
+and a run that produced no output stay distinguishable. `--runs N` is a window
+rather than an address and stays silent when it overlaps the start of history.
+
 ### Actions
 
 ```bash
@@ -317,7 +322,7 @@ not successful booleans.
 | `1` | Internal error, or an action that ran and failed |
 | `2` | Usage error — unknown command, missing or malformed argument |
 | `3` | Configuration error, including a failed `doctor` |
-| `4` | Not found — no such runtime, service, action, or selector |
+| `4` | Not found — no such runtime, service, action, selector, or retained run |
 | `5` | Conflict — a runtime with that name is already active, or a file exists |
 | `6` | Runtime unavailable — unreachable, incompatible, or a refused force-down |
 

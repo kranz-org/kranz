@@ -117,7 +117,7 @@ Stable causal codes include `selector_not_found`, `service_unavailable`,
 `interactive_action`, `confirmation_required`, `confirmation_expired`,
 `confirmation_plan_changed`, `action_busy`, `action_failed`,
 `action_timed_out`, `action_cancelled`, `wait_timeout`, `wait_cancelled`,
-`run_not_found`, `run_active`,
+`run_not_found`, `run_active`, `run_not_retained`,
 `dependency_blocked`, `terminal_failure`, `port_conflict`, `prerequisite_failed`,
 `no_run_streams`,
 `invalid_cursor`, `invalid_change_query`, and `invalid_change_kind`.

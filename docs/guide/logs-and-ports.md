@@ -21,6 +21,60 @@ The log panels support:
 - pause/follow mode and unread counters;
 - a pinned service above the currently focused log panel.
 
+## Run history
+
+Every start of a service and every invocation of an action is a numbered *run*.
+Run numbers are assigned once and never reused, so `api#4` keeps addressing the
+same execution after later runs age out of the buffer.
+
+Kranz retains a bounded catalog of run summaries per target, independently of
+the log buffer. A noisy service can only evict its own history, never another
+target's.
+
+```bash
+kranz runs                          # every retained run, with retention budgets
+kranz runs api analytics/stats      # narrow to one or more targets
+kranz logs api --run 4              # only run #4
+kranz logs api --run -1             # the newest run
+kranz logs api --runs 3             # the last three runs
+```
+
+A run summary records how the run ended and who started it: exit code,
+duration, the structured cause of a state, the surface that initiated it
+(`tui`, `cli`, `mcp`, or `runtime`), and why (`first_start`, `manual_start`,
+`invoked`, and so on). Client labels are short product names, never socket,
+process, or user identifiers.
+
+Addressing a run that is not retained is an error rather than empty output, and
+the message names the range each selected stream can still answer for:
+
+```
+$ kranz logs api --run 99
+Kranz: run #99 is not retained by anything this query selected.
+Retained runs: api #7-#12.
+```
+
+The catalog and the log buffer have separate budgets, so a run's summary can
+outlive its output. When that happens the run reports `partial` or
+`unavailable` output with exactly how many lines and bytes are missing, instead
+of presenting a shortened log as if it were complete.
+
+In the TUI, `v` opens the run history for the focused service or action. `x`
+switches between all runs and a single run, `[` and `]` step through history,
+`Shift+F` jumps to the previous failed run, and `l` returns to the latest.
+`Shift+3` pins a run so it stays frozen while the live panel keeps moving.
+See [Controls](../reference/controls) for the complete list.
+
+Retention is per session. A run summary and its output can also be dropped
+explicitly:
+
+```bash
+kranz runs delete api#4 --confirm
+```
+
+Deleting a run never reuses its number and never touches the transition
+journal, so history stays honest about what happened.
+
 ## Declared ports
 
 ```yaml

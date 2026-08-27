@@ -641,6 +641,10 @@ const (
 	// Gutter a flush modal keeps on the right, matching the indent its content
 	// carries on the left.
 	modalSideMargin = 2
+	// Rows ModalStyle's vertical padding adds above and below modal content.
+	// A modal that windows its own body has to subtract these from m.height,
+	// because placeOverlay clips whatever does not fit rather than scrolling.
+	modalVerticalChrome = 4
 )
 
 // renderThemeControlRows lays the picker's key hints out as two columns. The

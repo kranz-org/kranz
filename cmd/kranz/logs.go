@@ -164,7 +164,10 @@ func classifyLogQueryError(err error) error {
 	var queryErr *app.LogQueryError
 	if errors.As(err, &queryErr) {
 		exit := kranzcli.ExitUsage
-		if queryErr.Code == "selector_not_found" || queryErr.Code == "action_not_found" || queryErr.Code == "group_has_no_stream" {
+		// run_not_retained is an address that resolved to nothing, the same
+		// class of failure as naming a service that does not exist.
+		if queryErr.Code == "selector_not_found" || queryErr.Code == "action_not_found" ||
+			queryErr.Code == "group_has_no_stream" || queryErr.Code == "run_not_retained" {
 			exit = kranzcli.ExitNotFound
 		}
 		return &kranzcli.Error{Code: queryErr.Code, Message: queryErr.Message, Hint: queryErr.Hint, ExitCode: exit}

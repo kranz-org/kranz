@@ -99,11 +99,28 @@ func runRuns(options kranzcli.GlobalOptions, targets []string, stdout io.Writer)
 			Retention []app.RunRetentionBoundary `json:"retention"`
 		}{Runs: runs, Retention: retention})
 	}
-	w := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
-	for _, boundary := range retention {
-		_, _ = fmt.Fprintf(w, "RETENTION\t%s\toldest #%d\t%d runs / %d entries / %d bytes\tevicted %d runs\n",
-			runTargetName(boundary.Target), boundary.OldestRetainedRun, boundary.MaxRuns, boundary.MaxEntries, boundary.MaxBytes, boundary.EvictedRuns)
+	// The two tables describe different things and share no columns. One
+	// tabwriter aligned them against each other, so a long budget string
+	// stretched the run table's DURATION column across half the terminal.
+	if len(retention) > 0 {
+		rw := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
+		_, _ = fmt.Fprintln(rw, "TARGET\tOLDEST\tBUDGETS\tEVICTED")
+		for _, boundary := range retention {
+			oldest := "-"
+			if boundary.OldestRetainedRun > 0 {
+				oldest = fmt.Sprintf("#%d", boundary.OldestRetainedRun)
+			}
+			_, _ = fmt.Fprintf(rw, "%s\t%s\t%d runs / %d entries / %s\t%d runs\n",
+				runTargetName(boundary.Target), oldest, boundary.MaxRuns, boundary.MaxEntries, formatRunBytes(boundary.MaxBytes), boundary.EvictedRuns)
+		}
+		if err := rw.Flush(); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintln(stdout); err != nil {
+			return err
+		}
 	}
+	w := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(w, "RUN\tSTATUS\tSTARTED\tDURATION\tEXIT\tREASON\tINITIATOR\tOUTPUT")
 	for _, run := range runs {
 		exit := "-"
@@ -136,6 +153,20 @@ func filterRunRetention(boundaries []app.RunRetentionBoundary, targets []string)
 		}
 	}
 	return result
+}
+
+// formatRunBytes keeps a budget readable in the text table. JSON output keeps
+// the exact byte count, which is what a machine reader needs.
+func formatRunBytes(bytes uint64) string {
+	switch {
+	case bytes >= 1<<30:
+		return fmt.Sprintf("%.3g GB", float64(bytes)/(1<<30))
+	case bytes >= 1<<20:
+		return fmt.Sprintf("%.3g MB", float64(bytes)/(1<<20))
+	case bytes >= 1<<10:
+		return fmt.Sprintf("%.3g KB", float64(bytes)/(1<<10))
+	}
+	return fmt.Sprintf("%d B", bytes)
 }
 
 func runTargetName(target app.RunTarget) string {

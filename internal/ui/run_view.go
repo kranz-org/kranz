@@ -2,6 +2,8 @@ package ui
 
 import (
 	"fmt"
+	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -220,21 +222,26 @@ func (m *Model) runSummary(target app.RunTarget, run uint32) (app.RunSummary, bo
 	return app.RunSummary{}, false
 }
 
+// runViewLabel names the history position. "RUN #2/3" carries the identity,
+// the distance from the newest run, and the fact that a newer one exists, so
+// the words LATEST, HISTORY, and "N NEWER" that used to spell those out are
+// three restatements of one fraction.
 func (m *Model) runViewLabel() string {
 	if !m.syncRunTarget() || m.runMode == runViewCombined {
-		return "ALL RUNS · INCLUDES NEW"
+		return "ALL RUNS"
 	}
 	latest := latestRun(m.runsForTarget(m.runTarget))
-	if latest == 0 {
+	switch {
+	case latest == 0:
 		return "NO RUNS YET"
+	case m.selectedRun > latest:
+		// Defensive: a fraction whose numerator exceeds its denominator would
+		// read as a bug rather than as a position.
+		return fmt.Sprintf("RUN #%d", m.selectedRun)
+	case m.selectedRun == latest:
+		return fmt.Sprintf("RUN #%d/%d", m.selectedRun, latest)
 	}
-	if m.selectedRun == latest {
-		return fmt.Sprintf("LATEST RUN #%d", m.selectedRun)
-	}
-	if latest > m.selectedRun {
-		return fmt.Sprintf("HISTORY · RUN #%d · %d NEWER · [L] LATEST", m.selectedRun, latest-m.selectedRun)
-	}
-	return fmt.Sprintf("HISTORY · RUN #%d", m.selectedRun)
+	return fmt.Sprintf("RUN #%d/%d · [L] LATEST", m.selectedRun, latest)
 }
 
 func runTargetLabel(target app.RunTarget) string {
@@ -248,7 +255,7 @@ func (m *Model) pinnedRunViewLabel() string {
 	if m.pinnedRunMode == runViewSingle {
 		return fmt.Sprintf("FROZEN · RUN #%d", m.pinnedRun)
 	}
-	return fmt.Sprintf("FROZEN · RUNS THROUGH #%d", m.pinnedRun)
+	return fmt.Sprintf("FROZEN · RUNS ≤ #%d", m.pinnedRun)
 }
 
 func (m *Model) pinnedEntries(target app.RunTarget) []config.LogEntry {
@@ -324,9 +331,10 @@ func (m *Model) renderPinnedActionRunPanel(target app.RunTarget, width, height i
 }
 
 func (m *Model) openRunList() {
-	if !m.syncRunTarget() || len(m.filteredRunList()) == 0 {
+	if !m.syncRunTarget() || len(m.runsForTarget(m.runTarget)) == 0 {
 		return
 	}
+	m.normalizeRunStatusFilter()
 	m.runListCursor = 0
 	runs := m.filteredRunList()
 	for index := range runs {
@@ -339,16 +347,75 @@ func (m *Model) openRunList() {
 
 func (m *Model) filteredRunList() []app.RunSummary {
 	runs := m.runsForTarget(m.runTarget)
-	if m.runStatusFilter == "" || m.runStatusFilter == "all" {
+	if m.runStatusFilter == "" || m.runStatusFilter == runFilterAll {
 		return runs
 	}
 	filtered := make([]app.RunSummary, 0)
 	for _, run := range runs {
-		if m.runStatusFilter == "failed" && runFailed(run) || strings.EqualFold(run.Status, m.runStatusFilter) {
+		if m.runStatusFilter == runFilterFailed && runFailed(run) || strings.EqualFold(run.Status, m.runStatusFilter) {
 			filtered = append(filtered, run)
 		}
 	}
 	return filtered
+}
+
+const (
+	runFilterAll    = "all"
+	runFilterFailed = "failed"
+)
+
+// runStatusFilters lists only the filters that actually divide the focused
+// target's history. Two things made the old fixed cycle useless. Services and
+// actions use disjoint status vocabularies — a service that exits cleanly is
+// "stopped" and never "succeeded" — so half the cycle was dead on whichever
+// kind was focused. And a filter every run matches narrows nothing: on three
+// successful actions, "succeeded" showed the same three rows as "all".
+// A filter earns its place only by selecting a proper, non-empty subset.
+func (m *Model) runStatusFilters() []string {
+	runs := m.runsForTarget(m.runTarget)
+	candidates := make([]string, 0, 5)
+	if slices.ContainsFunc(runs, runFailed) {
+		candidates = append(candidates, runFilterFailed)
+	}
+	statuses := make([]string, 0, 4)
+	seen := map[string]bool{}
+	for _, run := range runs {
+		status := strings.ToLower(strings.TrimSpace(run.Status))
+		if status == "" || status == runFilterFailed || seen[status] {
+			continue
+		}
+		seen[status] = true
+		statuses = append(statuses, status)
+	}
+	sort.Strings(statuses)
+	candidates = append(candidates, statuses...)
+
+	filters := []string{runFilterAll}
+	for _, candidate := range candidates {
+		if matched := m.runsMatchingFilter(runs, candidate); matched > 0 && matched < len(runs) {
+			filters = append(filters, candidate)
+		}
+	}
+	return filters
+}
+
+func (m *Model) runsMatchingFilter(runs []app.RunSummary, filter string) int {
+	matched := 0
+	for _, run := range runs {
+		if filter == runFilterFailed && runFailed(run) || strings.EqualFold(run.Status, filter) {
+			matched++
+		}
+	}
+	return matched
+}
+
+// normalizeRunStatusFilter drops a filter that the current history can no
+// longer offer, so reopening the list after the runs changed never lands on a
+// filter whose only possible result is "No runs match this filter".
+func (m *Model) normalizeRunStatusFilter() {
+	if !slices.Contains(m.runStatusFilters(), m.runStatusFilter) {
+		m.runStatusFilter = runFilterAll
+	}
 }
 
 func (m *Model) handleRunListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -359,13 +426,8 @@ func (m *Model) handleRunListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Down):
 		m.runListCursor = min(max(0, len(runs)-1), m.runListCursor+1)
 	case msg.String() == "tab":
-		filters := []string{"all", "running", "succeeded", "failed", "stopped"}
-		index := 0
-		for i := range filters {
-			if filters[i] == m.runStatusFilter {
-				index = i
-			}
-		}
+		filters := m.runStatusFilters()
+		index := max(0, slices.Index(filters, m.runStatusFilter))
 		m.runStatusFilter = filters[(index+1)%len(filters)]
 		m.runListCursor = 0
 	case msg.String() == "enter":
@@ -393,17 +455,12 @@ func (m *Model) handleRunListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m *Model) renderRunListView() string {
 	runs := m.filteredRunList()
-	filter := m.runStatusFilter
-	if filter == "" {
-		filter = "all"
-	}
-	lines := []string{ModalTitleStyle.Render(" Run history "), "", ContextBarStyle.Render("  Filter: " + filter + " · Tab changes filter"), ""}
-	for _, boundary := range m.app.RunRetention() {
-		if boundary.Target == m.runTarget {
-			lines = append(lines, ContextBarStyle.Render(fmt.Sprintf("  Oldest retained #%d · budgets %d runs / %d entries / %d bytes · evicted %d summaries",
-				boundary.OldestRetainedRun, boundary.MaxRuns, boundary.MaxEntries, boundary.MaxBytes, boundary.EvictedRuns)), "")
-			break
-		}
+	lines := []string{ModalTitleStyle.Render(" Run history · " + runTargetLabel(m.runTarget)), ""}
+	// Retention is an exception report, not a permanent header. While nothing
+	// has been lost, the budgets only told the user that nothing had been lost,
+	// in ninety characters. They appear when they explain a gap.
+	if notice := m.runRetentionNotice(); notice != "" {
+		lines = append(lines, ContextBarStyle.Render("  "+notice), "")
 	}
 	if len(runs) == 0 {
 		lines = append(lines, "  No runs match this filter")
@@ -411,7 +468,13 @@ func (m *Model) renderRunListView() string {
 		lines = append(lines, DetailLabelStyle.Render(fmt.Sprintf("  %-5s %-10s  %-8s  %8s  %-8s  %-18s  %-18s  %s",
 			"RUN", "STATUS", "START", "DURATION", "EXIT", "REASON", "INITIATOR", "OUTPUT")))
 	}
-	for index, run := range runs {
+	// A target retains up to RunRetention().MaxRuns summaries, far more than any
+	// terminal can show. Without a window the modal grew past m.height, the
+	// overlay clipped the bottom, and the cursor and the shortcut footer both
+	// vanished — the list looked frozen while the selection kept moving.
+	start, visible, windowed := runListWindow(len(runs), m.runListCursor, m.runListCapacity(len(lines)))
+	for index := start; index < start+visible; index++ {
+		run := runs[index]
 		exit := "-"
 		if run.ExitCode != nil {
 			exit = fmt.Sprint(*run.ExitCode)
@@ -431,8 +494,93 @@ func (m *Model) renderRunListView() string {
 		}
 		lines = append(lines, line)
 	}
-	lines = append(lines, "", renderModalShortcuts("  [↑/↓] Select  [Enter] Open run  [d] Delete  [Tab] Filter  [Esc] Close", lipgloss.NewStyle().Foreground(ColorDim)))
+	if windowed {
+		lines = append(lines, "  "+ContextBarStyle.Render(fmt.Sprintf("%d/%d", m.runListCursor+1, len(runs))))
+	}
+	// The filter belongs with the key that changes it. As its own header line it
+	// spent a row restating "all" on the common path where nothing is filtered.
+	shortcuts := "  [↑/↓] Select  [Enter] Open run  [d] Delete"
+	if filters := m.runStatusFilters(); len(filters) > 1 {
+		filter := m.runStatusFilter
+		if filter == "" {
+			filter = runFilterAll
+		}
+		shortcuts += "  [Tab] " + filter
+	}
+	lines = append(lines, "", renderModalShortcuts(shortcuts+"  [Esc] Close", lipgloss.NewStyle().Foreground(ColorDim)))
 	return m.placeOverlay(renderFlushModal(strings.Join(lines, "\n")))
+}
+
+// runRetentionNotice describes what this target has already lost, and returns
+// empty while it has lost nothing. The budgets are named only alongside a real
+// gap, where they are the explanation for it rather than trivia.
+func (m *Model) runRetentionNotice() string {
+	var boundary app.RunRetentionBoundary
+	for _, candidate := range m.app.RunRetention() {
+		if candidate.Target == m.runTarget {
+			boundary = candidate
+			break
+		}
+	}
+	parts := make([]string, 0, 2)
+	if boundary.EvictedRuns > 0 {
+		parts = append(parts, fmt.Sprintf("%d older %s dropped · oldest kept #%d of %d",
+			boundary.EvictedRuns, pluralRuns(boundary.EvictedRuns), boundary.OldestRetainedRun, boundary.MaxRuns))
+	}
+	var missingLines uint64
+	incomplete := 0
+	for _, run := range m.runsForTarget(m.runTarget) {
+		if run.Output.MissingLines > 0 {
+			incomplete++
+			missingLines += run.Output.MissingLines
+		}
+	}
+	if incomplete > 0 {
+		parts = append(parts, fmt.Sprintf("%d %s missing output · %d lines lost to the %s buffer",
+			incomplete, pluralRuns(uint64(incomplete)), missingLines, formatBytes(boundary.MaxBytes)))
+	}
+	return strings.Join(parts, "   ")
+}
+
+func pluralRuns(count uint64) string {
+	if count == 1 {
+		return "run"
+	}
+	return "runs"
+}
+
+// formatBytes keeps a budget readable: "4 MB" is a size, "4194304 bytes" is a
+// number the reader has to divide before it means anything.
+func formatBytes(bytes uint64) string {
+	switch {
+	case bytes >= 1<<30:
+		return fmt.Sprintf("%.3g GB", float64(bytes)/(1<<30))
+	case bytes >= 1<<20:
+		return fmt.Sprintf("%.3g MB", float64(bytes)/(1<<20))
+	case bytes >= 1<<10:
+		return fmt.Sprintf("%.3g KB", float64(bytes)/(1<<10))
+	}
+	return fmt.Sprintf("%d B", bytes)
+}
+
+// runListCapacity is the number of run rows the modal can show once the header
+// rows already collected, the trailing blank and shortcut rows, and the modal's
+// own vertical padding are subtracted from the terminal height.
+func (m *Model) runListCapacity(headerLines int) int {
+	const trailingRows = 2 // the blank separator and the shortcut footer
+	return max(1, m.height-modalVerticalChrome-headerLines-trailingRows)
+}
+
+// runListWindow centres a capacity-sized window on the cursor and reports
+// whether the list had to be windowed at all. When it did, one row is given
+// back to the position indicator so the footer keeps its place.
+func runListWindow(total, cursor, capacity int) (start, visible int, windowed bool) {
+	if total <= capacity {
+		return 0, total, false
+	}
+	visible = max(1, capacity-1) // the position indicator row
+	start = max(0, min(cursor-visible/2, total-visible))
+	return start, visible, true
 }
 
 func (m *Model) renderConfirmDeleteRunView() string {

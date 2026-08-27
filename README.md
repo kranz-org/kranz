@@ -43,8 +43,8 @@ changes immediately in the open TUI; none of these views starts a second stack.
 ### Coding agents join your live session
 
 Kranz MCP gives a coding agent the same services, actions, readiness, ports,
-and bounded logs visible in the TUI. It attaches to the existing runtime instead
-of starting a second development stack.
+bounded logs, and numbered run history visible in the TUI. It attaches to the
+existing runtime instead of starting a second development stack.
 
 - **One runtime** — TUI, CLI, and MCP use the same supervisor.
 - **One view of the project** — the same selectors, action runs, and logs.
@@ -98,6 +98,8 @@ kranz config check
 kranz up -d
 kranz status
 kranz logs api --tail 20
+kranz runs api
+kranz logs api --run -1
 kranz restart api
 kranz down
 ```
@@ -118,6 +120,8 @@ for every command, option, output contract, and exit code.
 - Prerequisites that must succeed before a service starts
 - Runtime port discovery and ownership-aware conflict handling
 - Searchable, pinnable, timestamped logs in a keyboard and mouse TUI
+- Bounded per-service and per-action run history with provenance, exact output
+  retention state, navigation, deletion, and export
 - Procfile, native YAML, and conservative Process Compose loading
 - Live configuration reload with last-known-good fallback
 

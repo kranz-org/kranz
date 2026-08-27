@@ -419,3 +419,19 @@ func containsTagStr(tags []string, tag string) bool {
 	}
 	return false
 }
+
+// actionStatusWord spells an outcome only where the indicator glyph cannot.
+// "✓" and "succeeded" are the same statement, and a running action already
+// carries its own badge, but "×" covers both failed and timed_out, so those
+// still need the word to stay distinguishable.
+func actionStatusWord(status app.ActionStatus) string {
+	switch status {
+	case app.ActionSucceeded, app.ActionReady:
+		return ""
+	case app.ActionRunning:
+		return StartingBadgeStyle.Render("RUNNING")
+	case app.ActionFailed, app.ActionTimedOut, app.ActionCancelled:
+		return FailedBadgeStyle.Render(strings.ToUpper(status.String()))
+	}
+	return ContextBarStyle.Render(status.String())
+}

@@ -56,16 +56,37 @@ directions.
 | `Shift+3` | Pin the selected `{target, run, view mode}` snapshot |
 | `e` / `Shift+E` | Export selected run to clipboard / chosen file |
 
-The log header names the history position explicitly: `ALL RUNS · INCLUDES NEW`
-keeps accepting new runs, `LATEST RUN #N` shows the newest run in isolation,
-and `HISTORY · RUN #N` means a newer run exists. A pinned panel is frozen and
-shows `Shift+3 UNPIN` in its title; while any pin exists the footer starts with
-`[Shift+3] unpin`, and the shortcut works from every panel.
+The log header names the history position as a fraction. `ALL RUNS` accepts new
+output, `RUN #3/3` is the newest run in isolation, and `RUN #2/3 · [L] LATEST`
+is an older one — the numerator is the run's absolute identity and the
+denominator is the newest run, so the position, the distance from the end, and
+the existence of newer runs are one reading rather than three phrases. The
+panel title names the target once; it does not repeat the run number the label
+already carries. A pinned panel is frozen and shows `Shift+3 UNPIN` in its
+title; while any pin exists the footer starts with `[Shift+3] unpin`, and the
+shortcut works from every panel.
 
-`LATEST RUN` follows future starts automatically. Choosing an older run with
-`[`, the catalog, or previous-failed navigation enters `HISTORY`; that explicit
-selection remains stable until `l` returns to the latest run. The all-runs view
-scrolls across the complete retained output of service and action runs.
+An action's outcome is the status indicator. The word appears after the run
+label, and only where the glyph cannot carry the difference: `×` covers both
+`FAILED` and `TIMED_OUT`, while `✓` and "succeeded" would say the same thing
+twice. Keeping the word behind the label matters because it exists only while a
+run is live — in front of the label it moved the run position on every start
+and every finish.
+
+The run list windows itself to the terminal and shows a `position/total`
+indicator when the history is longer than the window, so the selected row and
+the shortcut footer stay visible however far back the selection is. Its
+`[Tab]` shortcut carries the active filter and appears only when a filter would
+actually divide the list: a candidate is offered only if it selects some but
+not all retained runs, so three successful actions have nothing to filter and
+one failure among them makes `failed` worth offering. Retention budgets are
+shown only alongside a gap they explain — dropped summaries, or runs whose
+output the buffer no longer holds.
+
+`RUN #N/N` follows future starts automatically. Choosing an older run with `[`,
+the catalog, or previous-failed navigation pins the selection; it remains
+stable until `l` returns to the latest run. The all-runs view scrolls across
+the complete retained output of service and action runs.
 
 The in-app `?` reference is a compact, scrollable single column split into
 Navigation, Services & Actions, Logs & Run History, Log Search, Appearance, and

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -205,5 +206,40 @@ func TestQueryLogsResolvesLatestFromCatalogAndReportsExactRetentionGap(t *testin
 		if event.Run != 1 {
 			t.Fatalf("latest catalog run returned #%d", event.Run)
 		}
+	}
+}
+
+func TestQueryLogsFailsOnAnUnaddressableExplicitRun(t *testing.T) {
+	local := logQueryTestLocal(t)
+	id, _ := findActionID(local.Config(), "api/migrate")
+	if _, err := local.RunAction(context.Background(), id); err != nil {
+		t.Fatal(err)
+	}
+
+	// A run that was never assigned, and an offset past the retained history,
+	// must both be reported. Returning an empty success made a typo, a deleted
+	// run, and a silent run indistinguishable.
+	for _, run := range []int{99, -9} {
+		result, err := local.QueryLogs(LogQuery{Selectors: []string{"api/migrate"}, Run: run})
+		var queryErr *LogQueryError
+		if !errors.As(err, &queryErr) || queryErr.Code != "run_not_retained" {
+			t.Fatalf("run %d = %#v, %v; want a run_not_retained error", run, result, err)
+		}
+		if !strings.Contains(queryErr.Hint, "api/migrate #1") {
+			t.Fatalf("run %d hint = %q, want the retained range", run, queryErr.Hint)
+		}
+	}
+
+	// A target that has simply never run keeps the implicit action default
+	// silent: only an explicit address is a claim that has to resolve.
+	quiet, err := local.QueryLogs(LogQuery{Selectors: []string{"analytics/stats"}, DefaultTail: 200})
+	if err != nil || len(quiet.Events) != 0 {
+		t.Fatalf("action default without runs = %#v, %v", quiet, err)
+	}
+
+	// One retained target is enough for a multi-target address to succeed.
+	both, err := local.QueryLogs(LogQuery{Selectors: []string{"api/migrate", "analytics/stats"}, Run: 1})
+	if err != nil || len(both.Events) == 0 {
+		t.Fatalf("run 1 across a retained and an unrun target = %#v, %v", both, err)
 	}
 }
