@@ -217,6 +217,7 @@ kranz logs analytics/stats --runs 3       # the last three runs
 kranz logs api --run -1                   # only the newest start of a service
 kranz runs                                # bounded catalog and retention limits
 kranz runs api analytics/stats            # narrow catalog by target
+kranz runs delete api#4 --confirm         # delete one completed run and retained output
 ```
 
 Every line carries its stable absolute identity (`api#7` or

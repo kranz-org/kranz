@@ -14,6 +14,7 @@ modal actions, search controls, and the theme picker.
 | `Tab` / `Shift+Tab` | Focus next or previous panel |
 | `↑` / `↓`, `j` / `k` | Navigate or scroll |
 | `Shift+3` | Pin the current run, or unpin the existing view from any panel |
+| `d` | Delete the selected completed run from Run history after confirmation |
 | `Enter` | Expand/collapse tags, services, actions, or action groups |
 
 ## Lifecycle and actions

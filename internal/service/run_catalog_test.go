@@ -1,6 +1,8 @@
 package service
 
 import (
+	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -215,5 +217,53 @@ func TestRunCatalogPublishesOldestBoundaryAfterSummaryEviction(t *testing.T) {
 	boundary := catalog.Boundaries()[0]
 	if boundary.OldestRetainedRun != 2 || boundary.EvictedRuns != 1 || boundary.MaxRuns != 2 {
 		t.Fatalf("boundary = %+v", boundary)
+	}
+}
+
+func TestManagerDeletesCompletedActionRunAndNeverReusesItsNumber(t *testing.T) {
+	id := config.ActionID{OwnerKind: config.ActionOwnerService, Owner: "api", Name: "check"}
+	manager := NewManager(&config.Config{Services: map[string]config.Service{
+		"api": {Command: "true", Actions: map[string]config.Action{"check": {Command: "printf first", Shell: "/bin/sh"}}},
+	}})
+	for range 2 {
+		if _, err := manager.RunAction(t.Context(), id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	target := ActionRunTarget(id)
+	deleted, err := manager.DeleteRun(target, 2)
+	if err != nil || deleted.Run != 2 {
+		t.Fatalf("DeleteRun = %+v, %v", deleted, err)
+	}
+	if runs := manager.RunSummaries(target); len(runs) != 1 || runs[0].Run != 1 {
+		t.Fatalf("remaining runs = %#v", runs)
+	}
+	if entries := manager.ActionLogs(id); slices.ContainsFunc(entries, func(entry config.LogEntry) bool { return entry.Run == 2 }) {
+		t.Fatalf("deleted output remains: %#v", entries)
+	}
+	latest, err := manager.ActionResult(id, -1)
+	if err != nil || latest.Run != 1 {
+		t.Fatalf("latest retained result = %+v, %v", latest, err)
+	}
+	result, err := manager.RunAction(t.Context(), id)
+	if err != nil || result.Run != 3 {
+		t.Fatalf("next result = %+v, %v; deleted number was reused", result, err)
+	}
+}
+
+func TestManagerRefusesToDeleteLiveRun(t *testing.T) {
+	manager := NewManager(&config.Config{Services: map[string]config.Service{"api": {
+		Supervision: config.SupervisionDetached,
+		Lifecycle:   config.LifecycleConfig{Start: &config.Action{Command: "true", Shell: "/bin/sh"}, Stop: &config.Action{Command: "true", Shell: "/bin/sh"}},
+	}}})
+	t.Cleanup(func() { _ = manager.Shutdown() })
+	if err := manager.StartService("api"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.DeleteRun(ServiceRunTarget("api"), 1); !errors.Is(err, ErrRunActive) {
+		t.Fatalf("DeleteRun live error = %v", err)
+	}
+	if runs := manager.RunSummaries(ServiceRunTarget("api")); len(runs) != 1 || !runs[0].Live {
+		t.Fatalf("live run changed after refusal: %#v", runs)
 	}
 }

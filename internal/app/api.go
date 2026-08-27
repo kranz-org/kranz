@@ -135,6 +135,7 @@ type API interface {
 	Runs() []RunSummary
 	RunRetention() []RunRetentionBoundary
 	ExportRun(target RunTarget, run uint32) (RunExport, error)
+	DeleteRun(target RunTarget, run uint32) (RunSummary, error)
 
 	// Logs returns the current buffered log entries for a service.
 	Logs(name string) []config.LogEntry

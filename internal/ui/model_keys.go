@@ -51,6 +51,8 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleRunListKeys(msg)
 	case ModeRunExport:
 		return m.handleRunExportKeys(msg)
+	case ModeConfirmDeleteRun:
+		return m.handleConfirmDeleteRunKeys(msg)
 	default:
 		if msg.String() == "esc" || msg.String() == "q" {
 			m.mode = ModeNormal

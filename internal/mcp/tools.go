@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/kranz-org/kranz/internal/app"
@@ -25,7 +26,7 @@ const waitTransportGrace = 5 * time.Second
 // exactly, so a tool cannot appear without being listed here, and a listed
 // name cannot resolve to nothing.
 var toolNames = []string{
-	"runtimes", "status", "runs", "changes", "plan", "graph", "ports", "port_inspect", "logs", "wait", "health",
+	"runtimes", "status", "runs", "run_delete", "changes", "plan", "graph", "ports", "port_inspect", "logs", "wait", "health",
 	"action_list", "action_info", "action_result",
 	"doctor", "start", "stop", "restart", "action_run", "action_cancel", "logs_clear", "reload",
 }
@@ -48,6 +49,11 @@ func (s *Server) installTools() {
 		{Name: "runtimes", Description: "List Kranz runtime sessions visible to this user and flag the runtime this MCP connection is bound to.", InputSchema: objectSchema(map[string]any{}), handler: s.runtimesTool},
 		{Name: "status", Description: "Return live status for selected services, including the structured cause of a state whose reason is not the state itself.", InputSchema: objectSchema(map[string]any{"selectors": selectorsProperty}), handler: s.statusTool},
 		{Name: "runs", Description: "Return the bounded service and action run catalog with provenance and output retention state.", InputSchema: objectSchema(map[string]any{}), handler: s.runsTool},
+		{Name: "run_delete", Description: "Delete one completed absolute service or action run and its retained output after explicit confirmation.", InputSchema: objectSchema(map[string]any{
+			"target":  map[string]any{"type": "string", "description": "Exact service name or OWNER/ACTION target from runs."},
+			"run":     map[string]any{"type": "integer", "minimum": 1, "description": "Absolute run number from runs."},
+			"confirm": map[string]any{"type": "boolean", "description": "Must be true after reviewing the exact target and run."},
+		}, "target", "run"), handler: s.runDeleteTool},
 		{Name: "changes", Description: "Return what changed in the runtime after a cursor: service and action transitions, detected-port changes, and configuration reloads.", InputSchema: objectSchema(map[string]any{
 			"since":            map[string]any{"type": "integer", "minimum": 0, "description": "Cursor from a previous changes or wait result. Zero reads the whole retained journal."},
 			"since_generation": map[string]any{"type": "integer", "minimum": 0, "description": "Alternative anchor: read everything after the reload that produced this configuration generation."},
@@ -111,6 +117,43 @@ func (s *Server) runsTool(_ context.Context, raw json.RawMessage) ResultEnvelope
 		return s.argError(err)
 	}
 	return s.envelope(map[string]any{"runs": s.api.Runs(), "retention": s.api.RunRetention()})
+}
+
+func (s *Server) runDeleteTool(_ context.Context, raw json.RawMessage) ResultEnvelope {
+	var args struct {
+		Target  string `json:"target"`
+		Run     uint32 `json:"run"`
+		Confirm bool   `json:"confirm"`
+	}
+	if err := decodeArgs(raw, &args); err != nil {
+		return s.argError(err)
+	}
+	var target *app.RunTarget
+	for _, candidate := range s.api.Runs() {
+		if candidate.Run == args.Run && strings.EqualFold(runTargetName(candidate.Target), args.Target) {
+			copy := candidate.Target
+			target = &copy
+			break
+		}
+	}
+	if target == nil {
+		return s.errorEnvelope(&app.RunDeleteError{Code: "run_not_found", Run: args.Run, Message: fmt.Sprintf("%s#%d is not retained", args.Target, args.Run)})
+	}
+	if !args.Confirm {
+		return s.errorEnvelope(&app.RunDeleteError{Code: "confirmation_required", Target: *target, Run: args.Run, Message: fmt.Sprintf("deleting %s#%d requires explicit confirmation", runTargetName(*target), args.Run)})
+	}
+	deleted, err := s.api.DeleteRun(*target, args.Run)
+	if err != nil {
+		return s.errorEnvelope(err)
+	}
+	return s.envelope(map[string]any{"deleted": deleted})
+}
+
+func runTargetName(target app.RunTarget) string {
+	if target.Kind == app.RunKindService {
+		return target.Name
+	}
+	return target.Action.Owner + "/" + target.Action.Name
 }
 
 func mutationSchema(includeDependencies bool) map[string]any {

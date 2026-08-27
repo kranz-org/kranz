@@ -53,6 +53,21 @@ func (m *Manager) AllRunSummaries() []RunSummary { return m.runs.All() }
 
 func (m *Manager) RunRetentionBoundaries() []RunRetentionBoundary { return m.runs.Boundaries() }
 
+// DeleteRun removes one completed catalog record and the retained data owned
+// by its producer. The transition journal remains an immutable audit trail.
+func (m *Manager) DeleteRun(target RunTarget, run uint32) (RunSummary, error) {
+	deleted, err := m.runs.Delete(target, run)
+	if err != nil {
+		return RunSummary{}, err
+	}
+	if target.Kind == RunKindAction {
+		m.actions.DeleteRun(target.Action, run)
+	} else if svc, ok := m.GetService(target.Name); ok {
+		svc.DeleteRunLogs(run)
+	}
+	return deleted, nil
+}
+
 // RecordConfigReload marks a new configuration generation inside every
 // continuing service run. Services restarted by ApplyConfig get a new run and
 // therefore do not receive a marker that would imply process continuity.

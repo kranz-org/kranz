@@ -158,6 +158,51 @@ func TestRunListFiltersAndSelectsByKeyboardAndMouse(t *testing.T) {
 	}
 }
 
+func TestRunListDeletesCompletedRunOnlyAfterConfirmation(t *testing.T) {
+	model := newTestModel()
+	defer model.Shutdown()
+	finishTestServiceRun(t, model, "api", 0, "delete me")
+	finishTestServiceRun(t, model, "api", 0, "keep me")
+	model.refreshServices()
+	model.selectLatestRun()
+	model.moveRun(-1, false)
+	model.togglePinnedLog()
+	model.openRunList()
+	_, _ = model.handleRunListKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	if model.mode != ModeConfirmDeleteRun || model.deleteRun != 1 {
+		t.Fatalf("delete confirmation = mode %d run %d", model.mode, model.deleteRun)
+	}
+	_, _ = model.handleConfirmDeleteRunKeys(tea.KeyMsg{Type: tea.KeyEsc})
+	if len(model.app.Runs()) != 2 || model.mode != ModeRunList {
+		t.Fatalf("cancel changed runs or mode: %d, %d", len(model.app.Runs()), model.mode)
+	}
+	_, _ = model.handleRunListKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	_, _ = model.handleConfirmDeleteRunKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	if runs := model.app.Runs(); len(runs) != 1 || runs[0].Run != 2 {
+		t.Fatalf("remaining runs = %#v", runs)
+	}
+	if model.pinnedTarget.Kind != "" || model.pinnedRun != 0 {
+		t.Fatalf("deleted pin remains: %+v #%d", model.pinnedTarget, model.pinnedRun)
+	}
+	for _, entry := range model.app.Logs("api") {
+		if entry.Run == 1 {
+			t.Fatalf("deleted output remains: %#v", model.app.Logs("api"))
+		}
+	}
+}
+
+func TestRunListRefusesToDeleteActiveRun(t *testing.T) {
+	model := newTestModel()
+	defer model.Shutdown()
+	model.app.SetServiceStatusForTest("api", config.StatusStarting)
+	model.refreshServices()
+	model.openRunList()
+	_, _ = model.handleRunListKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	if model.mode != ModeRunList || len(model.app.Runs()) != 1 || !model.app.Runs()[0].Live {
+		t.Fatalf("active delete changed mode or run: mode=%d runs=%#v", model.mode, model.app.Runs())
+	}
+}
+
 func TestPinnedHistoricalRunRemainsImmutableAfterNewStart(t *testing.T) {
 	model := newTestModel()
 	defer model.Shutdown()

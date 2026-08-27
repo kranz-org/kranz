@@ -311,6 +311,27 @@ func TestMCPUsesSameSelectorsPlansAndLogsAsApplication(t *testing.T) {
 	}
 }
 
+func TestRunDeleteToolRequiresConfirmationAndDeletesExactRun(t *testing.T) {
+	server, local := testServer(t)
+	local.SetServiceStatusForTest("api", config.StatusStarting)
+	local.AppendLogForTest("api", "retained")
+	snapshot, _ := local.Service("api")
+	completed := snapshot.State
+	completed.Completed = true
+	completed.ExitCode = 0
+	local.SetServiceStateForTest("api", completed)
+	local.SetServiceStatusForTest("api", config.StatusStopped)
+
+	result := server.tools["run_delete"].handler(context.Background(), json.RawMessage(`{"target":"api","run":1}`))
+	if result.Error == nil || result.Error.Code != "confirmation_required" || len(local.Runs()) != 1 {
+		t.Fatalf("unconfirmed delete = %#v, runs=%#v", result, local.Runs())
+	}
+	result = server.tools["run_delete"].handler(context.Background(), json.RawMessage(`{"target":"api","run":1,"confirm":true}`))
+	if result.Error != nil || len(local.Runs()) != 0 || len(local.Logs("api")) != 0 {
+		t.Fatalf("confirmed delete = %#v, runs=%#v logs=%#v", result, local.Runs(), local.Logs("api"))
+	}
+}
+
 func TestCapabilitySurfaceIsExactAllowList(t *testing.T) {
 	server, _ := testServer(t)
 	// toolOrder is built from toolNames, so comparing the two proves nothing.

@@ -221,6 +221,41 @@ func (s *logStream) Clear() {
 	catalog.ClearOutput(target)
 }
 
+// DeleteRun atomically removes only entries belonging to one run while
+// preserving chronological order, sequence numbers, and the monotonic run
+// counter. The catalog summary is removed separately by Manager.DeleteRun.
+func (s *logStream) DeleteRun(run uint32) {
+	if run == 0 {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	kept := make([]config.LogEntry, 0, s.count)
+	keptBytes := make([]uint64, 0, s.count)
+	for index := range s.count {
+		position := (s.write - s.count + index + len(s.lines)) % len(s.lines)
+		if s.runs[position] == run {
+			continue
+		}
+		kept = append(kept, config.LogEntry{Sequence: s.sequences[position], Timestamp: s.times[position], Source: s.sources[position], Run: s.runs[position], Raw: s.lines[position]})
+		keptBytes = append(keptBytes, s.lineBytes[position])
+	}
+	clear(s.lines)
+	clear(s.times)
+	clear(s.sources)
+	clear(s.sequences)
+	clear(s.runs)
+	clear(s.lineBytes)
+	s.retainedBytes = 0
+	for index, entry := range kept {
+		s.lines[index], s.times[index], s.sources[index] = entry.Raw, entry.Timestamp, entry.Source
+		s.sequences[index], s.runs[index], s.lineBytes[index] = entry.Sequence, entry.Run, keptBytes[index]
+		s.retainedBytes += keptBytes[index]
+	}
+	s.count = len(kept)
+	s.write = s.count % len(s.lines)
+}
+
 // CopyFrom preserves a logical stream across a hot reload.
 func (s *logStream) CopyFrom(previous *logStream) {
 	previous.mu.RLock()

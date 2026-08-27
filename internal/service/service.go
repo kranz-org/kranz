@@ -421,6 +421,9 @@ func (s *Service) CopyLogHistoryFrom(previous *Service) { s.stream.CopyFrom(prev
 // ClearLogs discards this service's buffered logs and their metadata.
 func (s *Service) ClearLogs() { s.stream.Clear() }
 
+// DeleteRunLogs removes retained output for one completed execution.
+func (s *Service) DeleteRunLogs(run uint32) { s.stream.DeleteRun(run) }
+
 // SetState replaces the complete mutable state.
 func (s *Service) SetState(state config.ServiceState) {
 	s.stateMu.Lock()

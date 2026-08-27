@@ -18,6 +18,9 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
   including identity, provenance, canonical capture metadata, and exact
   truncation information. Run history remains scoped to the live runtime and
   is never persisted in the background.
+- Completed runs can be removed from Run history with `d`, from the CLI with
+  `kranz runs delete TARGET#N --confirm`, or through the MCP `run_delete` tool
+  with `confirm: true`. Active runs are protected and run numbers are not reused.
 - `kranz runs` and MCP run retention metadata expose the oldest retained run,
   independent run/entry/byte budgets, evicted summaries, and complete,
   partial, or unavailable output state.

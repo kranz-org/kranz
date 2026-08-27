@@ -72,6 +72,7 @@ func helpSections() []helpSection {
 			{"[ / ]", "Open the previous or next run"},
 			{"Shift+F / l", "Open the previous failed run or return to the latest run"},
 			{"v", "Open the filterable run catalog"},
+			{"d", "Delete the selected completed run after confirmation"},
 			{"e / Shift+E", "Export the selected run to clipboard or a file"},
 			{"c", "Clear focused or pinned service logs after confirmation"},
 		}},

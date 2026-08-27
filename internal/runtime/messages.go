@@ -53,6 +53,7 @@ const (
 	methodRuns                            = "runs"
 	methodRunRetention                    = "runRetention"
 	methodExportRun                       = "exportRun"
+	methodDeleteRun                       = "deleteRun"
 	methodActionLogs                      = "actionLogs"
 	methodQueryLogs                       = "queryLogs"
 	methodClearLogStreams                 = "clearLogStreams"

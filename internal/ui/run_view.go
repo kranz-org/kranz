@@ -376,6 +376,15 @@ func (m *Model) handleRunListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.restoreRunViewport()
 		}
 		m.mode = ModeNormal
+	case msg.String() == "d":
+		if len(runs) > 0 {
+			run := runs[min(m.runListCursor, len(runs)-1)]
+			if run.Live {
+				m.addNotification(runTargetLabel(run.Target), fmt.Sprintf("Run #%d is still active and cannot be deleted", run.Run), config.LogError)
+			} else {
+				m.deleteTarget, m.deleteRun, m.mode = run.Target, run.Run, ModeConfirmDeleteRun
+			}
+		}
 	case msg.String() == "esc", msg.String() == "q", msg.String() == "v":
 		m.mode = ModeNormal
 	}
@@ -422,6 +431,55 @@ func (m *Model) renderRunListView() string {
 		}
 		lines = append(lines, line)
 	}
-	lines = append(lines, "", renderModalShortcuts("  [↑/↓] Select  [Enter] Open run  [Tab] Filter  [Esc] Close", lipgloss.NewStyle().Foreground(ColorDim)))
+	lines = append(lines, "", renderModalShortcuts("  [↑/↓] Select  [Enter] Open run  [d] Delete  [Tab] Filter  [Esc] Close", lipgloss.NewStyle().Foreground(ColorDim)))
 	return m.placeOverlay(renderFlushModal(strings.Join(lines, "\n")))
+}
+
+func (m *Model) renderConfirmDeleteRunView() string {
+	identity := fmt.Sprintf("%s#%d", runTargetLabel(m.deleteTarget), m.deleteRun)
+	return m.placeOverlay(renderConfirmationModal(
+		fmt.Sprintf("Delete %s from run history?", identity),
+		[]string{"This removes the retained summary and output.", "The transition journal is kept. This cannot be undone."},
+		"[Enter] Delete  [Esc] Cancel",
+	))
+}
+
+func (m *Model) handleConfirmDeleteRunKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "enter", "y":
+		m.confirmDeleteRun()
+	case "esc", "n", "q":
+		m.cancelDeleteRun()
+	}
+	return m, nil
+}
+
+func (m *Model) cancelDeleteRun() {
+	m.deleteTarget, m.deleteRun, m.mode = app.RunTarget{}, 0, ModeRunList
+}
+
+func (m *Model) confirmDeleteRun() {
+	target, run := m.deleteTarget, m.deleteRun
+	if _, err := m.app.DeleteRun(target, run); err != nil {
+		m.addNotification(runTargetLabel(target), err.Error(), config.LogError)
+		m.cancelDeleteRun()
+		return
+	}
+	for key := range m.runViewports {
+		if key.Target == target && key.Run == run {
+			delete(m.runViewports, key)
+		}
+	}
+	if m.pinnedTarget == target && m.pinnedRun == run {
+		m.pinnedLog, m.pinnedTarget, m.pinnedRun = "", app.RunTarget{}, 0
+		m.pinnedRunMode, m.pinnedOffset, m.pinnedAnchor, m.pinnedMatch = runViewCombined, 0, 0, -1
+	}
+	if m.runTarget == target && m.selectedRun == run {
+		m.selectedRun = latestRun(m.runsForTarget(target))
+		m.runFollowsLatest = true
+	}
+	runs := m.filteredRunList()
+	m.runListCursor = min(m.runListCursor, max(0, len(runs)-1))
+	m.addNotification(runTargetLabel(target), fmt.Sprintf("Run #%d deleted", run), config.LogInfo)
+	m.deleteTarget, m.deleteRun, m.mode = app.RunTarget{}, 0, ModeRunList
 }

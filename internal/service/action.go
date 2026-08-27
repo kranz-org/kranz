@@ -436,11 +436,18 @@ func (r *ActionRunner) Result(id config.ActionID, requested int) (ActionResult, 
 	}
 	var wanted uint32
 	if requested < 0 {
-		offset := uint32(-requested) - 1
-		if offset >= latest {
+		available := make([]uint32, 0, len(r.history[id])+1)
+		for _, result := range r.history[id] {
+			available = append(available, result.Run)
+		}
+		if state, ok := r.states[id]; ok && state.Status == ActionRunning {
+			available = append(available, state.Run)
+		}
+		offset := -requested
+		if offset > len(available) {
 			return ActionResult{}, fmt.Errorf("%w: %s/%s run offset %d", ErrActionRunNotFound, id.Owner, id.Name, requested)
 		}
-		wanted = latest - offset
+		wanted = available[len(available)-offset]
 	} else {
 		wanted = uint32(requested)
 		if wanted > latest {
@@ -631,6 +638,38 @@ func (r *ActionRunner) ClearActionLogs(id config.ActionID) {
 	}
 	r.mu.Lock()
 	delete(r.history, id)
+	r.mu.Unlock()
+}
+
+// DeleteRun removes one completed action result and its retained output while
+// leaving nextRun untouched so a deleted address can never be reused.
+func (r *ActionRunner) DeleteRun(id config.ActionID, run uint32) {
+	r.logsMu.RLock()
+	stream := r.logs[id]
+	r.logsMu.RUnlock()
+	if stream != nil {
+		stream.DeleteRun(run)
+	}
+	r.mu.Lock()
+	history := r.history[id]
+	for index := range history {
+		if history[index].Run == run {
+			history = append(history[:index:index], history[index+1:]...)
+			break
+		}
+	}
+	if len(history) == 0 {
+		delete(r.history, id)
+	} else {
+		r.history[id] = history
+	}
+	if state, ok := r.states[id]; ok && state.Run == run {
+		if len(history) == 0 {
+			delete(r.states, id)
+		} else {
+			r.states[id] = cloneActionResult(history[len(history)-1])
+		}
+	}
 	r.mu.Unlock()
 }
 

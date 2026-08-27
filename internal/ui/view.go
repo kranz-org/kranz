@@ -55,6 +55,8 @@ func (m *Model) View() string {
 		content = m.renderRunListView()
 	case ModeRunExport:
 		content = m.renderRunExportView()
+	case ModeConfirmDeleteRun:
+		content = m.renderConfirmDeleteRunView()
 	default:
 		content = m.renderMainView()
 	}

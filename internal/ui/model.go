@@ -36,6 +36,7 @@ const (
 	ModeThemes
 	ModeRunList
 	ModeRunExport
+	ModeConfirmDeleteRun
 )
 
 type runViewMode uint8
@@ -226,6 +227,8 @@ type Model struct {
 	runViewports     map[runViewportKey]runViewportState
 	exportTarget     app.RunTarget
 	exportRun        uint32
+	deleteTarget     app.RunTarget
+	deleteRun        uint32
 
 	mode       ViewMode
 	width      int

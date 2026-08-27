@@ -47,7 +47,9 @@ client or the repository's [minimal example client](../examples/mcp-shared-runti
 Observation tools are `runtimes`, `status`, `changes`, `plan`, `graph`, `ports`,
 `port_inspect`, `logs`, `wait`, `health`, `doctor`, `action_list`,
 `action_info`, and `action_result`. Mutations are explicit: `start`, `stop`,
-`restart`, `action_run`, `action_cancel`, `logs_clear`, and `reload`. There is
+`restart`, `action_run`, `action_cancel`, `run_delete`, `logs_clear`, and `reload`. `run_delete`
+accepts one absolute target and run number, refuses active runs, and requires
+`confirm: true` before removing the completed summary and retained output. There is
 no toggle or generic application-method dispatcher.
 
 Every tool declares an `outputSchema` for the result envelope, and returns the
@@ -115,6 +117,7 @@ Stable causal codes include `selector_not_found`, `service_unavailable`,
 `interactive_action`, `confirmation_required`, `confirmation_expired`,
 `confirmation_plan_changed`, `action_busy`, `action_failed`,
 `action_timed_out`, `action_cancelled`, `wait_timeout`, `wait_cancelled`,
+`run_not_found`, `run_active`,
 `dependency_blocked`, `terminal_failure`, `port_conflict`, `prerequisite_failed`,
 `no_run_streams`,
 `invalid_cursor`, `invalid_change_query`, and `invalid_change_kind`.

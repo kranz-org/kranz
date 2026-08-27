@@ -163,6 +163,9 @@ var handlers = map[string]handlerFunc{
 	methodExportRun: handler(func(_ context.Context, l *app.Local, req exportRunRequest) (app.RunExport, error) {
 		return l.ExportRun(req.Target, req.Run)
 	}),
+	methodDeleteRun: handler(func(_ context.Context, l *app.Local, req exportRunRequest) (app.RunSummary, error) {
+		return l.DeleteRun(req.Target, req.Run)
+	}),
 	methodActionLogs: handler(func(_ context.Context, l *app.Local, req actionIDRequest) (logsResponse, error) {
 		return logsResponse{Entries: l.ActionLogs(req.ID)}, nil
 	}),

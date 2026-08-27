@@ -32,6 +32,11 @@ func (e *VersionMismatchError) Error() string {
 // port-conflict modal (see internal/ui/model_lifecycle.go), so it is the one
 // error kind that carries structured fields instead of just text.
 func encodeError(err error) errorPayload {
+	var runDelete *app.RunDeleteError
+	if errors.As(err, &runDelete) {
+		target := runDelete.Target
+		return errorPayload{Kind: errorRunDelete, Code: runDelete.Code, Message: runDelete.Error(), RunTarget: &target, Run: runDelete.Run}
+	}
 	var required *app.ConfirmationRequiredError
 	if errors.As(err, &required) {
 		return errorPayload{Kind: errorConfirmationRequired, Code: "confirmation_required", Message: required.Error(), Plan: &required.Plan}
@@ -112,6 +117,12 @@ func decodeError(payload errorPayload) error {
 		return &VersionMismatchError{
 			Message: payload.Message, ServerProtocol: payload.ServerProtocol, ServerVersion: payload.ServerVersion,
 		}
+	case errorRunDelete:
+		var target app.RunTarget
+		if payload.RunTarget != nil {
+			target = *payload.RunTarget
+		}
+		return &app.RunDeleteError{Code: payload.Code, Message: payload.Message, Target: target, Run: payload.Run}
 	case errorPortConflict:
 		return &app.PortConflictError{
 			Service:      payload.Service,

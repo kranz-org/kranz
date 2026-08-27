@@ -314,6 +314,9 @@ func (m *Model) handleOverlayMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		if renderedTextHit(rendered, msg.X, msg.Y, "[Tab] Filter") {
 			return m.handleRunListKeys(tea.KeyMsg{Type: tea.KeyTab})
 		}
+		if renderedTextHit(rendered, msg.X, msg.Y, "[d] Delete") {
+			return m.handleRunListKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+		}
 		return m.closeOverlayOnClick(rendered, msg)
 	case ModeThemes:
 		return m.handleThemeMouseClick(rendered, msg)
@@ -363,6 +366,13 @@ func (m *Model) handleOverlayMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			m.clearTarget = ""
 			m.clearPinned = false
 			m.mode = ModeNormal
+		}
+	case ModeConfirmDeleteRun:
+		if renderedTextHit(rendered, msg.X, msg.Y, "[Enter] Delete") {
+			m.confirmDeleteRun()
+		}
+		if renderedTextHit(rendered, msg.X, msg.Y, "[Esc] Cancel") {
+			m.cancelDeleteRun()
 		}
 	case ModeConfirmAction:
 		if renderedTextHit(rendered, msg.X, msg.Y, "[Enter/y] Run") || renderedTextHit(rendered, msg.X, msg.Y, "[Enter/y] Stop") {

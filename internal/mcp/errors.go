@@ -17,6 +17,14 @@ func causalError(err error) *CausalError {
 	if errors.As(err, &logErr) {
 		return &CausalError{Code: logErr.Code, Message: logErr.Message, Hint: logErr.Hint, Details: map[string]any{"selector": logErr.Selector}}
 	}
+	var runDelete *app.RunDeleteError
+	if errors.As(err, &runDelete) {
+		hint := "Use runs to inspect retained absolute run identities."
+		if runDelete.Code == "confirmation_required" {
+			hint = "Repeat the same call with confirm set to true."
+		}
+		return &CausalError{Code: runDelete.Code, Message: runDelete.Error(), Hint: hint, Details: map[string]any{"target": runTargetName(runDelete.Target), "run": runDelete.Run}}
+	}
 	var confirmationRequired *app.ConfirmationRequiredError
 	if errors.As(err, &confirmationRequired) {
 		return &CausalError{Code: "confirmation_required", Message: confirmationRequired.Error(), Hint: "Review the resolved plan, then repeat the same tool call with its confirmation_token.", Details: map[string]any{"plan": confirmationRequired.Plan, "confirmation_token": confirmationRequired.Plan.ConfirmationToken}}

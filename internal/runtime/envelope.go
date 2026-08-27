@@ -79,6 +79,7 @@ const (
 	errorActionTimedOut       errorKind = "action_timed_out"
 	errorActionCancelled      errorKind = "action_cancelled"
 	errorPrerequisite         errorKind = "prerequisite_failed"
+	errorRunDelete            errorKind = "run_delete"
 )
 
 // errorPayload is the body of a messageError envelope.
@@ -114,6 +115,7 @@ type errorPayload struct {
 	RunningActionOwner string                 `json:"running_action_owner,omitempty"`
 	RunningActionName  string                 `json:"running_action_name,omitempty"`
 	ActionExitCode     int                    `json:"action_exit_code,omitempty"`
+	RunTarget          *app.RunTarget         `json:"run_target,omitempty"`
 	PrerequisiteLabel  string                 `json:"prerequisite_label,omitempty"`
 	PrerequisiteCause  string                 `json:"prerequisite_cause,omitempty"`
 }

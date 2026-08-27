@@ -259,6 +259,28 @@ func TestRunCatalogPreservesConnectionProvenanceAcrossRPC(t *testing.T) {
 	}
 }
 
+func TestDeleteRunCrossesRPCWithTypedErrors(t *testing.T) {
+	cfg := &config.Config{Project: "RPC delete", ActionGroups: map[string]config.ActionGroup{
+		"ops": {Actions: map[string]config.Action{"ping": {Command: "echo pong", Shell: "/bin/sh"}}},
+	}}
+	client, cleanup := startTestSupervisor(t, cfg, nil)
+	defer cleanup()
+	id := config.ActionID{OwnerKind: config.ActionOwnerGroup, Owner: "ops", Name: "ping"}
+	if _, err := client.RunAction(context.Background(), id); err != nil {
+		t.Fatal(err)
+	}
+	target := app.ActionRunTarget(id)
+	deleted, err := client.DeleteRun(target, 1)
+	if err != nil || deleted.Run != 1 || len(client.Runs()) != 0 || len(client.ActionLogs(id)) != 0 {
+		t.Fatalf("DeleteRun = %+v, %v; runs=%#v logs=%#v", deleted, err, client.Runs(), client.ActionLogs(id))
+	}
+	_, err = client.DeleteRun(target, 1)
+	var deleteErr *app.RunDeleteError
+	if !errors.As(err, &deleteErr) || deleteErr.Code != "run_not_found" || deleteErr.Target != target || deleteErr.Run != 1 {
+		t.Fatalf("typed delete error = %#v (%v)", deleteErr, err)
+	}
+}
+
 func TestExecutePlanPreservesFailedActionRunAcrossIPC(t *testing.T) {
 	cfg := &config.Config{Project: "RPC Failed Action", ActionGroups: map[string]config.ActionGroup{
 		"ops": {Actions: map[string]config.Action{"fail": {Command: "exit 7", Shell: "/bin/sh"}}},

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"sort"
 	"sync"
 	"time"
@@ -9,6 +10,11 @@ import (
 )
 
 const defaultRunCatalogSize = 100
+
+var (
+	ErrRunNotFound = errors.New("run not found")
+	ErrRunActive   = errors.New("active run cannot be deleted")
+)
 
 // RunKind identifies the runtime subject that owns a numbered execution.
 type RunKind string
@@ -281,6 +287,35 @@ func (c *RunCatalog) All() []RunSummary {
 		return result[i].StartedAt.Before(result[j].StartedAt)
 	})
 	return result
+}
+
+// Delete removes one completed summary. Run numbers and automatic-retention
+// counters are deliberately untouched: a manually deleted address must never
+// be reused or reported as an automatic eviction.
+func (c *RunCatalog) Delete(target RunTarget, run uint32) (RunSummary, error) {
+	if c == nil || run == 0 {
+		return RunSummary{}, ErrRunNotFound
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	history := c.runs[target]
+	for index := range history {
+		if history[index].Run != run {
+			continue
+		}
+		if history[index].Live {
+			return RunSummary{}, ErrRunActive
+		}
+		deleted := cloneRunSummary(history[index])
+		history = append(history[:index:index], history[index+1:]...)
+		if len(history) == 0 {
+			delete(c.runs, target)
+		} else {
+			c.runs[target] = history
+		}
+		return deleted, nil
+	}
+	return RunSummary{}, ErrRunNotFound
 }
 
 func runTargetLess(left, right RunTarget) bool {

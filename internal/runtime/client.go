@@ -456,6 +456,10 @@ func (c *Client) ExportRun(target app.RunTarget, run uint32) (app.RunExport, err
 	return call[exportRunRequest, app.RunExport](c, context.Background(), methodExportRun, exportRunRequest{Target: target, Run: run})
 }
 
+func (c *Client) DeleteRun(target app.RunTarget, run uint32) (app.RunSummary, error) {
+	return call[exportRunRequest, app.RunSummary](c, context.Background(), methodDeleteRun, exportRunRequest{Target: target, Run: run})
+}
+
 func (c *Client) Logs(name string) []config.LogEntry {
 	resp, _ := call[nameRequest, logsResponse](c, context.Background(), methodLogs, nameRequest{Name: name})
 	return resp.Entries
