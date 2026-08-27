@@ -4,6 +4,39 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### Added
+
+- Stable absolute `SERVICE#N` and `OWNER/ACTION#N` identities across the TUI,
+  CLI, runtime API, and MCP. Each real start has provenance, start reason,
+  timing, live/final status, PID, exit code, and cause in a bounded per-target
+  run catalog independent from log output and the transition journal.
+- A run-aware TUI log viewer with Combined and Single run modes, previous/next
+  and previous-failed navigation, a status-filterable keyboard/mouse run list,
+  independent scroll/follow/search state, immutable historical pin/split
+  snapshots, newer-run indication, and a quick return to latest.
+- Explicit selected-run export to the terminal clipboard or a user-chosen file,
+  including identity, provenance, canonical capture metadata, and exact
+  truncation information. Run history remains scoped to the live runtime and
+  is never persisted in the background.
+- `kranz runs` and MCP run retention metadata expose the oldest retained run,
+  independent run/entry/byte budgets, evicted summaries, and complete,
+  partial, or unavailable output state.
+
+### Changed
+
+- Stdout, stderr, and lifecycle markers now share one capture-ordered sequence
+  with timestamp and source. Config reloads appear inside the continuing run
+  with their new generation instead of looking like a process restart.
+- Relative log selectors such as `--run -1` resolve against the run catalog,
+  while output always prints the absolute `#N` identity. A retained run whose
+  prefix was evicted reports exact missing lines and bytes before its tail.
+
+### Fixed
+
+- Replacing an in-process runtime can no longer capture the outgoing owner's
+  project directory as its restore point, which could leave an embedded client
+  or test process in a deleted temporary directory after shutdown.
+
 ## [0.9.0] - 2026-08-25
 
 ### Added

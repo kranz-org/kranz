@@ -51,6 +51,35 @@ func TestRunListIncludesRetentionAndProvenanceFields(t *testing.T) {
 	}
 }
 
+func TestRunListFiltersAndSelectsByKeyboardAndMouse(t *testing.T) {
+	model := newTestModel()
+	defer model.Shutdown()
+	model.width, model.height, model.ready = 140, 30, true
+	finishTestServiceRun(t, model, "api", 7, "failed output")
+	finishTestServiceRun(t, model, "api", 0, "successful output")
+	model.refreshServices()
+	model.openRunList()
+
+	for range 3 { // all -> running -> succeeded -> failed
+		_, _ = model.handleRunListKeys(tea.KeyMsg{Type: tea.KeyTab})
+	}
+	filtered := model.filteredRunList()
+	if len(filtered) != 1 || filtered[0].Run != 1 {
+		t.Fatalf("failed filter = %#v", filtered)
+	}
+	_, _ = model.handleRunListKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	if model.mode != ModeNormal || model.runMode != runViewSingle || model.selectedRun != 1 {
+		t.Fatalf("keyboard selection = mode %d view %d run %d", model.mode, model.runMode, model.selectedRun)
+	}
+
+	model.runStatusFilter = "all"
+	model.openRunList()
+	clickRenderedText(t, model, "#2")
+	if model.mode != ModeNormal || model.runMode != runViewSingle || model.selectedRun != 2 {
+		t.Fatalf("mouse selection = mode %d view %d run %d", model.mode, model.runMode, model.selectedRun)
+	}
+}
+
 func TestPinnedHistoricalRunRemainsImmutableAfterNewStart(t *testing.T) {
 	model := newTestModel()
 	defer model.Shutdown()
