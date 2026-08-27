@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"text/tabwriter"
 	"time"
@@ -33,15 +34,33 @@ type runtimeHost struct {
 	closed        bool
 }
 
+// startRuntime changes the process working directory for the lifetime of an
+// in-process runtime. Serialize owners so a replacement cannot capture the
+// outgoing runtime's project directory as its restore point while Close is
+// still unwinding. That race left the test process (and an embedded caller)
+// inside a temp directory after it had been removed.
+var runtimeDirectoryMu sync.Mutex
+
 func startRuntime(options kranzcli.GlobalOptions, mode string) (*runtimeHost, *config.Config, error) {
+	runtimeDirectoryMu.Lock()
 	originalDirectory, err := os.Getwd()
 	if err != nil {
+		runtimeDirectoryMu.Unlock()
 		return nil, nil, err
 	}
+	var restoreOnce sync.Once
+	var restoreErr error
+	restore := func() error {
+		restoreOnce.Do(func() {
+			restoreErr = os.Chdir(originalDirectory)
+			runtimeDirectoryMu.Unlock()
+		})
+		return restoreErr
+	}
 	if err := os.Chdir(options.Directory); err != nil {
+		_ = restore()
 		return nil, nil, fmt.Errorf("change directory to %s: %w", options.Directory, err)
 	}
-	restore := func() error { return os.Chdir(originalDirectory) }
 	fail := func(err error) (*runtimeHost, *config.Config, error) { return nil, nil, errors.Join(err, restore()) }
 
 	cfgPaths := options.ConfigPaths
