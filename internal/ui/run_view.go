@@ -38,8 +38,10 @@ func (m *Model) syncRunTarget() bool {
 		m.runTarget = target
 		m.selectedRun = 0
 		m.runMode = runViewCombined
+		m.runFollowsLatest = false
 		if target.Kind == app.RunKindAction {
 			m.runMode = runViewSingle
+			m.runFollowsLatest = true
 		}
 		if !initial {
 			key := m.runViewportKey()
@@ -49,8 +51,15 @@ func (m *Model) syncRunTarget() bool {
 			m.restoreRunViewport()
 		}
 	}
-	if m.runMode == runViewSingle && m.selectedRun == 0 {
-		m.selectedRun = latestRun(m.runsForTarget(target))
+	if m.runMode == runViewSingle && (m.selectedRun == 0 || m.runFollowsLatest) {
+		latest := latestRun(m.runsForTarget(target))
+		if latest != m.selectedRun {
+			if m.selectedRun > 0 {
+				m.saveRunViewport()
+			}
+			m.selectedRun = latest
+			m.restoreRunViewport()
+		}
 	}
 	return true
 }
@@ -81,8 +90,10 @@ func (m *Model) toggleRunView() {
 	if m.runMode == runViewCombined {
 		m.runMode = runViewSingle
 		m.selectedRun = latestRun(m.runsForTarget(m.runTarget))
+		m.runFollowsLatest = true
 	} else {
 		m.runMode = runViewCombined
+		m.runFollowsLatest = false
 	}
 	m.restoreRunViewport()
 }
@@ -94,6 +105,7 @@ func (m *Model) selectLatestRun() {
 	m.saveRunViewport()
 	m.runMode = runViewSingle
 	m.selectedRun = latestRun(m.runsForTarget(m.runTarget))
+	m.runFollowsLatest = true
 	m.restoreRunViewport()
 }
 
@@ -120,6 +132,7 @@ func (m *Model) moveRun(direction int, failedOnly bool) {
 		if !failedOnly || runFailed(runs[next]) {
 			m.saveRunViewport()
 			m.runMode, m.selectedRun = runViewSingle, runs[next].Run
+			m.runFollowsLatest = runs[next].Run == latestRun(runs)
 			m.restoreRunViewport()
 			return
 		}
@@ -359,6 +372,7 @@ func (m *Model) handleRunListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(runs) > 0 {
 			m.saveRunViewport()
 			m.selectedRun, m.runMode = runs[m.runListCursor].Run, runViewSingle
+			m.runFollowsLatest = m.selectedRun == latestRun(m.runsForTarget(m.runTarget))
 			m.restoreRunViewport()
 		}
 		m.mode = ModeNormal

@@ -61,6 +61,15 @@ and `HISTORY · RUN #N` means a newer run exists. A pinned panel is frozen and
 shows `Shift+3 UNPIN` in its title; while any pin exists the footer starts with
 `[Shift+3] unpin`, and the shortcut works from every panel.
 
+`LATEST RUN` follows future starts automatically. Choosing an older run with
+`[`, the catalog, or previous-failed navigation enters `HISTORY`; that explicit
+selection remains stable until `l` returns to the latest run. The all-runs view
+scrolls across the complete retained output of service and action runs.
+
+The in-app `?` reference is a single scrollable column split into Navigation,
+Services & Actions, Logs & Run History, Log Search, Appearance, and Application
+sections.
+
 ## Application
 
 | Key | Action |

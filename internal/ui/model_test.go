@@ -785,10 +785,10 @@ func TestHelpWrapsDescriptionsAndScrollsWithoutTruncatingThem(t *testing.T) {
 	model.width, model.height, model.ready = 80, 24, true
 	body := ansi.Strip(strings.Join(model.helpBodyLines(), "\n"))
 	for _, description := range []string{
-		"Focus panels; 1 switches Services/Tags when the list is focused",
-		"Pin focused service logs above the active log panel",
-		"Regex filter; Tab switches to highlight",
-		"Choose and apply a theme",
+		"Focus Services, Details, or Logs; 1 toggles Services/Tags when already focused",
+		"Pin the current run; if a pin exists, unpin it from any panel",
+		"Open regex search; Tab switches filter/highlight",
+		"Open the theme and appearance picker",
 	} {
 		if rebuilt := strings.Join(wrapHelpText(description, 24), " "); rebuilt != description {
 			t.Errorf("wrapped help rebuilt %q as %q", description, rebuilt)
@@ -808,6 +808,14 @@ func TestHelpWrapsDescriptionsAndScrollsWithoutTruncatingThem(t *testing.T) {
 	if widest <= 66 {
 		t.Fatalf("help did not become materially wider: widest line = %d", widest)
 	}
+	lastSection := -1
+	for _, section := range []string{"NAVIGATION", "SERVICES & ACTIONS", "LOGS & RUN HISTORY", "LOG SEARCH", "APPEARANCE", "APPLICATION"} {
+		index := strings.Index(body, section)
+		if index <= lastSection {
+			t.Fatalf("help section %q missing or out of order:\n%s", section, body)
+		}
+		lastSection = index
+	}
 
 	model.mode = ModeHelp
 	initial := ansi.Strip(model.renderHelpView())
@@ -822,7 +830,7 @@ func TestHelpWrapsDescriptionsAndScrollsWithoutTruncatingThem(t *testing.T) {
 	}
 }
 
-func TestHelpUsesTheWiderLimitAndRespectsTerminalBackground(t *testing.T) {
+func TestHelpUsesOneWideColumnAndRespectsTerminalBackground(t *testing.T) {
 	defer func() { _, _ = ApplyTheme(DefaultTheme, "") }()
 	dark := true
 	model := NewModelWithOptions(&config.Config{
@@ -835,6 +843,10 @@ func TestHelpUsesTheWiderLimitAndRespectsTerminalBackground(t *testing.T) {
 	widest := 0
 	for _, line := range model.helpBodyLines() {
 		widest = max(widest, lipgloss.Width(line))
+		plain := ansi.Strip(line)
+		if strings.Contains(plain, "1 / 2 / 3") && strings.Contains(plain, "Ctrl+T") {
+			t.Fatalf("help still renders two shortcut columns: %q", plain)
+		}
 	}
 	if widest <= 100 || widest > 105 {
 		t.Fatalf("help body width = %d, want the new 101–105 cell range", widest)

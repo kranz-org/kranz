@@ -61,43 +61,12 @@ func (m *Model) renderActionLogPanel(width, height int) string {
 	if !exists {
 		return renderTitledPanel(m.panelStyle(panelLogs), m.panelTitleStyle(panelLogs), contentWidth, contentHeight, "[3] ACTION OUTPUT", []string{"", "Select an action"})
 	}
-	m.syncRunTarget()
-	selectedRun := state.Run
-	if m.runMode == runViewSingle && m.selectedRun > 0 {
-		selectedRun = m.selectedRun
-		if summary, ok := m.runSummary(app.ActionRunTarget(id), selectedRun); ok {
-			state.Run = summary.Run
-			state.StartedAt, state.FinishedAt = summary.StartedAt, summary.FinishedAt
-			state.Status = actionStatusFromRun(summary.Status)
-			if summary.ExitCode != nil {
-				state.ExitCode = *summary.ExitCode
-			}
-		}
-	}
+	selectedRun, state, lines := m.actionLogContent(id, action, state)
 	name := actionRunName(id.Name, selectedRun)
 	title := "[3] ACTION OUTPUT" + ContextBarStyle.Render(" │ ") + actionStatusIndicator(state.Status) + " " + ServiceNameStyle.Render(name) + ContextBarStyle.Render(" · "+state.Status.String())
 	title += " " + RunningBadgeStyle.Render(m.runViewLabel())
 	if state.Status == app.ActionRunning {
 		title += StartingBadgeStyle.Render(" RUNNING")
-	}
-	entries := m.entriesForRun(app.ActionRunTarget(id), 0)
-	if m.runMode == runViewSingle {
-		entries = m.entriesForRun(app.ActionRunTarget(id), selectedRun)
-	}
-	outputLines := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		prefix := ""
-		if entry.Source == "stderr" {
-			prefix = "[stderr] "
-		}
-		outputLines = appendSafeActionOutput(outputLines, entry.Raw, prefix)
-	}
-	lines := outputLines
-	if state.Status != app.ActionReady {
-		lines = append(appendSafeActionOutput(nil, action.Command, "$ "), lines...)
-	}
-	if state.Status == app.ActionRunning && len(outputLines) == 0 {
-		lines = append(lines, "Running · press s to stop")
 	}
 	if len(lines) == 0 {
 		return renderTitledPanel(m.panelStyle(panelLogs), m.panelTitleStyle(panelLogs), contentWidth, contentHeight, title, []string{"", ContextBarStyle.Render("Press s to run this action")})
@@ -121,6 +90,42 @@ func (m *Model) renderActionLogPanel(width, height int) string {
 		title += ContextBarStyle.Render(fmt.Sprintf("  %d–%d/%d  ↑/↓", start+1, end, len(rows)))
 	}
 	return renderTitledPanel(m.panelStyle(panelLogs), m.panelTitleStyle(panelLogs), contentWidth, contentHeight, title, rows[start:end])
+}
+
+func (m *Model) actionLogContent(id config.ActionID, action config.Action, state app.ActionResult) (uint32, app.ActionResult, []string) {
+	m.syncRunTarget()
+	selectedRun := state.Run
+	if m.runMode == runViewSingle && m.selectedRun > 0 {
+		selectedRun = m.selectedRun
+		if summary, ok := m.runSummary(app.ActionRunTarget(id), selectedRun); ok {
+			state.Run = summary.Run
+			state.StartedAt, state.FinishedAt = summary.StartedAt, summary.FinishedAt
+			state.Status = actionStatusFromRun(summary.Status)
+			if summary.ExitCode != nil {
+				state.ExitCode = *summary.ExitCode
+			}
+		}
+	}
+	entries := m.entriesForRun(app.ActionRunTarget(id), 0)
+	if m.runMode == runViewSingle {
+		entries = m.entriesForRun(app.ActionRunTarget(id), selectedRun)
+	}
+	outputLines := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		prefix := ""
+		if entry.Source == "stderr" {
+			prefix = "[stderr] "
+		}
+		outputLines = appendSafeActionOutput(outputLines, entry.Raw, prefix)
+	}
+	lines := outputLines
+	if state.Status != app.ActionReady {
+		lines = append(appendSafeActionOutput(nil, action.Command, "$ "), lines...)
+	}
+	if state.Status == app.ActionRunning && len(outputLines) == 0 {
+		lines = append(lines, "Running · press s to stop")
+	}
+	return selectedRun, state, lines
 }
 
 func actionStatusFromRun(status string) app.ActionStatus {
@@ -406,14 +411,18 @@ func (m *Model) displayedPinnedLogLineCount() int {
 }
 
 func (m *Model) displayedLogLineCount() int {
-	if _, _, state, exists := m.focusedActionDefinition(); exists {
-		return visualLogRowCount(actionOutputLines(state), m.currentLogContentWidth(), m.wrapLogs)
+	if id, action, state, exists := m.focusedActionDefinition(); exists {
+		_, _, lines := m.actionLogContent(id, action, state)
+		return visualLogRowCount(lines, m.currentLogContentWidth(), m.wrapLogs)
 	}
 	svc := m.FocusedService()
 	if svc == nil {
 		return 0
 	}
 	entries := m.app.Logs(svc.Name)
+	if m.syncRunTarget() && m.runMode == runViewSingle {
+		entries = m.entriesForRun(app.ServiceRunTarget(svc.Name), m.selectedRun)
+	}
 	lines := logEntryLines(entries)
 	indices := make([]int, len(lines))
 	for index := range indices {

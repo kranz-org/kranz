@@ -39,83 +39,77 @@ func (m *Model) renderHelpView() string {
 	return m.placeOverlay(content)
 }
 
-func helpEntries() []helpEntry {
-	return []helpEntry{
-		{"1 / 2 / 3", "Focus panels; 1 switches Services/Tags when the list is focused"},
-		{"Shift+3", "Pin the current run; if a pin exists, unpin it from any panel"},
-		{"3", "Switch focus between pinned and current logs"},
-		{"Tab / Shift+Tab", "Focus the next or previous panel, including pinned logs"},
-		{"↑/↓ j/k", "Navigate or scroll focused panel"},
-		{"←/→", "Cycle Services/Tags while the list panel is focused"},
-		{"t", "Toggle Services/Tags from any panel"},
-		{"Enter", "Expand or collapse service actions, action groups, or a tag"},
-		{"Space", "Select/unselect service or tag"},
-		{"s", "Start/stop service targets or run the focused action"},
-		{"Shift+S", "Start or stop only targets, ignoring dependency expansion"},
-		{"a", "Select/clear all services"},
-		{"A", "Stop all services"},
-		{"r", "Restart selected service"},
-		{"R", "Restart running services"},
-		{"T", "Clear selected tags"},
-		{"h", "Health check history"},
-		{"n", "Notification center"},
-		{"/", "Open the regex log search; Tab switches filter/highlight"},
-		{"Enter in search", "Apply the query and keep editing it"},
-		{"Ctrl+U in search", "Erase the query being edited"},
-		{"Ctrl+V in search", "Paste clipboard text at the caret"},
-		{"Esc in search", "Close the editor, keeping the last applied filter"},
-		{"Esc", "Clear the active log filter"},
-		{"n/N", "Next/previous highlighted match"},
-		{"w", "Toggle log line wrapping"},
-		{"i", "Show/hide captured-at time in logs"},
-		{"f", "Pause/resume logs"},
-		{"x", "Toggle Combined/Single run log view"},
-		{"[ / ]", "Previous/next run; Shift+F finds the previous failed run"},
-		{"v", "Open the run catalog; l returns to latest"},
-		{"e / E", "Export selected run to clipboard / a file path"},
-		{"c", "Clear focused or pinned service logs after confirmation"},
-		{"q", "Quit"},
-		{"?", "Show this help"},
-		{"Ctrl+T", "Choose and apply a theme"},
-		{"p / m", "In Themes: toggle theme or cycle Auto/Dark/Light mode"},
-		{"a / b", "In Themes: cycle the accent or canvas sources, including a custom color once one is set"},
-		{"Shift+A/B", "In Themes: edit the six hex digits of the accent or the canvas"},
-		{"Enter / r", "In Themes: apply for this session or reload saved appearance from configuration"},
-		{"g / c", "In Themes: save appearance globally or to the project config"},
-		{"Ctrl+L", "Reload configuration and detect terminal appearance"},
-		{"Ctrl+O", "Open command shell; Ctrl+O returns to Kranz"},
+type helpSection struct {
+	title   string
+	entries []helpEntry
+}
+
+func helpSections() []helpSection {
+	return []helpSection{
+		{title: "NAVIGATION", entries: []helpEntry{
+			{"1 / 2 / 3", "Focus Services, Details, or Logs; 1 toggles Services/Tags when already focused"},
+			{"Tab / Shift+Tab", "Focus the next or previous panel, including pinned logs"},
+			{"↑/↓ j/k", "Navigate or scroll the focused panel"},
+			{"←/→", "Cycle Services/Tags while the list panel is focused"},
+			{"t", "Toggle Services/Tags from any panel"},
+			{"Enter", "Expand or collapse a service, action group, or tag"},
+		}},
+		{title: "SERVICES & ACTIONS", entries: []helpEntry{
+			{"Space", "Select or unselect a service or tag"},
+			{"s", "Start/stop service targets or run the focused action"},
+			{"Shift+S", "Start or stop only targets, ignoring dependency expansion"},
+			{"a / Shift+A", "Select/clear all services or stop all services"},
+			{"r / Shift+R", "Restart the selected service or all running services"},
+			{"Shift+T", "Clear selected tags"},
+			{"h / n", "Open health history or the notification center"},
+		}},
+		{title: "LOGS & RUN HISTORY", entries: []helpEntry{
+			{"3", "Switch focus between pinned and current logs"},
+			{"Shift+3", "Pin the current run; if a pin exists, unpin it from any panel"},
+			{"w / i", "Toggle line wrapping or captured-at timestamps"},
+			{"f", "Pause or resume following logs"},
+			{"x", "Toggle all-runs and single-run views"},
+			{"[ / ]", "Open the previous or next run"},
+			{"Shift+F / l", "Open the previous failed run or return to the latest run"},
+			{"v", "Open the filterable run catalog"},
+			{"e / Shift+E", "Export the selected run to clipboard or a file"},
+			{"c", "Clear focused or pinned service logs after confirmation"},
+		}},
+		{title: "LOG SEARCH", entries: []helpEntry{
+			{"/", "Open regex search; Tab switches filter/highlight"},
+			{"Enter", "Apply the query and keep editing it"},
+			{"Ctrl+U / Ctrl+V", "Erase the query or paste clipboard text"},
+			{"Esc", "Close the editor, then clear the active filter"},
+			{"n / Shift+N", "Open the next or previous highlighted match"},
+		}},
+		{title: "APPEARANCE", entries: []helpEntry{
+			{"Ctrl+T", "Open the theme and appearance picker"},
+			{"p / m", "Toggle theme or cycle Auto/Dark/Light mode"},
+			{"a / b", "Cycle accent or canvas sources, including a custom color"},
+			{"Shift+A/B", "Edit the six hex digits of the accent or canvas"},
+			{"Enter / r", "Apply for this session or reload saved appearance"},
+			{"g / c", "Save appearance globally or to the project config"},
+		}},
+		{title: "APPLICATION", entries: []helpEntry{
+			{"Ctrl+L", "Reload configuration and detect terminal appearance"},
+			{"Ctrl+O", "Open command shell; Ctrl+O returns to Kranz"},
+			{"?", "Show this help"},
+			{"q", "Quit"},
+		}},
 	}
 }
 
 func (m *Model) helpBodyLines() []string {
-	helpPairs := helpEntries()
 	availableWidth := max(20, min(105, m.width-6))
-	if availableWidth < 86 {
-		lines := make([]string, 0, len(helpPairs))
-		for _, entry := range helpPairs {
+	sections := helpSections()
+	lines := make([]string, 0, 64)
+	for sectionIndex, section := range sections {
+		if sectionIndex > 0 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, HelpKeyStyle.Bold(true).Render(section.title))
+		for _, entry := range section.entries {
 			lines = append(lines, renderHelpCell(entry.key, entry.desc, availableWidth)...)
-		}
-		return lines
-	}
-	cellWidth := (availableWidth - 3) / 2
-	rows := (len(helpPairs) + 1) / 2
-	lines := make([]string, 0, rows)
-	for row := 0; row < rows; row++ {
-		left := renderHelpCell(helpPairs[row].key, helpPairs[row].desc, cellWidth)
-		right := []string(nil)
-		if rightIndex := row + rows; rightIndex < len(helpPairs) {
-			right = renderHelpCell(helpPairs[rightIndex].key, helpPairs[rightIndex].desc, cellWidth)
-		}
-		rowHeight := max(len(left), len(right))
-		for line := 0; line < rowHeight; line++ {
-			leftLine, rightLine := strings.Repeat(" ", cellWidth), ""
-			if line < len(left) {
-				leftLine = left[line]
-			}
-			if line < len(right) {
-				rightLine = right[line]
-			}
-			lines = append(lines, leftLine+"   "+rightLine)
 		}
 	}
 	return lines

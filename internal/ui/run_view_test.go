@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/kranz-org/kranz/internal/app"
 	"github.com/kranz-org/kranz/internal/config"
 )
 
@@ -53,12 +55,62 @@ func TestRunLabelsSeparateAutoUpdatingLatestAndHistoryViews(t *testing.T) {
 
 	finishTestServiceRun(t, model, "api", 0, "run three")
 	model.refreshServices()
+	if got := model.runViewLabel(); got != "LATEST RUN · #3" || model.selectedRun != 3 {
+		t.Fatalf("latest view did not follow the new run: label=%q run=%d", got, model.selectedRun)
+	}
+	model.moveRun(-1, false)
 	if got := model.runViewLabel(); got != "HISTORY · RUN #2 · 1 NEWER · [L] LATEST" {
-		t.Fatalf("history label = %q", got)
+		t.Fatalf("explicit history label = %q", got)
+	}
+	finishTestServiceRun(t, model, "api", 0, "run four")
+	model.refreshServices()
+	if got := model.runViewLabel(); got != "HISTORY · RUN #2 · 2 NEWER · [L] LATEST" || model.selectedRun != 2 {
+		t.Fatalf("history view followed a new run: label=%q run=%d", got, model.selectedRun)
 	}
 	model.selectLatestRun()
-	if got := model.runViewLabel(); got != "LATEST RUN · #3" {
+	if got := model.runViewLabel(); got != "LATEST RUN · #4" {
 		t.Fatalf("returned latest label = %q", got)
+	}
+}
+
+func TestCombinedActionOutputScrollsAcrossAllRetainedRuns(t *testing.T) {
+	id := config.ActionID{OwnerKind: config.ActionOwnerGroup, Owner: "ops", Name: "history"}
+	values := make([]string, 18)
+	for index := range values {
+		values[index] = fmt.Sprint(index + 1)
+	}
+	command := "for value in " + strings.Join(values, " ") + "; do echo line-$value; done"
+	model := NewModel(&config.Config{Project: "actions", ActionGroups: map[string]config.ActionGroup{
+		"ops": {Actions: map[string]config.Action{"history": {Command: command}}},
+	}}, "test")
+	defer model.Shutdown()
+	for range 2 {
+		if _, err := model.app.RunAction(context.Background(), id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	model.focusedAction = &id
+	model.width, model.height, model.ready = 100, 14, true
+	model.panelFocus = panelLogs
+	model.syncRunTarget()
+	model.toggleRunView()
+	if model.runMode != runViewCombined {
+		t.Fatalf("action view mode = %v, want combined", model.runMode)
+	}
+
+	target := app.ActionRunTarget(id)
+	latestEntries := len(model.entriesForRun(target, 2))
+	allEntries := len(model.entriesForRun(target, 0))
+	displayedRows := model.displayedLogLineCount()
+	if allEntries <= latestEntries || displayedRows <= latestEntries {
+		t.Fatalf("combined rows = %d from %d entries, latest has %d", displayedRows, allEntries, latestEntries)
+	}
+	for range displayedRows + 10 {
+		model.scrollLogs(-1)
+	}
+	wantOffset := max(0, displayedRows-(model.currentLogPanelHeight()-2))
+	if model.logOffset != wantOffset || model.logOffset <= latestEntries {
+		t.Fatalf("combined scroll stopped at %d, want %d across older runs (latest entries %d)", model.logOffset, wantOffset, latestEntries)
 	}
 }
 

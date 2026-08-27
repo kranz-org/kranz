@@ -220,6 +220,7 @@ type Model struct {
 	runTarget        app.RunTarget
 	runMode          runViewMode
 	selectedRun      uint32
+	runFollowsLatest bool
 	runListCursor    int
 	runStatusFilter  string
 	runViewports     map[runViewportKey]runViewportState

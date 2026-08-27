@@ -39,6 +39,10 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ### Fixed
 
+- The isolated latest-run view now follows subsequent starts until the user
+  explicitly enters history. Combined action output scrolls across all retained
+  runs instead of using the latest result as its viewport boundary, and the
+  shortcut reference is a sectioned single-column list.
 - Run-view titles now distinguish auto-updating combined output, the latest
   isolated run, and historical runs without conflating "live" process state
   with history position. Pinned panels show the `Shift+3` unpin action, which

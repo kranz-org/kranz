@@ -306,6 +306,7 @@ func (m *Model) handleOverlayMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 				m.runListCursor = index
 				m.saveRunViewport()
 				m.selectedRun, m.runMode, m.mode = run.Run, runViewSingle, ModeNormal
+				m.runFollowsLatest = run.Run == latestRun(m.runsForTarget(m.runTarget))
 				m.restoreRunViewport()
 				return m, nil
 			}
