@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -188,7 +189,7 @@ func (m *Model) handleDashboardTextControl(rendered string, msg tea.MouseMsg) (t
 }
 
 func (m *Model) logPanelFocusAt(y int) panelFocus {
-	if m.PinnedService() == nil {
+	if !m.hasPinnedRunView() {
 		return panelLogs
 	}
 	topHeight, _ := m.logColumnLayout(m.height - dashboardHeaderRows - dashboardFooterRows)
@@ -298,6 +299,21 @@ func (m *Model) handleOverlayMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 	rendered := m.View()
 	switch m.mode {
+	case ModeRunList:
+		runs := m.filteredRunList()
+		for index, run := range runs {
+			if renderedTextHit(rendered, msg.X, msg.Y, fmt.Sprintf("#%d", run.Run)) {
+				m.runListCursor = index
+				m.saveRunViewport()
+				m.selectedRun, m.runMode, m.mode = run.Run, runViewSingle, ModeNormal
+				m.restoreRunViewport()
+				return m, nil
+			}
+		}
+		if renderedTextHit(rendered, msg.X, msg.Y, "[Tab] Filter") {
+			return m.handleRunListKeys(tea.KeyMsg{Type: tea.KeyTab})
+		}
+		return m.closeOverlayOnClick(rendered, msg)
 	case ModeThemes:
 		return m.handleThemeMouseClick(rendered, msg)
 	case ModeSearch:

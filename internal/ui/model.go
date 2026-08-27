@@ -34,7 +34,29 @@ const (
 	ModeConfirmServiceStop
 	ModeConfirmThemeSave
 	ModeThemes
+	ModeRunList
 )
+
+type runViewMode uint8
+
+const (
+	runViewCombined runViewMode = iota
+	runViewSingle
+)
+
+type runViewportKey struct {
+	Target app.RunTarget
+	Mode   runViewMode
+	Run    uint32
+}
+
+type runViewportState struct {
+	Offset, Anchor int
+	Follow, Paused bool
+	Pattern        string
+	SearchMode     logSearchMode
+	CurrentMatch   int
+}
 
 type themeSaveScope uint8
 
@@ -177,12 +199,24 @@ type Model struct {
 	portScanID   int
 	portScanBusy bool
 
-	logSearcher  *kranzlog.Searcher
-	searchInput  textinput.Model
-	searchNudge  time.Time
-	currentMatch int
-	searchMode   logSearchMode
-	pinnedLog    string
+	logSearcher      *kranzlog.Searcher
+	pinnedSearcher   *kranzlog.Searcher
+	searchInput      textinput.Model
+	searchNudge      time.Time
+	currentMatch     int
+	pinnedMatch      int
+	searchMode       logSearchMode
+	pinnedSearchMode logSearchMode
+	pinnedLog        string
+	pinnedTarget     app.RunTarget
+	pinnedRunMode    runViewMode
+	pinnedRun        uint32
+	runTarget        app.RunTarget
+	runMode          runViewMode
+	selectedRun      uint32
+	runListCursor    int
+	runStatusFilter  string
+	runViewports     map[runViewportKey]runViewportState
 
 	mode       ViewMode
 	width      int
@@ -218,6 +252,7 @@ type Model struct {
 	pendingStopAll     bool
 	themeSaveScope     themeSaveScope
 	clearTarget        string
+	clearAction        *config.ActionID
 	clearPinned        bool
 
 	conflictService  string
@@ -328,9 +363,12 @@ func NewModelWithOptions(cfg *config.Config, version string, options ModelOption
 		panelFocus:          panelServices,
 		listMode:            listServices,
 		logSearcher:         kranzlog.NewSearcher(),
+		pinnedSearcher:      kranzlog.NewSearcher(),
+		runViewports:        make(map[runViewportKey]runViewportState),
 		searchInput:         newSearchInput(),
 		themeColorInput:     newThemeColorInput(),
 		currentMatch:        -1,
+		pinnedMatch:         -1,
 		searchMode:          searchFilter,
 		mode:                ModeNormal,
 		followMode:          true,
@@ -592,7 +630,8 @@ func (m *Model) addNotification(serviceName, message string, level config.LogLev
 
 // PinnedService returns the service shown in the fixed upper log panel.
 func (m *Model) PinnedService() *app.ServiceSnapshot {
-	if m.pinnedLog == "" {
+	target, ok := m.pinnedRunTarget()
+	if !ok || target.Kind != app.RunKindService {
 		return nil
 	}
 	// Look up within this tick's already-fetched snapshots rather than
@@ -600,9 +639,24 @@ func (m *Model) PinnedService() *app.ServiceSnapshot {
 	// same pointer for the same service within one render — some callers
 	// compare them by identity.
 	for _, svc := range m.allServices {
-		if svc.Name == m.pinnedLog {
+		if svc.Name == target.Name {
 			return svc
 		}
 	}
 	return nil
+}
+
+func (m *Model) pinnedRunTarget() (app.RunTarget, bool) {
+	if m.pinnedTarget.Kind != "" {
+		return m.pinnedTarget, true
+	}
+	if m.pinnedLog != "" {
+		return app.ServiceRunTarget(m.pinnedLog), true
+	}
+	return app.RunTarget{}, false
+}
+
+func (m *Model) hasPinnedRunView() bool {
+	_, ok := m.pinnedRunTarget()
+	return ok
 }

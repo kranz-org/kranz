@@ -81,6 +81,20 @@ func (m *Model) handleLifecycleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 }
 
 func (m *Model) beginClearLogs() bool {
+	if m.panelFocus == panelLogs && m.focusedAction != nil {
+		id := *m.focusedAction
+		m.clearAction, m.clearTarget, m.clearPinned = &id, runTargetLabel(app.ActionRunTarget(id)), false
+		m.mode = ModeConfirmClearLogs
+		return true
+	}
+	if m.panelFocus == panelPinnedLogs {
+		if target, ok := m.pinnedRunTarget(); ok && target.Kind == app.RunKindAction {
+			id := target.Action
+			m.clearAction, m.clearTarget, m.clearPinned = &id, runTargetLabel(target), true
+			m.mode = ModeConfirmClearLogs
+			return true
+		}
+	}
 	var svc *app.ServiceSnapshot
 	switch m.panelFocus {
 	case panelLogs:
@@ -100,6 +114,15 @@ func (m *Model) beginClearLogs() bool {
 }
 
 func (m *Model) clearConfirmedLogs() {
+	if m.clearAction != nil {
+		m.app.ClearActionLogs(*m.clearAction)
+		m.addNotification(runTargetLabel(app.ActionRunTarget(*m.clearAction)), "Action logs cleared", config.LogInfo)
+		m.clearAction = nil
+		m.clearTarget = ""
+		m.clearPinned = false
+		m.mode = ModeNormal
+		return
+	}
 	svc, ok := m.app.Service(m.clearTarget)
 	if ok {
 		m.app.ClearLogs(svc.Name)
@@ -114,6 +137,7 @@ func (m *Model) clearConfirmedLogs() {
 		m.addNotification(svc.Name, "Logs cleared", config.LogInfo)
 	}
 	m.clearTarget = ""
+	m.clearAction = nil
 	m.clearPinned = false
 	m.mode = ModeNormal
 }

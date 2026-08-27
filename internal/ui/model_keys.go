@@ -47,6 +47,8 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handlePortConflictKeys(msg)
 	case ModeThemes:
 		return m.handleThemeKeys(msg)
+	case ModeRunList:
+		return m.handleRunListKeys(msg)
 	default:
 		if msg.String() == "esc" || msg.String() == "q" {
 			m.mode = ModeNormal
@@ -109,7 +111,7 @@ func (m *Model) handleNavigationKey(msg tea.KeyMsg) bool {
 		m.panelFocus = panelDetails
 		return true
 	case key.Matches(msg, m.keys.FocusLogs):
-		if m.PinnedService() != nil && m.panelFocus == panelLogs {
+		if m.hasPinnedRunView() && m.panelFocus == panelLogs {
 			m.panelFocus = panelPinnedLogs
 		} else {
 			m.panelFocus = panelLogs
@@ -182,10 +184,28 @@ func (m *Model) handleHelpKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m *Model) handleLogKey(msg tea.KeyMsg) bool {
 	switch {
+	case msg.String() == "v":
+		m.openRunList()
+		return true
+	case msg.String() == "x":
+		m.toggleRunView()
+		return true
+	case msg.String() == "[":
+		m.moveRun(-1, false)
+		return true
+	case msg.String() == "]":
+		m.moveRun(1, false)
+		return true
+	case msg.String() == "F":
+		m.moveRun(-1, true)
+		return true
+	case msg.String() == "l":
+		m.selectLatestRun()
+		return true
 	case key.Matches(msg, m.keys.ClearSearch):
 		// Esc is the second step out of search: the editor exit keeps the
 		// filter, and this drops it. Without a pattern the key stays inert.
-		if m.logSearcher == nil || !m.logSearcher.HasPattern() {
+		if m.activeLogSearcher() == nil || !m.activeLogSearcher().HasPattern() {
 			return false
 		}
 		m.clearSearch()

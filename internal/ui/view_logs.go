@@ -15,8 +15,8 @@ import (
 // ordinary service output.
 
 func (m *Model) renderLogColumn(width, height int) string {
-	pinned := m.PinnedService()
-	if pinned == nil {
+	pinnedTarget, hasPinned := m.pinnedRunTarget()
+	if !hasPinned {
 		if m.focusedAction != nil {
 			return m.renderActionLogPanel(width, height)
 		}
@@ -26,9 +26,9 @@ func (m *Model) renderLogColumn(width, height int) string {
 		return m.renderLogPanel(m.FocusedService(), width, height)
 	}
 	topHeight, bottomHeight := m.logColumnLayout(height)
-	top := m.renderPinnedLogPanel(pinned, width, topHeight)
+	top := m.renderPinnedRunPanel(pinnedTarget, width, topHeight)
 	if topHeight == collapsedPanelHeight {
-		top = renderCollapsedPanel("[3] PINNED LOGS │ "+pinned.Name, width)
+		top = renderCollapsedPanel("[3] PINNED LOGS │ "+runTargetLabel(pinnedTarget), width)
 	}
 	focused := m.FocusedService()
 	bottom := m.renderLogPanel(focused, width, bottomHeight)
@@ -61,12 +61,37 @@ func (m *Model) renderActionLogPanel(width, height int) string {
 	if !exists {
 		return renderTitledPanel(m.panelStyle(panelLogs), m.panelTitleStyle(panelLogs), contentWidth, contentHeight, "[3] ACTION OUTPUT", []string{"", "Select an action"})
 	}
-	name := actionRunName(id.Name, state.Run)
+	m.syncRunTarget()
+	selectedRun := state.Run
+	if m.runMode == runViewSingle && m.selectedRun > 0 {
+		selectedRun = m.selectedRun
+		if summary, ok := m.runSummary(app.ActionRunTarget(id), selectedRun); ok {
+			state.Run = summary.Run
+			state.StartedAt, state.FinishedAt = summary.StartedAt, summary.FinishedAt
+			state.Status = actionStatusFromRun(summary.Status)
+			if summary.ExitCode != nil {
+				state.ExitCode = *summary.ExitCode
+			}
+		}
+	}
+	name := actionRunName(id.Name, selectedRun)
 	title := "[3] ACTION OUTPUT" + ContextBarStyle.Render(" │ ") + actionStatusIndicator(state.Status) + " " + ServiceNameStyle.Render(name) + ContextBarStyle.Render(" · "+state.Status.String())
+	title += " " + RunningBadgeStyle.Render(m.runViewLabel())
 	if state.Status == app.ActionRunning {
 		title += StartingBadgeStyle.Render(" RUNNING")
 	}
-	outputLines := actionOutputLines(state)
+	entries := m.entriesForRun(app.ActionRunTarget(id), 0)
+	if m.runMode == runViewSingle {
+		entries = m.entriesForRun(app.ActionRunTarget(id), selectedRun)
+	}
+	outputLines := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		prefix := ""
+		if entry.Source == "stderr" {
+			prefix = "[stderr] "
+		}
+		outputLines = appendSafeActionOutput(outputLines, entry.Raw, prefix)
+	}
 	lines := outputLines
 	if state.Status != app.ActionReady {
 		lines = append(appendSafeActionOutput(nil, action.Command, "$ "), lines...)
@@ -96,6 +121,23 @@ func (m *Model) renderActionLogPanel(width, height int) string {
 		title += ContextBarStyle.Render(fmt.Sprintf("  %d–%d/%d  ↑/↓", start+1, end, len(rows)))
 	}
 	return renderTitledPanel(m.panelStyle(panelLogs), m.panelTitleStyle(panelLogs), contentWidth, contentHeight, title, rows[start:end])
+}
+
+func actionStatusFromRun(status string) app.ActionStatus {
+	switch status {
+	case app.ActionRunning.String():
+		return app.ActionRunning
+	case app.ActionSucceeded.String():
+		return app.ActionSucceeded
+	case app.ActionFailed.String():
+		return app.ActionFailed
+	case app.ActionTimedOut.String():
+		return app.ActionTimedOut
+	case app.ActionCancelled.String():
+		return app.ActionCancelled
+	default:
+		return app.ActionReady
+	}
 }
 
 func actionOutputLines(state app.ActionResult) []string {
@@ -151,7 +193,17 @@ func (m *Model) renderPinnedLogPanel(svc *app.ServiceSnapshot, width, height int
 	return m.renderLogPanelMode(svc, width, height, true)
 }
 
+func (m *Model) renderPinnedRunPanel(target app.RunTarget, width, height int) string {
+	if target.Kind == app.RunKindAction {
+		return m.renderPinnedActionRunPanel(target, width, height)
+	}
+	return m.renderPinnedLogPanel(m.PinnedService(), width, height)
+}
+
 func (m *Model) renderLogPanelMode(svc *app.ServiceSnapshot, width, height int, pinned bool) string {
+	if !pinned {
+		m.syncRunTarget()
+	}
 	contentWidth := max(1, width-2)
 	contentHeight := max(1, height-2)
 	panelStyle := m.panelStyle(panelLogs)
@@ -184,19 +236,33 @@ func (m *Model) renderLogPanelMode(svc *app.ServiceSnapshot, width, height int, 
 	if m.showLogTime {
 		title += " " + RunningBadgeStyle.Render("TIME")
 	}
+	if !pinned {
+		title += " " + RunningBadgeStyle.Render(m.runViewLabel())
+	} else {
+		title += " " + RunningBadgeStyle.Render(m.pinnedRunViewLabel())
+	}
 
 	sourceEntries := m.app.Logs(svc.Name)
+	if !pinned && m.runMode == runViewSingle {
+		sourceEntries = m.entriesForRun(app.ServiceRunTarget(svc.Name), m.selectedRun)
+	} else if pinned {
+		sourceEntries = m.pinnedEntries(app.ServiceRunTarget(svc.Name))
+	}
 	sourceLines := logEntryLines(sourceEntries)
 
 	var searchMatches []int
-	hasPattern := !pinned && m.logSearcher != nil && m.logSearcher.HasPattern()
+	searcher, mode := m.logSearcher, m.searchMode
+	if pinned {
+		searcher, mode = m.pinnedSearcher, m.pinnedSearchMode
+	}
+	hasPattern := searcher != nil && searcher.HasPattern()
 	if hasPattern {
-		searchMatches = m.logSearcher.Search(sourceLines)
-		mode := "FILTER"
-		if m.searchMode == searchHighlight {
-			mode = "HIGHLIGHT"
+		searchMatches = searcher.Search(sourceLines)
+		modeLabel := "FILTER"
+		if mode == searchHighlight {
+			modeLabel = "HIGHLIGHT"
 		}
-		title += SearchInputStyle.Render(fmt.Sprintf("  %s /%s/ · %d", mode, m.logSearcher.Pattern(), len(searchMatches)))
+		title += SearchInputStyle.Render(fmt.Sprintf("  %s /%s/ · %d", modeLabel, searcher.Pattern(), len(searchMatches)))
 	}
 	matchSet := make(map[int]bool, len(searchMatches))
 	for _, idx := range searchMatches {
@@ -206,7 +272,7 @@ func (m *Model) renderLogPanelMode(svc *app.ServiceSnapshot, width, height int, 
 	for index := range sourceIndices {
 		sourceIndices[index] = index
 	}
-	if hasPattern && m.searchMode == searchFilter {
+	if hasPattern && mode == searchFilter {
 		sourceIndices = append([]int(nil), searchMatches...)
 	}
 
@@ -216,7 +282,7 @@ func (m *Model) renderLogPanelMode(svc *app.ServiceSnapshot, width, height int, 
 			ContextBarStyle.Render("Output will appear after the service starts"),
 		})
 	}
-	if hasPattern && m.searchMode == searchFilter && len(sourceIndices) == 0 {
+	if hasPattern && mode == searchFilter && len(sourceIndices) == 0 {
 		return renderTitledPanel(panelStyle, titleStyle, contentWidth, contentHeight, title, []string{
 			"",
 			ContextBarStyle.Render("No log lines match this regex"),
@@ -234,7 +300,7 @@ func (m *Model) renderLogPanelMode(svc *app.ServiceSnapshot, width, height int, 
 			}
 			for _, visualLine := range visualLines {
 				visualLine = ansi.Truncate(visualLine, contentWidth, "")
-				if !pinned && m.searchMode == searchHighlight && matchSet[actualIndex] {
+				if mode == searchHighlight && matchSet[actualIndex] {
 					visualLine = SearchHighlightStyle.Render(preserveStyleAfterReset(visualLine, SearchHighlightStyle))
 				}
 				rows = append(rows, visualLine)
@@ -260,7 +326,7 @@ func (m *Model) renderLogPanelMode(svc *app.ServiceSnapshot, width, height int, 
 }
 
 func (m *Model) scrollLogs(direction int) {
-	pinned := m.panelFocus == panelPinnedLogs && m.PinnedService() != nil
+	pinned := m.panelFocus == panelPinnedLogs && m.hasPinnedRunView()
 	svc := m.FocusedService()
 	panelHeight := m.currentLogPanelHeight()
 	displayLineCount := m.displayedLogLineCount()
@@ -271,7 +337,7 @@ func (m *Model) scrollLogs(direction int) {
 		displayLineCount = m.displayedPinnedLogLineCount()
 		offset, anchor, follow = m.pinnedOffset, m.pinnedAnchor, m.pinnedFollow
 	}
-	if svc == nil && m.focusedAction == nil {
+	if !pinned && svc == nil && m.focusedAction == nil {
 		if pinned {
 			m.pinnedOffset = 0
 		} else {
@@ -303,7 +369,7 @@ func (m *Model) scrollLogs(direction int) {
 
 func (m *Model) currentLogPanelHeight() int {
 	height := max(1, m.height-2)
-	if m.PinnedService() != nil {
+	if m.hasPinnedRunView() {
 		_, height = m.logColumnLayout(height)
 	}
 	return height
@@ -311,7 +377,7 @@ func (m *Model) currentLogPanelHeight() int {
 
 func (m *Model) pinnedLogPanelHeight() int {
 	height := max(1, m.height-2)
-	if m.PinnedService() == nil {
+	if !m.hasPinnedRunView() {
 		return height
 	}
 	height, _ = m.logColumnLayout(height)
@@ -319,12 +385,21 @@ func (m *Model) pinnedLogPanelHeight() int {
 }
 
 func (m *Model) displayedPinnedLogLineCount() int {
-	svc := m.PinnedService()
-	if svc == nil {
+	target, ok := m.pinnedRunTarget()
+	if !ok {
 		return 0
 	}
-	lines := make([]string, 0, len(m.app.Logs(svc.Name)))
-	for _, entry := range m.app.Logs(svc.Name) {
+	entries := m.pinnedEntries(target)
+	if m.pinnedSearchMode == searchFilter && m.pinnedSearcher != nil && m.pinnedSearcher.HasPattern() {
+		matches := m.pinnedSearcher.Search(logEntryLines(entries))
+		filtered := make([]config.LogEntry, 0, len(matches))
+		for _, index := range matches {
+			filtered = append(filtered, entries[index])
+		}
+		entries = filtered
+	}
+	lines := make([]string, 0, len(entries))
+	for _, entry := range entries {
 		lines = append(lines, m.displayLogEntry(entry))
 	}
 	return visualLogRowCount(lines, m.currentLogContentWidth(), m.wrapLogs)
@@ -398,9 +473,34 @@ func (m *Model) focusLogMatch(match int) {
 	m.panelFocus = panelLogs
 }
 
+func (m *Model) focusActiveLogMatch(match int) {
+	if m.panelFocus != panelPinnedLogs {
+		m.focusLogMatch(match)
+		return
+	}
+	lines := m.activeSearchLines()
+	if match < 0 || match >= len(lines) {
+		return
+	}
+	maxLines := max(1, m.pinnedLogPanelHeight()-2)
+	row := visualLogRowCount(lines[:match], m.currentLogContentWidth(), m.wrapLogs)
+	totalRows := visualLogRowCount(lines, m.currentLogContentWidth(), m.wrapLogs)
+	maxStart := max(0, totalRows-maxLines)
+	desiredStart := min(maxStart, max(0, row-maxLines/2))
+	m.pinnedOffset = maxStart - desiredStart
+	if desiredStart == maxStart {
+		m.pinnedAnchor, m.pinnedFollow = 0, true
+	} else {
+		m.pinnedAnchor, m.pinnedFollow = totalRows, false
+	}
+}
+
 func (m *Model) serviceLogLines(svc *app.ServiceSnapshot) []string {
 	if svc == nil {
 		return nil
+	}
+	if m.runMode == runViewSingle && m.runTarget == app.ServiceRunTarget(svc.Name) {
+		return logEntryLines(m.entriesForRun(m.runTarget, m.selectedRun))
 	}
 	return logEntryLines(m.app.Logs(svc.Name))
 }

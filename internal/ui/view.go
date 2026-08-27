@@ -51,6 +51,8 @@ func (m *Model) View() string {
 		content = m.renderConfirmThemeSaveView()
 	case ModeThemes:
 		content = m.renderThemeView()
+	case ModeRunList:
+		content = m.renderRunListView()
 	default:
 		content = m.renderMainView()
 	}
@@ -356,7 +358,7 @@ const searchEditorMinWidth = 24
 // disappear before the input is squeezed below a usable width.
 func (m *Model) searchBarLayout() (label, hints string, editorWidth int) {
 	mode, alternate := "FILTER", "Highlight"
-	if m.searchMode == searchHighlight {
+	if m.activeSearchMode() == searchHighlight {
 		mode, alternate = "HIGHLIGHT", "Filter"
 	}
 	label = fmt.Sprintf(" Regex %s /", mode)

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -52,7 +53,7 @@ func (m *Model) moveFocus(next int) {
 
 func (m *Model) cyclePanelFocus(direction int) {
 	panels := []panelFocus{panelServices, panelDetails, panelLogs}
-	if m.PinnedService() != nil {
+	if m.hasPinnedRunView() {
 		panels = append(panels, panelPinnedLogs)
 	}
 	current := 0
@@ -117,18 +118,25 @@ func (m *Model) toggleAllSelection() {
 }
 
 func (m *Model) togglePinnedLog() {
-	if m.focusedAction != nil || m.focusedActionGroup != "" {
+	if m.focusedActionGroup != "" {
 		return
 	}
 	if m.listMode == listTags && m.focusedTagService() == nil {
 		return
 	}
-	svc := m.FocusedService()
-	if svc == nil {
+	if !m.syncRunTarget() {
 		return
 	}
-	if m.pinnedLog == svc.Name {
+	target := m.runTarget
+	run := latestRun(m.runsForTarget(target))
+	if m.runMode == runViewSingle && m.selectedRun > 0 {
+		run = m.selectedRun
+	}
+	if m.pinnedTarget == target && m.pinnedRunMode == m.runMode && m.pinnedRun == run ||
+		m.pinnedTarget.Kind == "" && target.Kind == app.RunKindService && m.pinnedLog == target.Name {
 		m.pinnedLog = ""
+		m.pinnedTarget = app.RunTarget{}
+		m.pinnedRun = 0
 		m.pinnedOffset, m.pinnedAnchor, m.pinnedFollow = 0, 0, true
 		if m.panelFocus == panelPinnedLogs {
 			m.panelFocus = panelLogs
@@ -136,10 +144,16 @@ func (m *Model) togglePinnedLog() {
 		m.addNotification("logs", "Pinned log closed", config.LogInfo)
 		return
 	}
-	m.pinnedLog = svc.Name
+	m.pinnedTarget, m.pinnedRunMode, m.pinnedRun = target, m.runMode, run
+	m.pinnedLog = ""
+	if target.Kind == app.RunKindService {
+		m.pinnedLog = target.Name
+		if svc := m.FocusedService(); svc != nil {
+			m.markServiceLogsRead(svc)
+		}
+	}
 	m.pinnedOffset, m.pinnedAnchor, m.pinnedFollow = 0, 0, true
-	m.markServiceLogsRead(svc)
-	m.addNotification("logs", "Pinned logs: "+svc.Name, config.LogInfo)
+	m.addNotification("logs", fmt.Sprintf("Pinned logs: %s#%d", runTargetLabel(target), run), config.LogInfo)
 }
 
 func (m *Model) toggleListMode() {

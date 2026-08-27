@@ -5,7 +5,9 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/kranz-org/kranz/internal/app"
 	"github.com/kranz-org/kranz/internal/config"
+	kranzlog "github.com/kranz-org/kranz/internal/log"
 )
 
 // The regex log search: the line editor, applying and clearing the pattern,
@@ -13,25 +15,72 @@ import (
 // act on.
 
 func (m *Model) handleSearchNavigationKey(msg tea.KeyMsg) bool {
-	if m.panelFocus != panelLogs || m.searchMode != searchHighlight || m.logSearcher == nil || !m.logSearcher.HasPattern() {
+	searcher := m.activeLogSearcher()
+	if (m.panelFocus != panelLogs && m.panelFocus != panelPinnedLogs) || m.activeSearchMode() != searchHighlight || searcher == nil || !searcher.HasPattern() {
 		return false
 	}
-	svc := m.FocusedService()
-	if svc == nil {
+	lines := m.activeSearchLines()
+	if len(lines) == 0 {
 		return false
 	}
+	match := m.activeMatchPointer()
 	switch msg.String() {
 	case "n":
-		m.currentMatch = m.logSearcher.FindNext(m.serviceLogLines(svc), m.currentMatch)
-		m.focusLogMatch(m.currentMatch)
+		*match = searcher.FindNext(lines, *match)
+		m.focusActiveLogMatch(*match)
 		return true
 	case "N":
-		m.currentMatch = m.logSearcher.FindPrev(m.serviceLogLines(svc), m.currentMatch)
-		m.focusLogMatch(m.currentMatch)
+		*match = searcher.FindPrev(lines, *match)
+		m.focusActiveLogMatch(*match)
 		return true
 	default:
 		return false
 	}
+}
+
+func (m *Model) activeLogSearcher() *kranzlog.Searcher {
+	if m.panelFocus == panelPinnedLogs {
+		return m.pinnedSearcher
+	}
+	return m.logSearcher
+}
+
+func (m *Model) activeSearchMode() logSearchMode {
+	if m.panelFocus == panelPinnedLogs {
+		return m.pinnedSearchMode
+	}
+	return m.searchMode
+}
+
+func (m *Model) activeSearchModePointer() *logSearchMode {
+	if m.panelFocus == panelPinnedLogs {
+		return &m.pinnedSearchMode
+	}
+	return &m.searchMode
+}
+
+func (m *Model) activeMatchPointer() *int {
+	if m.panelFocus == panelPinnedLogs {
+		return &m.pinnedMatch
+	}
+	return &m.currentMatch
+}
+
+func (m *Model) activeSearchLines() []string {
+	if m.panelFocus == panelPinnedLogs {
+		if target, ok := m.pinnedRunTarget(); ok {
+			return logEntryLines(m.pinnedEntries(target))
+		}
+		return nil
+	}
+	if m.focusedAction != nil {
+		run := uint32(0)
+		if m.runMode == runViewSingle {
+			run = m.selectedRun
+		}
+		return logEntryLines(m.entriesForRun(app.ActionRunTarget(*m.focusedAction), run))
+	}
+	return m.serviceLogLines(m.FocusedService())
 }
 
 // nudgeSearchFocus answers a click that landed outside the editor while the
@@ -92,7 +141,7 @@ func (m *Model) openSearchEditor() tea.Cmd {
 	m.mode = ModeSearch
 	m.searchNudge = time.Time{}
 	m.syncSearchInputWidth()
-	m.searchInput.SetValue(m.logSearcher.Pattern())
+	m.searchInput.SetValue(m.activeLogSearcher().Pattern())
 	m.searchInput.CursorEnd()
 	command := m.searchInput.Focus()
 	if m.panelFocus != panelPinnedLogs {
@@ -102,30 +151,35 @@ func (m *Model) openSearchEditor() tea.Cmd {
 }
 
 func (m *Model) applySearchQuery() bool {
-	if err := m.logSearcher.SetPattern(m.searchInput.Value()); err != nil {
+	searcher := m.activeLogSearcher()
+	if err := searcher.SetPattern(m.searchInput.Value()); err != nil {
 		m.addNotification("search", err.Error(), config.LogError)
 		return false
 	}
-	m.currentMatch = -1
-	m.logOffset = 0
-	m.logAnchor = 0
-	m.followMode = true
-	m.logPaused = false
-	if m.searchMode == searchHighlight && m.logSearcher.HasPattern() {
-		if svc := m.FocusedService(); svc != nil {
-			m.currentMatch = m.logSearcher.FindNext(m.serviceLogLines(svc), -1)
-			m.focusLogMatch(m.currentMatch)
-		}
+	match := m.activeMatchPointer()
+	*match = -1
+	if m.panelFocus == panelPinnedLogs {
+		m.pinnedOffset, m.pinnedAnchor, m.pinnedFollow = 0, 0, true
+	} else {
+		m.logOffset, m.logAnchor, m.followMode, m.logPaused = 0, 0, true, false
+	}
+	if m.activeSearchMode() == searchHighlight && searcher.HasPattern() {
+		*match = searcher.FindNext(m.activeSearchLines(), -1)
+		m.focusActiveLogMatch(*match)
 	}
 	return true
 }
 
 // clearSearch drops the active pattern and restores unfiltered following.
 func (m *Model) clearSearch() {
-	m.currentMatch = -1
+	*m.activeMatchPointer() = -1
 	m.searchInput.SetValue("")
-	_ = m.logSearcher.SetPattern("")
-	m.followMode, m.logPaused, m.logOffset, m.logAnchor = true, false, 0, 0
+	_ = m.activeLogSearcher().SetPattern("")
+	if m.panelFocus == panelPinnedLogs {
+		m.pinnedFollow, m.pinnedOffset, m.pinnedAnchor = true, 0, 0
+	} else {
+		m.followMode, m.logPaused, m.logOffset, m.logAnchor = true, false, 0, 0
+	}
 }
 
 func (m *Model) handleSearchKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -136,26 +190,26 @@ func (m *Model) handleSearchKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Esc cancels the edit rather than applying it, keeping Enter the only
 		// apply. Restoring the query to the active pattern means reopening the
 		// editor always shows the filter that is actually in effect.
-		m.searchInput.SetValue(m.logSearcher.Pattern())
+		m.searchInput.SetValue(m.activeLogSearcher().Pattern())
 		m.searchInput.Blur()
 		m.searchNudge = time.Time{}
 		m.mode = ModeNormal
-		m.panelFocus = panelLogs
 		return m, nil
 	case "tab", "shift+tab":
-		if m.searchMode == searchFilter {
-			m.searchMode = searchHighlight
+		mode := m.activeSearchModePointer()
+		if *mode == searchFilter {
+			*mode = searchHighlight
 		} else {
-			m.searchMode = searchFilter
+			*mode = searchFilter
 		}
 		m.syncSearchInputWidth()
 		// Switching to highlight over an already applied pattern should land on
 		// a match instead of waiting for the next apply.
-		if m.searchMode == searchHighlight && m.logSearcher.HasPattern() {
-			if svc := m.FocusedService(); svc != nil {
-				m.currentMatch = m.logSearcher.FindNext(m.serviceLogLines(svc), -1)
-				m.focusLogMatch(m.currentMatch)
-			}
+		searcher := m.activeLogSearcher()
+		if *mode == searchHighlight && searcher.HasPattern() {
+			match := m.activeMatchPointer()
+			*match = searcher.FindNext(m.activeSearchLines(), -1)
+			m.focusActiveLogMatch(*match)
 		}
 		return m, nil
 	case "enter":

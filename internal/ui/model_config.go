@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/kranz-org/kranz/internal/app"
 	"github.com/kranz-org/kranz/internal/config"
 )
 
@@ -59,8 +60,19 @@ func (m *Model) handleConfigReload(msg configReloadMsg) (tea.Model, tea.Cmd) {
 	if len(m.services) == 0 && m.focusedAction == nil && m.focusedActionGroup == "" && len(m.cfg.ActionGroups) > 0 {
 		m.focusServiceListRow(0)
 	}
-	if m.PinnedService() == nil {
-		m.pinnedLog = ""
+	if target, ok := m.pinnedRunTarget(); ok {
+		valid := false
+		if target.Kind == app.RunKindService {
+			_, valid = m.app.Service(target.Name)
+		} else {
+			_, valid = m.cfg.ResolveAction(target.Action)
+		}
+		if !valid {
+			m.pinnedLog, m.pinnedTarget, m.pinnedRun = "", app.RunTarget{}, 0
+			if m.panelFocus == panelPinnedLogs {
+				m.panelFocus = panelLogs
+			}
+		}
 	}
 	// The theme picker holds choices that are not in any file yet — a typed
 	// accent, a background owner, a colour mode. Re-previewing rebuilds them
