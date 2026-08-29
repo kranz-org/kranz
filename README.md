@@ -25,7 +25,7 @@ processes you would otherwise spread across terminal tabs, alongside Docker
 Compose when containers remain the right home for infrastructure.
 
 <p align="center">
-  <img src="docs/assets/kranz-demo.gif" alt="Kranz v0.11.0 terminal interface starting the MoonFlight service graph">
+  <img src="docs/assets/kranz-demo.gif" alt="Kranz v0.11.1 terminal interface starting MoonFlight and browsing retained action runs">
 </p>
 
 ## TUI, CLI, and MCP

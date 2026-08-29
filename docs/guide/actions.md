@@ -6,7 +6,7 @@ running services.
 
 <div class="demo-frame">
 
-![Running a service action, declining a destructive one, and running a project action](../assets/actions.gif)
+![Running the same service action twice, switching between its numbered results, and opening retained run history](../assets/actions.gif)
 
 </div>
 
@@ -32,6 +32,11 @@ services:
 Service actions inherit `dir`, `shell`, `env`, and `env_files`. Expand a service
 with `Enter`, focus an action, and press `s`. Output, exit code, and duration are
 retained separately from service logs.
+
+Run the action again and both results remain independently addressable. `[` and
+`]` move through the target's retained runs, `l` returns to the latest, and `v`
+opens the full run history. The selected run keeps its own scroll and search
+position, so comparing two executions does not lose your place.
 
 ## Project action groups
 

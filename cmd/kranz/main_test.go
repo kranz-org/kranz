@@ -22,6 +22,13 @@ import (
 	kranzruntime "github.com/kranz-org/kranz/internal/runtime"
 )
 
+func TestMain(m *testing.M) {
+	for _, name := range []string{"KRANZ_PROJECT", "KRANZ_DIRECTORY", "KRANZ_CONFIG"} {
+		_ = os.Unsetenv(name)
+	}
+	os.Exit(m.Run())
+}
+
 func decodeJSONData[T any](t *testing.T, output []byte) T {
 	t.Helper()
 	var envelope struct {
@@ -61,6 +68,27 @@ func TestVersionTextAndJSON(t *testing.T) {
 	data := envelope["data"].(map[string]any)
 	if data["version"] != "1.2.3" || data["commit"] != "abc123" {
 		t.Fatalf("version envelope = %#v", envelope)
+	}
+}
+
+func TestEnvironmentCoordinatesReachInspectionCommands(t *testing.T) {
+	directory := t.TempDir()
+	configPath := filepath.Join(directory, "environment.yaml")
+	if err := os.WriteFile(configPath, []byte("project: Environment Coordinates\nservices:\n  api:\n    command: sleep 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KRANZ_DIRECTORY", directory)
+	t.Setenv("KRANZ_CONFIG", configPath)
+
+	var stdout, stderr bytes.Buffer
+	if code := execute([]string{"list", "services", "--output=json"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("exit=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	services := decodeJSONData[[]struct {
+		Name string `json:"name"`
+	}](t, stdout.Bytes())
+	if len(services) != 1 || services[0].Name != "api" {
+		t.Fatalf("services = %#v", services)
 	}
 }
 

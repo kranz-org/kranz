@@ -37,7 +37,7 @@ features:
 
 <div class="demo-frame demo-frame--hero">
 
-![Kranz v0.11.0 starting the MoonFlight project: shared infrastructure, a migration, two APIs behind a gateway, a web front end, and two workers](./assets/kranz-demo.gif)
+![Kranz v0.11.1 starting the MoonFlight project, running a catalogue action twice, and browsing its retained runs](./assets/kranz-demo.gif)
 
 </div>
 

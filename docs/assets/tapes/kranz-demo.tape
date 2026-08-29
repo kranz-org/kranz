@@ -1,6 +1,6 @@
 # The site hero, recorded from the MoonFlight showcase project.
 # Regenerate from the repository root with the release binary in ./bin:
-#   make build VERSION=v0.11.0 && vhs docs/assets/tapes/kranz-demo.tape
+#   make build VERSION=v0.11.1 && vhs docs/assets/tapes/kranz-demo.tape
 Output docs/assets/kranz-demo.gif
 
 Set Shell "bash"
@@ -18,27 +18,38 @@ Show
 
 Type "kranz"
 Enter
-Sleep 1500ms
+Sleep 1200ms
 
 # Start everything and let the dependency order play out: infrastructure, the
 # migration, the APIs, then the gateway and everything waiting on it.
 Type "a"
-Sleep 1s
+Sleep 500ms
 Type "s"
-Sleep 22s
+Sleep 5s
 
-# Focus the edge service, pin its logs beside the live ones, and read Details.
+# Expand catalog-api and run its reindex action twice. Each execution keeps an
+# independent result even though the action has the same name.
 Down
 Down
+Enter
+Down
+Sleep 500ms
+Type "s"
+Sleep 1500ms
+Type "s"
+Sleep 1500ms
+
+# Browse the older and newer retained runs, then open their history.
+Type "["
+Sleep 1500ms
+Type "]"
+Sleep 1500ms
+Type "v"
 Sleep 2s
-Type "#"
-Sleep 5s
-Type "2"
-Sleep 5s
 
 Hide
-Type "1"
+Escape
 Type "q"
 Sleep 1s
 Type "y"
-Sleep 4s
+Sleep 2s

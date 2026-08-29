@@ -3,12 +3,28 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
 )
 
+func TestMain(m *testing.M) {
+	for _, name := range []string{"KRANZ_PROJECT", "KRANZ_DIRECTORY", "KRANZ_CONFIG"} {
+		_ = os.Unsetenv(name)
+	}
+	os.Exit(m.Run())
+}
+
+func clearKranzCoordinateEnvironment(t *testing.T) {
+	t.Helper()
+	for _, name := range []string{"KRANZ_PROJECT", "KRANZ_DIRECTORY", "KRANZ_CONFIG"} {
+		t.Setenv(name, "")
+	}
+}
+
 func TestParseBareTUIWithGlobalCoordinates(t *testing.T) {
+	clearKranzCoordinateEnvironment(t)
 	invocation, err := Parse(DefaultTree(), []string{"-C", "shop", "-f", "base.yaml", "--config=dev.yaml"})
 	if err != nil {
 		t.Fatal(err)
@@ -21,7 +37,45 @@ func TestParseBareTUIWithGlobalCoordinates(t *testing.T) {
 	}
 }
 
+func TestParseUsesEnvironmentCoordinates(t *testing.T) {
+	t.Setenv("KRANZ_PROJECT", "shop")
+	t.Setenv("KRANZ_DIRECTORY", "/work/shop")
+	t.Setenv("KRANZ_CONFIG", strings.Join([]string{"base.yaml", "local.yaml"}, string(os.PathListSeparator)))
+
+	invocation, err := Parse(DefaultTree(), []string{"status"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if invocation.Globals.Project != "shop" || invocation.Globals.Directory != "/work/shop" || !invocation.Globals.DirectoryExplicit {
+		t.Fatalf("environment coordinates = %#v", invocation.Globals)
+	}
+	if !reflect.DeepEqual(invocation.Globals.ConfigPaths, []string{"base.yaml", "local.yaml"}) {
+		t.Fatalf("environment config paths = %v", invocation.Globals.ConfigPaths)
+	}
+}
+
+func TestExplicitGlobalFlagsOverrideEnvironment(t *testing.T) {
+	t.Setenv("KRANZ_PROJECT", "environment-project")
+	t.Setenv("KRANZ_DIRECTORY", "/environment/directory")
+	t.Setenv("KRANZ_CONFIG", strings.Join([]string{"environment-base.yaml", "environment-local.yaml"}, string(os.PathListSeparator)))
+
+	invocation, err := Parse(DefaultTree(), []string{
+		"-p", "flag-project", "-C", "/flag/directory",
+		"-f", "flag-base.yaml", "--config=flag-local.yaml", "status",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if invocation.Globals.Project != "flag-project" || invocation.Globals.Directory != "/flag/directory" {
+		t.Fatalf("flag coordinates = %#v", invocation.Globals)
+	}
+	if !reflect.DeepEqual(invocation.Globals.ConfigPaths, []string{"flag-base.yaml", "flag-local.yaml"}) {
+		t.Fatalf("flag config paths = %v", invocation.Globals.ConfigPaths)
+	}
+}
+
 func TestParseNestedCommandAndGlobalsAfterCommand(t *testing.T) {
+	clearKranzCoordinateEnvironment(t)
 	invocation, err := Parse(DefaultTree(), []string{"-p", "shop", "config", "show", "--output", "json", "--provenance"})
 	if err != nil {
 		t.Fatal(err)
@@ -35,6 +89,7 @@ func TestParseNestedCommandAndGlobalsAfterCommand(t *testing.T) {
 }
 
 func TestPositionalConfigurationGetsDirectedHint(t *testing.T) {
+	clearKranzCoordinateEnvironment(t)
 	_, err := Parse(DefaultTree(), []string{"prod.yaml"})
 	commandError := AsError(err)
 	if commandError.Code != "unknown_command" || commandError.Hint != "Did you mean `kranz -f prod.yaml`?" {
@@ -43,6 +98,7 @@ func TestPositionalConfigurationGetsDirectedHint(t *testing.T) {
 }
 
 func TestParseRejectsMissingSubcommandAndInvalidOutput(t *testing.T) {
+	clearKranzCoordinateEnvironment(t)
 	// A group without a default still has to be told which subcommand to run.
 	grouped := &Command{Name: "kranz", Children: []*Command{
 		{Name: "remote", Summary: "control a remote runtime", Children: []*Command{
@@ -63,6 +119,7 @@ func TestParseRejectsMissingSubcommandAndInvalidOutput(t *testing.T) {
 // meant. `kranz config` asking which subcommand to use turned "show me the
 // configuration" into a usage error.
 func TestGroupsRunTheirDefaultSubcommand(t *testing.T) {
+	clearKranzCoordinateEnvironment(t)
 	for group, want := range map[string]string{
 		"config": "config show",
 		"action": "action list",
@@ -98,6 +155,7 @@ func TestGroupsRunTheirDefaultSubcommand(t *testing.T) {
 }
 
 func TestUnknownOptionIsNotReportedAsACommand(t *testing.T) {
+	clearKranzCoordinateEnvironment(t)
 	_, err := Parse(DefaultTree(), []string{"--wat"})
 	if commandError := AsError(err); commandError.Code != "unknown_option" {
 		t.Fatalf("error = %#v", commandError)
@@ -105,6 +163,7 @@ func TestUnknownOptionIsNotReportedAsACommand(t *testing.T) {
 }
 
 func TestHelpAndVersionCompatibility(t *testing.T) {
+	clearKranzCoordinateEnvironment(t)
 	for _, args := range [][]string{{"--help"}, {"help", "config"}, {"config", "show", "--help"}, {"--version"}, {"version"}} {
 		if _, err := Parse(DefaultTree(), args); err != nil {
 			t.Fatalf("Parse(%v): %v", args, err)

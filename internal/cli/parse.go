@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -51,7 +52,8 @@ func (i Invocation) Command() string { return PathString(i.CommandPath) }
 // is known, remaining arguments belong to that command except recognized
 // global flags, which are accepted consistently before or after subcommands.
 func Parse(tree *Command, args []string) (Invocation, error) {
-	invocation := Invocation{Globals: GlobalOptions{Directory: ".", Output: OutputText}}
+	invocation := Invocation{Globals: globalOptionsFromEnvironment()}
+	configFromEnvironment := len(invocation.Globals.ConfigPaths) > 0
 	current := tree
 	commandStarted := false
 
@@ -62,6 +64,10 @@ func Parse(tree *Command, args []string) (Invocation, error) {
 				return Invocation{}, err
 			}
 			index += consumed
+			if configFromEnvironment && (arg == "-f" || arg == "--config" || strings.HasPrefix(arg, "--config=")) {
+				invocation.Globals.ConfigPaths = nil
+				configFromEnvironment = false
+			}
 			if err := applyGlobal(&invocation.Globals, arg, value); err != nil {
 				return Invocation{}, err
 			}
@@ -138,6 +144,21 @@ func Parse(tree *Command, args []string) (Invocation, error) {
 		return Invocation{}, usageError("invalid_arguments", "version does not accept additional arguments")
 	}
 	return invocation, nil
+}
+
+func globalOptionsFromEnvironment() GlobalOptions {
+	options := GlobalOptions{Directory: ".", Output: OutputText}
+	if value := os.Getenv("KRANZ_PROJECT"); value != "" {
+		options.Project = value
+	}
+	if value := os.Getenv("KRANZ_DIRECTORY"); value != "" {
+		options.Directory = value
+		options.DirectoryExplicit = true
+	}
+	if value := os.Getenv("KRANZ_CONFIG"); value != "" {
+		options.ConfigPaths = filepath.SplitList(value)
+	}
+	return options
 }
 
 func globalValue(args []string, index int) (value string, consumed int, recognized bool, err error) {

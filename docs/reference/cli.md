@@ -24,6 +24,27 @@ The first positional argument after the global options is always a subcommand.
 | `-h`, `--help` | Print usage for the command and exit. |
 | `-v`, `--version` | Print version, commit, and build time, then exit. |
 
+## Environment defaults
+
+The project coordinates can be supplied as one-shot environment prefixes or
+exported for a shell that works with one runtime repeatedly:
+
+| Variable | Equivalent option |
+| --- | --- |
+| `KRANZ_PROJECT` | `-p`, accepting a runtime name, ID, or unique ID prefix |
+| `KRANZ_DIRECTORY` | `-C` |
+| `KRANZ_CONFIG` | One or more `-f` paths separated by the operating system's path-list separator (`:` on macOS and Linux) |
+
+Explicit command-line options win over environment defaults. If any `-f` or
+`--config` option is present, its ordered layers replace `KRANZ_CONFIG` rather
+than being appended to a hidden inherited list.
+
+```bash
+KRANZ_PROJECT=billing kranz status
+KRANZ_DIRECTORY=~/projects/shop kranz list services
+KRANZ_CONFIG=kranz.yaml:kranz.local.yaml kranz config show
+```
+
 ## Choosing the runtime a command acts on
 
 `-p` is optional everywhere. Without it, the target is the runtime named by the

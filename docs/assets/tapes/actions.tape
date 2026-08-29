@@ -1,6 +1,6 @@
 # Regenerate with: vhs docs/assets/tapes/actions.tape
 # Run from the repository root with a release-stamped binary in ./bin:
-#   make build VERSION=v0.7.0
+#   make build VERSION=v0.11.1
 Output docs/assets/actions.gif
 
 Set Shell "bash"
@@ -11,48 +11,41 @@ Set Padding 16
 Set LineHeight 1.2
 
 Hide
-Type "cd examples/moonflight && export PATH=$PWD/../../bin:$PATH && rm -rf .kranz-demo && clear"
+Type "cd examples/moonflight && unset NO_COLOR && export TERM=xterm-256color COLORTERM=truecolor FORCE_COLOR=1 PATH=$PWD/../../bin:$PATH && rm -rf .kranz-demo && clear"
 Enter
 Sleep 1s
 Show
 
 Type "kranz"
 Enter
+Sleep 1200ms
+
+# Expand catalog-api and focus its reindex action.
+Down
+Down
+Enter
+Down
+Sleep 500ms
+
+# Run the same action twice. Kranz keeps two distinct numbered results.
+Type "s"
+Sleep 1500ms
+Type "s"
+Sleep 1500ms
+
+# Move back to run #1, forward to run #2, then inspect the retained history.
+Type "["
 Sleep 2s
-
-# A service action: expand the service, run it, watch its own output.
+Type "]"
+Sleep 2s
+Type "v"
+Sleep 2500ms
+Up
+Sleep 1s
 Down
 Sleep 1s
-Enter
-Sleep 1500ms
-Down
-Sleep 1s
-Type "s"
-Sleep 5s
-
-# A project action group owns operations that belong to no single service.
-# It sits at the end of the list, after every service.
-Down 12
-Sleep 1500ms
-Enter
-Sleep 1500ms
-Down
-Sleep 1s
-
-# A destructive action asks before it runs. Decline it.
-Type "s"
-Sleep 4s
-Escape
-Sleep 1500ms
-
-# The harmless one beside it just runs.
-Down
-Sleep 1s
-Type "s"
-Sleep 5s
 
 Hide
+Escape
 Type "q"
-Sleep 1s
-Type "y"
 Sleep 2s

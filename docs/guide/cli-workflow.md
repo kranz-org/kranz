@@ -8,6 +8,17 @@ reports.
 Everything below works on the project in the current directory. You never have
 to name it.
 
+When a shell or coding agent runs several commands from elsewhere, set a
+one-shot coordinate instead of repeating a flag:
+
+```bash
+KRANZ_PROJECT=shop-dev kranz status
+KRANZ_DIRECTORY=/work/shop kranz list services
+```
+
+The equivalent `-p` and `-C` flags remain available and take precedence over
+the environment.
+
 ## Start a project and leave it running
 
 ```console

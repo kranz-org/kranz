@@ -96,6 +96,31 @@ claude mcp get kranz
 Check it with `opencode mcp list`. Use absolute paths when the client does not
 inherit the same `PATH` as your shell.
 
+## Install the companion agent skill
+
+The MCP connection exposes Kranz operations, but a connection alone does not
+teach an agent when to reuse a developer's runtime, how to match a nested
+working directory, or which mutations require an explicit request. Kranz ships
+that operational policy as an English, vendor-neutral agent skill in
+[`skills/kranz-services`](https://github.com/kranz-org/kranz/tree/main/skills/kranz-services).
+
+In Codex, ask the built-in installer:
+
+```text
+$skill-installer install kranz-services from https://github.com/kranz-org/kranz/tree/main/skills/kranz-services
+```
+
+From an existing clone, a manual user-level installation is also just a copy:
+
+```bash
+mkdir -p ~/.agents/skills
+cp -R skills/kranz-services ~/.agents/skills/
+```
+
+Codex discovers the skill automatically; restart it if the new skill does not
+appear. Other clients that implement the open Agent Skills format can install
+the same directory in their supported skill location.
+
 ## Check the first connection
 
 Open the configured client in that project and ask:

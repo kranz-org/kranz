@@ -58,6 +58,7 @@ services:
   migrate:
     description: Applies the schema every API depends on, then exits.
     command: /bin/sh ../scripts/migrate.sh
+    env: {MIGRATION_DELAY: "0.25"}
     tags: [setup]
     depends_on: [shared-infra]
     dependency_conditions:
@@ -82,7 +83,7 @@ services:
     actions:
       reindex:
         description: Rebuild the search index.
-        command: echo "reindexing catalogue"; sleep 2; echo "index rebuilt"
+        command: echo "reindexing catalogue"; sleep 0.75; echo "index rebuilt"
         timeout: 1m
 
   billing-api:
@@ -108,7 +109,7 @@ services:
       SERVICE_NAME: gateway
       PORT: "18923"
       ROUTES: /api/home,/api/catalog,/api/products/featured,/api/account
-      BOOT_DELAY: "1"
+      BOOT_DELAY: "0.25"
     ports: [18923]
     tags: [edge, core]
     depends_on: [catalog-api, billing-api]
@@ -132,7 +133,7 @@ services:
     actions:
       build-assets:
         description: Compile the front-end bundle.
-        command: echo "building assets"; sleep 2; echo "bundle written"
+        command: echo "building assets"; sleep 0.5; echo "bundle written"
         timeout: 2m
     before_start:
       # The bundle has to exist before the dev server serves it, and building it
