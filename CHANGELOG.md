@@ -4,6 +4,25 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-08-29
+
+### Added
+
+- `KRANZ_PROJECT`, `KRANZ_DIRECTORY`, and `KRANZ_CONFIG` provide environment
+  defaults for the global `-p`, `-C`, and repeatable `-f` coordinates. Explicit
+  command-line options always win, including replacement of inherited
+  configuration layers.
+- An installable English `kranz-services` agent skill teaches coding agents to
+  discover and reuse the developer's live runtime, prefer MCP reads, route
+  declared actions through Kranz, and keep lifecycle mutations explicit.
+
+### Changed
+
+- The colored site hero now reaches a running MoonFlight graph in a few
+  seconds, runs `catalog-api/reindex` twice, and browses the two retained
+  results instead of pinning duplicate copies of one service log. The actions
+  guide includes its own focused numbered-run recording.
+
 ## [0.11.0] - 2026-08-28
 
 ### Changed
@@ -599,7 +618,8 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 - Explicit global-user and project-config save destinations in the live theme picker.
 - Native compatibility for common Process Compose configurations.
 
-[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.11.1...HEAD
+[0.11.1]: https://github.com/kranz-org/kranz/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/kranz-org/kranz/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/kranz-org/kranz/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/kranz-org/kranz/compare/v0.8.2...v0.9.0

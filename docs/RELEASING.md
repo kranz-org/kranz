@@ -42,7 +42,7 @@ workflow; generated binaries are never checked into the repository.
    make verify
    make lint
    make release-check
-   make snapshot RELEASE_VERSION=0.11.0 # use the release being prepared
+   make snapshot RELEASE_VERSION=0.11.1 # use the release being prepared
    ./dist/kranz_darwin_arm64_v8.0/kranz --version # choose the local platform build
    make packages-verify
    PACKAGE_ARCH=arm64 make packages-verify
@@ -57,9 +57,9 @@ workflow; generated binaries are never checked into the repository.
 4. Create an annotated tag without pushing it automatically:
 
    ```bash
-   make tag RELEASE_VERSION=0.11.0 # use the release being published
-   git show v0.11.0
-   git push origin v0.11.0
+   make tag RELEASE_VERSION=0.11.1 # use the release being published
+   git show v0.11.1
+   git push origin v0.11.1
    ```
 
 ## Verify the published release
@@ -71,8 +71,8 @@ replaces generated commit notes with the matching version section from
 the release before announcing it:
 
 ```bash
-gh release view v0.11.0
-gh release download v0.11.0 \
+gh release view v0.11.1
+gh release download v0.11.1 \
   --pattern 'checksums.txt' \
   --pattern '*.tar.gz' \
   --pattern '*.deb' \
