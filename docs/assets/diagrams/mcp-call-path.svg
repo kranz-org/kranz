@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 230" role="img" aria-labelledby="title desc">
+  <title id="title">MCP call path to a Kranz supervisor</title>
+  <desc id="desc">An MCP tool call resolves the addressed runtime through the registry, uses its local IPC connection, enters the shared application API, and reaches the existing supervisor.</desc>
+  <style>text{font:600 16px ui-sans-serif,system-ui;fill:#172033}.box{fill:#fff;stroke:#94a3b8;stroke-width:2}.entry{fill:#e0f2fe;stroke:#0ea5e9}.shared{fill:#dcfce7;stroke:#22c55e}.edge{fill:none;stroke:#0ea5e9;stroke-width:3}.note{font-size:13px;fill:#526176}.heading{font-size:21px;fill:#0284c7}@media(prefers-color-scheme:dark){text{fill:#e7edf5}.box{fill:#111923;stroke:#526176}.entry{fill:#102a3a}.shared{fill:#10291d}.note{fill:#9aa8b8}.heading{fill:#38bdf8}}</style>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0 0L9 3L0 6Z" fill="#0ea5e9"/></marker></defs>
+  <text class="heading" x="30" y="35">One addressed call, one existing runtime</text>
+  <rect class="box entry" x="30" y="72" width="170" height="72" rx="10"/><text x="115" y="102" text-anchor="middle">MCP tool call</text><text class="note" x="115" y="125" text-anchor="middle">optional runtime</text>
+  <rect class="box" x="250" y="72" width="170" height="72" rx="10"/><text x="335" y="102" text-anchor="middle">registry lookup</text><text class="note" x="335" y="125" text-anchor="middle">name or ID</text>
+  <rect class="box" x="470" y="72" width="160" height="72" rx="10"/><text x="550" y="102" text-anchor="middle">local IPC</text><text class="note" x="550" y="125" text-anchor="middle">runtime socket</text>
+  <rect class="box shared" x="680" y="72" width="170" height="72" rx="10"/><text x="765" y="102" text-anchor="middle">application API</text><text class="note" x="765" y="125" text-anchor="middle">shared contract</text>
+  <rect class="box shared" x="900" y="72" width="170" height="72" rx="10"/><text x="985" y="102" text-anchor="middle">supervisor</text><text class="note" x="985" y="125" text-anchor="middle">live services</text>
+  <path class="edge" d="M200 108H250" marker-end="url(#arrow)"/><path class="edge" d="M420 108H470" marker-end="url(#arrow)"/><path class="edge" d="M630 108H680" marker-end="url(#arrow)"/><path class="edge" d="M850 108H900" marker-end="url(#arrow)"/>
+  <text class="note" x="550" y="190" text-anchor="middle">The call attaches to the selected runtime; it does not launch a duplicate stack.</text>
+</svg>

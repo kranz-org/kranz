@@ -529,12 +529,12 @@ func TestMCPUsageErrorsNeverWriteStdout(t *testing.T) {
 // carry the argument that fixes it, and that argument must work.
 func TestSelectorNotFoundCarriesARetryThatSucceeds(t *testing.T) {
 	here, hereName := writeMCPProjectWithService(t, "api")
-	there, thereName := writeMCPProjectWithService(t, "im-core")
+	there, thereName := writeMCPProjectWithService(t, "reports")
 	startTestRuntime(t, here, hereName)
 	startTestRuntime(t, there, thereName)
 
 	session := startMCPSession(t, unpinned(here))
-	envelope := session.callTool("status", map[string]any{"selectors": []string{"im-core"}})
+	envelope := session.callTool("status", map[string]any{"selectors": []string{"reports"}})
 	if envelope.Error == nil || envelope.Error.Code != "selector_not_found" {
 		t.Fatalf("missing selector = %#v", envelope)
 	}
@@ -542,7 +542,7 @@ func TestSelectorNotFoundCarriesARetryThatSucceeds(t *testing.T) {
 	if !strings.Contains(details, thereName) {
 		t.Fatalf("available_in did not name the runtime that has it: %s", details)
 	}
-	retry := session.callTool("status", map[string]any{"runtime": thereName, "selectors": []string{"im-core"}})
+	retry := session.callTool("status", map[string]any{"runtime": thereName, "selectors": []string{"reports"}})
 	if retry.Error != nil {
 		t.Fatalf("retry named by available_in failed: %s", envelopeDetails(t, retry))
 	}

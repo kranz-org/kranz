@@ -365,7 +365,7 @@ func TestSelectedRowsRestoreTheirOwnBackgroundAfterNestedStyles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	nested := HelpKeyStyle.Render("› ") + ServiceNameStyle.Render("im-widgets")
+	nested := HelpKeyStyle.Render("› ") + ServiceNameStyle.Render("catalog-api")
 	rendered := renderSelectedLine(nested)
 	prefix := terminalStylePrefix(SelectionStyle)
 	if prefix == "" {

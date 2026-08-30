@@ -76,9 +76,7 @@ runs it; the other waits for that same run instead of starting a second copy.
 
 ## Where prerequisites sit in the order
 
-```text
-dependencies ready → before_start actions → service starts → readiness probe
-```
+![Dependencies become ready, before-start actions complete, the service starts, and its readiness probe runs](../assets/diagrams/prerequisite-order.svg)
 
 A prerequisite runs after everything the service depends on is ready, so a
 migration can rely on the database being up. It runs before the service itself,

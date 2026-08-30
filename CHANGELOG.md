@@ -4,6 +4,22 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### Changed
+
+- `kranz clients` spells the built-in connection labels with the product name
+  capitalised: `Kranz CLI`, `Kranz dashboard`, `Kranz attach`,
+  `Kranz foreground`, and `Kranz background`.
+
+### Fixed
+
+- The configuration guide no longer shows `kranz path/to/kranz.yaml`, a form
+  the CLI rejects; the documented spelling is `kranz -f path/to/kranz.yaml`.
+- The `kranz ps` and `kranz clients` reference example now matches real output:
+  a running runtime always has its owning process as a client, and the columns
+  align the way `kranz clients` prints them.
+- The reference documents `runtime.name` and the per-service
+  `is_dotenv_disabled` field, which the schema already accepted.
+
 ## [0.11.1] - 2026-08-29
 
 ### Added

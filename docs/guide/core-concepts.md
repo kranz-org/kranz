@@ -1,6 +1,29 @@
 # Core concepts
 
-Kranz becomes much easier to configure once five ideas are separate.
+Kranz becomes much easier to configure once seven ideas are separate.
+
+## Runtime
+
+A runtime is one active Kranz session for one project. It owns that project's
+supervisor, service state, logs, and numbered run history. The TUI, CLI, and MCP
+are clients of the same runtime; connecting another client does not start a
+second copy of the services.
+
+These names describe different levels:
+
+| Term | Meaning | Example |
+| --- | --- | --- |
+| Project | The configuration and its display name | `project: Shop` |
+| Runtime | One active session of that project | `shop-dev` in `kranz ps` |
+| Service | One long-running or detached component inside the runtime | `api` |
+| Run | One numbered execution of a service or action | `api#4` |
+
+![A project configuration creates one runtime, TUI CLI and MCP connect as clients, and services and actions produce numbered runs](../assets/diagrams/runtime-model.svg)
+
+Running bare `kranz` creates a foreground runtime and opens its TUI. Running
+`kranz up -d` creates a background runtime; `kranz attach` opens a TUI client
+on it, and `kranz down` ends it. Use `kranz ps` when you are unsure which
+runtimes already exist.
 
 ## Service
 
@@ -72,6 +95,23 @@ services:
 
 Actions have their own output, exit status, timeout, and optional confirmation.
 They do not pretend to be continuously running.
+
+## Run and log history
+
+A *run* is one execution of a service or action. Starting `api` creates a
+service run such as `api#4`; invoking its migration creates a separate action
+run such as `api/migrate#3`. Numbers increase independently for each target and
+are never reused during the runtime session.
+
+The run summary answers **what happened**: who started it, why, how long it ran,
+and how it ended. The retained log events answer **what it printed**, with each
+line attributed to `stdout`, `stderr`, or Kranz itself. Summary and output have
+separate bounded retention, so an old summary may remain after some or all of
+its output has expired; Kranz reports that state explicitly as `complete`,
+`partial`, or `unavailable`.
+
+See [Logs, runs, and ports](./logs-and-ports) for the visual model, CLI queries,
+and TUI navigation.
 
 ## Detached service
 

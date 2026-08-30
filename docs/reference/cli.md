@@ -181,21 +181,42 @@ session, not the ordinary way to stop a project.
 Leaving an attached TUI does not stop a background runtime. An external `down`
 closes attached clients cleanly.
 
-`ps` lists runtimes; `clients` lists the CLI, TUI, and MCP connections working
-in them, with surface, label, PID, and connection age. They are two commands
-because they answer two questions: what is running, and who is using it. Narrow
-either one to a single runtime with `-p NAME|ID`.
+`ps` lists runtimes; `clients` lists each runtime's owner together with the CLI,
+TUI, and MCP connections working in it, including surface, label, PID, and
+connection age. They are two commands because they answer two questions: what
+is running, and who is using it. Narrow either one to a single runtime with
+`-p NAME|ID`.
 
 ```console
 $ kranz ps
-ID        NAME     PROJECT  SERVICES  CLIENTS  STATE    UPTIME
-98784c10  myclass  MyClass  4/4       2        running  11m
+ID        NAME       PROJECT    SERVICES  CLIENTS  STATE    UPTIME
+7fa21c8d  shop-dev   Shop       4/4       2        running  18m
+91bc430a  billing    Billing    3/3       1        running  6m
+3de94a71  analytics  Analytics  2/2       2        running  2m
 
 $ kranz clients
-RUNTIME  SURFACE  CLIENT      PID    CONNECTED
-myclass  tui      kranz TUI   64231  11m
-myclass  mcp      MCP: codex  64802  3m
+RUNTIME    SURFACE     CLIENT            PID    CONNECTED
+shop-dev   tui         Kranz dashboard   18421  18m
+shop-dev   mcp         Kranz MCP         18472  4m
+billing    background  Kranz background  18022  6m
+analytics  background  Kranz background  19001  2m
+analytics  cli         Kranz CLI         19108  <1s
 ```
+
+The two `shop-dev` clients share one runtime row. Every running runtime has at
+least one client, because the process that owns it holds a connection of its
+own: `shop-dev` is owned by its TUI, `billing` and `analytics` by their
+`kranz up -d` processes. The short-lived command on `analytics` appears only
+while it is connected; it does not become another runtime owner. `kranz
+clients` never counts itself.
+
+These are the built-in client labels. The TUI reports `Kranz dashboard` (or
+`Kranz attach` when opened with `kranz attach`), an owning `kranz up` process
+reports `Kranz foreground` or `Kranz background`, MCP reports `Kranz MCP`, and
+ordinary commands report `Kranz CLI`. An MCP launcher can set
+`KRANZ_MCP_CLIENT=codex` to replace the default MCP label with `MCP: codex` when
+several agent clients need to be distinguished. The label changes only what
+`kranz clients` displays; it does not select or rename a runtime.
 
 Every `ps` row is a lifecycle owner: a `kranz up` process or a TUI that started
 the project. An attached TUI, a CLI command, and an MCP server are clients of
@@ -294,6 +315,20 @@ An action is identified by owner and name together, so a service action and an
 action-group action may share a name. Running one goes through the runtime,
 which owns the execution slot. A failed action fails the command. Interactive
 actions need the real terminal and are run from the TUI.
+
+### Help and version
+
+```bash
+kranz --help                 # top-level command list
+kranz COMMAND --help         # options for one command
+kranz help COMMAND           # the same command help
+kranz version                # version, commit, and build time
+kranz --version              # short form of version
+```
+
+Use command-specific help when a command has subcommands: for example,
+`kranz logs --help` introduces `show` and `clear`, then `kranz logs show --help`
+lists the query options. `version` does not need a project or running runtime.
 
 ### Shell completion
 

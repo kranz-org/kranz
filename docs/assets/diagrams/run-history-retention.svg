@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 430" role="img" aria-labelledby="title desc">
+  <title id="title">Run catalog and log output retention</title>
+  <desc id="desc">The API target has three numbered run summaries in its catalog. Run ten has no output left, run eleven has a partial tail, and active run twelve has complete output. The catalog and output buffer have separate bounded retention.</desc>
+  <style>text{font:600 17px ui-sans-serif,system-ui;fill:#172033}.box{fill:#fff;stroke:#94a3b8;stroke-width:2}.target{fill:#e0f2fe;stroke:#0ea5e9;stroke-width:3}.complete{fill:#dcfce7;stroke:#22c55e}.partial{fill:#fef3c7;stroke:#f59e0b}.missing{fill:#fee2e2;stroke:#ef4444}.edge{fill:none;stroke:#0ea5e9;stroke-width:3}.dashed{stroke-dasharray:8 7}.note{font-size:13px;fill:#526176}.heading{font-size:20px;fill:#0284c7}@media(prefers-color-scheme:dark){text{fill:#e7edf5}.box{fill:#111923;stroke:#526176}.target{fill:#102a3a}.complete{fill:#10291d}.partial{fill:#33260c}.missing{fill:#351417}.note{fill:#9aa8b8}.heading{fill:#38bdf8}}</style>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0 0L9 3L0 6Z" fill="#0ea5e9"/></marker></defs>
+
+  <rect class="box target" x="35" y="155" width="180" height="90" rx="13"/><text x="125" y="191" text-anchor="middle">target: api</text><text class="note" x="125" y="216" text-anchor="middle">one service</text>
+
+  <text class="heading" x="315" y="40">Run catalog · what happened</text>
+  <rect class="box missing" x="315" y="65" width="210" height="72" rx="10"/><text x="420" y="94" text-anchor="middle">api#10 · exited</text><text class="note" x="420" y="117" text-anchor="middle">output unavailable</text>
+  <rect class="box partial" x="315" y="164" width="210" height="72" rx="10"/><text x="420" y="193" text-anchor="middle">api#11 · failed</text><text class="note" x="420" y="216" text-anchor="middle">output partial</text>
+  <rect class="box complete" x="315" y="263" width="210" height="72" rx="10"/><text x="420" y="292" text-anchor="middle">api#12 · running</text><text class="note" x="420" y="315" text-anchor="middle">output complete</text>
+  <path class="edge" d="M215 200H270V101H315" marker-end="url(#arrow)"/><path class="edge" d="M270 200H315" marker-end="url(#arrow)"/><path class="edge" d="M270 200V299H315" marker-end="url(#arrow)"/>
+
+  <text class="heading" x="665" y="40">Log buffer · what it printed</text>
+  <rect class="box" x="665" y="65" width="390" height="270" rx="13"/>
+  <text class="note" x="690" y="96">oldest retained event</text>
+  <line x1="690" y1="112" x2="1030" y2="112" stroke="#94a3b8" stroke-width="2" stroke-dasharray="7 6"/>
+  <text x="690" y="149">api#11</text><text class="note" x="795" y="149">stderr · connection failed</text>
+  <text x="690" y="190">api#12</text><text class="note" x="795" y="190">stdout · starting server</text>
+  <text x="690" y="231">api#12</text><text class="note" x="795" y="231">stdout · listening on :8080</text>
+  <text x="690" y="272">api#12</text><text class="note" x="795" y="272">kranz · readiness passed</text>
+  <text class="note" x="860" y="314" text-anchor="middle">new output appends here</text>
+  <path class="edge dashed" d="M525 101C600 101 600 101 665 101"/><path class="edge dashed" d="M525 200H665" marker-end="url(#arrow)"/><path class="edge dashed" d="M525 299C600 299 600 272 665 272" marker-end="url(#arrow)"/>
+
+  <text class="note" x="550" y="395" text-anchor="middle">Separate budgets make retention honest: a summary can remain after its output is partial or gone.</text>
+</svg>

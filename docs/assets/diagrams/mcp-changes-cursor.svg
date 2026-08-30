@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 300" role="img" aria-labelledby="title desc">
+  <title id="title">Reading runtime changes from a cursor</title>
+  <desc id="desc">First read the changes cursor, then edit code or run an action, and finally request changes since the saved cursor to receive only the intervening restart, port, and action events.</desc>
+  <style>text{font:600 17px ui-sans-serif,system-ui;fill:#172033}.box{fill:#fff;stroke:#94a3b8;stroke-width:2}.event{fill:#e0f2fe;stroke:#0ea5e9}.result{fill:#dcfce7;stroke:#22c55e}.edge{fill:none;stroke:#0ea5e9;stroke-width:3}.note{font-size:13px;fill:#526176}.step{font-size:14px;fill:#0284c7}@media(prefers-color-scheme:dark){text{fill:#e7edf5}.box{fill:#111923;stroke:#526176}.event{fill:#102a3a}.result{fill:#10291d}.note{fill:#9aa8b8}.step{fill:#38bdf8}}</style>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0 0L9 3L0 6Z" fill="#0ea5e9"/></marker></defs>
+  <text class="step" x="35" y="36">1 · Save a journal position</text>
+  <rect class="box" x="35" y="55" width="250" height="70" rx="10"/><text x="160" y="84" text-anchor="middle">changes {}</text><text class="note" x="160" y="107" text-anchor="middle">returns cursor 41</text>
+  <text class="step" x="375" y="36">2 · Do the work</text>
+  <rect class="box event" x="375" y="55" width="250" height="70" rx="10"/><text x="500" y="84" text-anchor="middle">edit code</text><text class="note" x="500" y="107" text-anchor="middle">or run an action</text>
+  <text class="step" x="715" y="36">3 · Read only what followed</text>
+  <rect class="box result" x="715" y="55" width="250" height="70" rx="10"/><text x="840" y="84" text-anchor="middle">changes {since: 41}</text><text class="note" x="840" y="107" text-anchor="middle">returns a new cursor</text>
+  <path class="edge" d="M285 90H375" marker-end="url(#arrow)"/><path class="edge" d="M625 90H715" marker-end="url(#arrow)"/>
+  <rect class="box" x="265" y="182" width="470" height="82" rx="10"/><text x="500" y="210" text-anchor="middle">events after cursor 41</text><text class="note" x="500" y="233" text-anchor="middle">API restarted · port 8080 changed to 8081</text><text class="note" x="500" y="254" text-anchor="middle">api/migrate run 3 failed · exit 1</text>
+  <path class="edge" d="M840 125V183Q840 223 800 223H735" marker-end="url(#arrow)"/>
+</svg>

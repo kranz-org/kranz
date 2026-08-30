@@ -375,8 +375,8 @@ func TestCapabilitySurfaceIsExactAllowList(t *testing.T) {
 func TestRuntimesToolAndResourceListEveryRunningRuntime(t *testing.T) {
 	server, _ := testServer(t)
 	entries := []RuntimeEntry{
-		{ID: "session-1", Name: "harness", State: kranzruntime.SessionRunning},
-		{ID: "other-1", Name: "myclass", State: kranzruntime.SessionRunning, Services: intPointer(4)},
+		{ID: "session-1", Name: "shop-dev", State: kranzruntime.SessionRunning},
+		{ID: "other-1", Name: "billing", State: kranzruntime.SessionRunning, Services: intPointer(4)},
 	}
 	server.runtimeListOverride = func(context.Context) ([]RuntimeEntry, error) { return entries, nil }
 	for _, result := range []ResultEnvelope{
@@ -390,7 +390,7 @@ func TestRuntimesToolAndResourceListEveryRunningRuntime(t *testing.T) {
 			t.Fatalf("runtimes is global and must not claim a runtime answered it: %#v", result.Session)
 		}
 		payload, _ := json.Marshal(result.Data)
-		if !strings.Contains(string(payload), `"name":"harness"`) || !strings.Contains(string(payload), `"name":"myclass"`) {
+		if !strings.Contains(string(payload), `"name":"shop-dev"`) || !strings.Contains(string(payload), `"name":"billing"`) {
 			t.Fatalf("runtimes payload = %s", payload)
 		}
 	}
@@ -398,19 +398,19 @@ func TestRuntimesToolAndResourceListEveryRunningRuntime(t *testing.T) {
 
 func TestSelectorNotFoundNamesCurrentAndMatchingRuntime(t *testing.T) {
 	server, _ := testServer(t)
-	server.setTestSessionName("harness")
+	server.setTestSessionName("shop-dev")
 	server.selectorMatchOverride = func(_ context.Context, selector string) ([]RuntimeSelectorMatch, error) {
-		if selector != "im-core" {
+		if selector != "reports" {
 			t.Fatalf("selector = %q", selector)
 		}
-		return []RuntimeSelectorMatch{{Runtime: "myclass", ID: "ec52bcfb", Kind: "service", Service: "im-core"}}, nil
+		return []RuntimeSelectorMatch{{Runtime: "billing", ID: "ec52bcfb", Kind: "service", Service: "reports"}}, nil
 	}
-	result := testTool(t, server, "status", `{"selectors":["im-core"]}`)
-	if result.Error == nil || result.Error.Code != "selector_not_found" || !strings.Contains(result.Error.Message, `runtime "harness"`) || !strings.Contains(result.Error.Hint, "another running runtime") {
+	result := testTool(t, server, "status", `{"selectors":["reports"]}`)
+	if result.Error == nil || result.Error.Code != "selector_not_found" || !strings.Contains(result.Error.Message, `runtime "shop-dev"`) || !strings.Contains(result.Error.Hint, "another running runtime") {
 		t.Fatalf("error = %#v", result.Error)
 	}
 	payload, _ := json.Marshal(result.Error.Details)
-	if !strings.Contains(string(payload), `"runtime":"myclass"`) || !strings.Contains(string(payload), `"service":"im-core"`) {
+	if !strings.Contains(string(payload), `"runtime":"billing"`) || !strings.Contains(string(payload), `"service":"reports"`) {
 		t.Fatalf("details = %s", payload)
 	}
 }

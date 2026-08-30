@@ -541,7 +541,7 @@ func TestLoadDetectedPortHealthCheckSelector(t *testing.T) {
 
 func TestLoadTCPHealthCheckWithoutPortUsesDiscovery(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "kranz.yaml")
-	data := "project: Implicit dynamic probe\nservices:\n  im-widgets:\n    command: npm run dev\n    healthcheck:\n      readiness:\n        type: tcp\n        interval: 3s\n      liveness:\n        type: tcp\n        detected_port_index: 0\n"
+	data := "project: Implicit dynamic probe\nservices:\n  web:\n    command: npm run dev\n    healthcheck:\n      readiness:\n        type: tcp\n        interval: 3s\n      liveness:\n        type: tcp\n        detected_port_index: 0\n"
 	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -550,7 +550,7 @@ func TestLoadTCPHealthCheckWithoutPortUsesDiscovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	health := cfg.Services["im-widgets"].HealthCheck
+	health := cfg.Services["web"].HealthCheck
 	if !health.Readiness.UsesDetectedPort() || !health.Liveness.UsesDetectedPort() {
 		t.Fatalf("tcp probes did not use discovery: %#v", health)
 	}

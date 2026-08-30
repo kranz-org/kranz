@@ -47,9 +47,12 @@ Kranz does not replace Docker, systemd, Kubernetes, or your production
 deployment platform. It calls the tools your project already uses and provides
 coordination and visibility for local development.
 
-It also does not need a background daemon. Ordinary process-supervised services
-stop when Kranz exits. Detached resources can deliberately survive the session
-with `stop_on_exit: false`.
+It also does not install or require an always-on global daemon. A foreground
+runtime exists only while its owning `kranz` process is open. If you explicitly
+run `kranz up -d`, that project gets a background runtime until `kranz down`;
+it is still a project-scoped process you started, not a machine-wide control
+plane. Ordinary process-supervised services stop with their owning runtime.
+Detached resources can deliberately survive it with `stop_on_exit: false`.
 
 ## The smallest useful setup
 

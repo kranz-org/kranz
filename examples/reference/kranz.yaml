@@ -1,6 +1,8 @@
 # Project identity
 project: Northstar          # Required. Shown in the header.
 version: "1.0"              # Optional label for you; Kranz does not read it.
+runtime:
+  name: northstar-dev       # Stable name for -p and KRANZ_PROJECT addressing.
 
 # Appearance for this project
 # Personal preferences live in your user settings file instead. Ctrl+T opens
@@ -116,6 +118,7 @@ services:
   worker:
     command: npm run worker
     dir: apps/worker
+    is_dotenv_disabled: true             # Do not load the adjacent .env.
     tags: [backend]
     depends_on: [api]
     ready_log_line: "worker listening"   # Readiness from output instead.

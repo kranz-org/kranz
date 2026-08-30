@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 520" role="img" aria-labelledby="title desc">
+  <title id="title">Kranz project, runtime, client, service, action, and run terminology</title>
+  <desc id="desc">A project configuration creates one active runtime. TUI, CLI, and MCP connect to it as clients. The runtime owns services and actions, and each service start or action execution creates a numbered run.</desc>
+  <style>text{font:600 17px ui-sans-serif,system-ui;fill:#172033}.box{fill:#fff;stroke:#94a3b8;stroke-width:2}.project{fill:#f8fafc}.runtime{fill:#e0f2fe;stroke:#0ea5e9;stroke-width:3}.work{fill:#dcfce7;stroke:#22c55e}.run{fill:#fef3c7;stroke:#f59e0b}.edge{fill:none;stroke:#0ea5e9;stroke-width:3}.produces{stroke:#f59e0b}.note{font-size:13px;fill:#526176}.heading{font-size:20px;fill:#0284c7}@media(prefers-color-scheme:dark){text{fill:#e7edf5}.box{fill:#111923;stroke:#526176}.project{fill:#0d131b}.runtime{fill:#102a3a}.work{fill:#10291d}.run{fill:#33260c}.note{fill:#9aa8b8}.heading{fill:#38bdf8}}</style>
+  <defs><marker id="blue" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0 0L9 3L0 6Z" fill="#0ea5e9"/></marker><marker id="amber" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0 0L9 3L0 6Z" fill="#f59e0b"/></marker></defs>
+
+  <text class="heading" x="35" y="35">Definition</text>
+  <rect class="box project" x="35" y="58" width="220" height="82" rx="12"/><text x="145" y="89" text-anchor="middle">project configuration</text><text class="note" x="145" y="113" text-anchor="middle">kranz.yaml or imported file</text>
+  <rect class="box runtime" x="390" y="50" width="320" height="98" rx="14"/><text x="550" y="84" text-anchor="middle">one active runtime</text><text class="note" x="550" y="108" text-anchor="middle">supervisor · state · logs · history</text><text class="note" x="550" y="130" text-anchor="middle">listed by kranz ps</text>
+  <path class="edge" d="M255 99H390" marker-end="url(#blue)"/><text class="note" x="322" y="87" text-anchor="middle">starts</text>
+
+  <text class="heading" x="35" y="205">Clients connect to the runtime</text>
+  <rect class="box" x="35" y="228" width="170" height="62" rx="10"/><text x="120" y="266" text-anchor="middle">TUI</text>
+  <rect class="box" x="35" y="310" width="170" height="62" rx="10"/><text x="120" y="348" text-anchor="middle">CLI</text>
+  <rect class="box" x="35" y="392" width="170" height="62" rx="10"/><text x="120" y="430" text-anchor="middle">MCP</text>
+  <path class="edge" d="M205 259C300 259 300 112 390 112" marker-end="url(#blue)"/><path class="edge" d="M205 341C315 341 315 124 390 124" marker-end="url(#blue)"/><path class="edge" d="M205 423C330 423 330 136 390 136" marker-end="url(#blue)"/>
+
+  <text class="heading" x="420" y="205">Work owned by the runtime</text>
+  <rect class="box work" x="390" y="235" width="220" height="76" rx="11"/><text x="500" y="265" text-anchor="middle">service</text><text class="note" x="500" y="289" text-anchor="middle">api · web · worker</text>
+  <rect class="box work" x="390" y="360" width="220" height="76" rx="11"/><text x="500" y="390" text-anchor="middle">action</text><text class="note" x="500" y="414" text-anchor="middle">migrate · test · build</text>
+  <path class="edge" d="M550 148V235" marker-end="url(#blue)"/><path class="edge" d="M650 148V335H500V360" marker-end="url(#blue)"/>
+
+  <text class="heading" x="765" y="205">Executions become runs</text>
+  <rect class="box run" x="765" y="235" width="275" height="76" rx="11"/><text x="902" y="265" text-anchor="middle">service run api#4</text><text class="note" x="902" y="289" text-anchor="middle">one service start</text>
+  <rect class="box run" x="765" y="360" width="275" height="76" rx="11"/><text x="902" y="390" text-anchor="middle">action run api/migrate#3</text><text class="note" x="902" y="414" text-anchor="middle">one action execution</text>
+  <path class="edge produces" d="M610 273H765" marker-end="url(#amber)"/><path class="edge produces" d="M610 398H765" marker-end="url(#amber)"/>
+
+  <text class="note" x="550" y="492" text-anchor="middle">Connecting another client reuses the runtime. Starting work creates a run, not another runtime.</text>
+</svg>

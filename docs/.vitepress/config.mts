@@ -50,7 +50,7 @@ export default defineConfig({
           { text: 'Lifecycle', link: '/guide/lifecycle' },
           { text: 'Actions', link: '/guide/actions' },
           { text: 'Health and dependencies', link: '/guide/health-and-dependencies' },
-          { text: 'Logs and ports', link: '/guide/logs-and-ports' },
+          { text: 'Logs, runs, and ports', link: '/guide/logs-and-ports' },
           { text: 'Appearance', link: '/guide/appearance' },
           { text: 'Troubleshooting', link: '/guide/troubleshooting' }
         ]

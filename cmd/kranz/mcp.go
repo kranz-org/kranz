@@ -104,7 +104,7 @@ func optionsPinDirectory(options kranzcli.GlobalOptions) bool {
 	return options.DirectoryExplicit || len(options.ConfigPaths) > 0
 }
 
-// mcpClientLabel names this process in `kranz clients`. The harness that
+// mcpClientLabel names this process in `kranz clients`. The launcher that
 // spawned it is the useful identity, and it is the one thing the MCP process
 // knows about its caller before any call arrives.
 func mcpClientLabel() string {

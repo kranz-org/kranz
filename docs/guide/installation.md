@@ -24,21 +24,25 @@ go install github.com/kranz-org/kranz/cmd/kranz@latest
 ## Debian and Ubuntu
 
 ```bash
-curl -LO https://github.com/kranz-org/kranz/releases/latest/download/kranz_VERSION_linux_amd64.deb
-sudo apt install ./kranz_VERSION_linux_amd64.deb
+VERSION=0.11.1
+ARCH=amd64  # use arm64 on an ARM machine
+curl -fLO "https://github.com/kranz-org/kranz/releases/download/v${VERSION}/kranz_${VERSION}_linux_${ARCH}.deb"
+sudo apt install "./kranz_${VERSION}_linux_${ARCH}.deb"
 kranz --version
 ```
 
-Replace `VERSION` with the release you want and `amd64` with `arm64` where
-appropriate. The package installs the binary into `/usr/bin`, shell completions
-for bash, zsh, and fish, and the documentation into `/usr/share/doc/kranz`.
+Change `VERSION` when installing another release. The package installs the
+binary into `/usr/bin`, shell completions for bash, zsh, and fish, and the
+documentation into `/usr/share/doc/kranz`.
 
 Remove it with `sudo apt remove kranz`.
 
 ## Fedora, RHEL, and Rocky
 
 ```bash
-sudo dnf install https://github.com/kranz-org/kranz/releases/latest/download/kranz_VERSION_linux_amd64.rpm
+VERSION=0.11.1
+ARCH=amd64  # use arm64 on an ARM machine
+sudo dnf install "https://github.com/kranz-org/kranz/releases/download/v${VERSION}/kranz_${VERSION}_linux_${ARCH}.rpm"
 kranz --version
 ```
 
@@ -59,7 +63,7 @@ Two things are worth knowing:
 - **Keep the project on the Linux filesystem.** A project under `/mnt/c` is
   reached through a translation layer, where file watching is unreliable and
   every process start is slower. Configuration reload depends on watching, so a
-  project under `/home/you` behaves correctly and one under `/mnt/c` may not
+  project under `$HOME` behaves correctly and one under `/mnt/c` may not
   notice edits.
 - **Ports are shared with Windows.** WSL 2 forwards listening ports to the
   Windows host, so `kranz ports` and the port conflict checks see the same

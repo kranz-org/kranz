@@ -12,22 +12,22 @@ runs one action, reads its numbered result again, and cleans up the session.
 
 ## Run it
 
-From the repository root, build Kranz first:
+The example uses the `kranz` installed in your `PATH`. From the repository
+root, enter its directory:
 
 ```bash
-make build VERSION=v0.11.0
 cd examples/mcp-shared-runtime
 ```
 
 Then use separate terminals if you want to keep the TUI visible:
 
 ```bash
-../../bin/kranz up -d
-../../bin/kranz attach                                      # terminal 1: TUI
-../../bin/kranz status                                      # terminal 2: CLI
-KRANZ_BIN=../../bin/kranz python3 mcp_client.py status      # terminal 3: MCP
-KRANZ_BIN=../../bin/kranz python3 mcp_client.py migrate
-../../bin/kranz down
+kranz up -d
+kranz attach                            # terminal 1: TUI
+kranz status                            # terminal 2: CLI
+python3 mcp_client.py status            # terminal 3: MCP
+python3 mcp_client.py migrate
+kranz down
 ```
 
 The views report one runtime identity. The action result and logs use the same
@@ -39,8 +39,7 @@ The client starts one unbound `kranz mcp` process. Point a call at another live
 runtime by passing its name from `runtimes`:
 
 ```bash
-KRANZ_BIN=/path/to/kranz \
-KRANZ_PROJECT_DIR=/path/to/any/directory \
+KRANZ_PROJECT_DIR=/workspace \
 KRANZ_RUNTIME=another-runtime \
 python3 mcp_client.py actions
 ```
@@ -48,13 +47,13 @@ python3 mcp_client.py actions
 ## Ports and cleanup
 
 The example listens only on `127.0.0.1:18931` and `127.0.0.1:18932`. Run
-`../../bin/kranz down` from the example directory when finished. If startup
+`kranz down` from the example directory when finished. If startup
 reports a port conflict, inspect the owner instead of changing the example's
 ports silently:
 
 ```bash
-../../bin/kranz port inspect 18931
-../../bin/kranz port inspect 18932
+kranz port inspect 18931
+kranz port inspect 18932
 ```
 
 ## Regenerate the recording
@@ -63,7 +62,7 @@ The recording is built from the same live client and project, with no fixture
 JSON or personal environment data:
 
 ```bash
-make build VERSION=v0.11.0
+make build VERSION=v0.11.1
 vhs docs/assets/tapes/mcp-shared-runtime.tape
 ```
 

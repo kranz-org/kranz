@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 760" role="img" aria-labelledby="title desc">
+  <title id="title">Process and detached service lifecycles</title>
+  <desc id="desc">Two vertical tracks compare lifecycles. A process-supervised service is a child process owned and stopped by Kranz. A detached service is an external resource controlled by lifecycle commands and observed by a status probe; stop on exit decides whether Kranz leaves it running or invokes its stop command.</desc>
+  <style>text{font:600 16px ui-sans-serif,system-ui;fill:#172033}.panel{fill:#f8fafc;stroke:#cbd5e1;stroke-width:2}.box{fill:#fff;stroke:#94a3b8;stroke-width:2}.primary{fill:#e0f2fe;stroke:#0ea5e9}.choice{fill:#fef3c7;stroke:#f59e0b}.edge{fill:none;stroke:#0ea5e9;stroke-width:3}.branch{font-size:13px;fill:#526176}.note{font-size:13px;fill:#526176}.heading{font-size:20px;fill:#0284c7}@media(prefers-color-scheme:dark){text{fill:#e7edf5}.panel{fill:#0d131b;stroke:#334155}.box{fill:#111923;stroke:#526176}.primary{fill:#102a3a}.choice{fill:#33260c}.branch,.note{fill:#9aa8b8}.heading{fill:#38bdf8}}</style>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0 0L9 3L0 6Z" fill="#0ea5e9"/></marker></defs>
+
+  <rect class="panel" x="25" y="25" width="455" height="710" rx="16"/>
+  <text class="heading" x="252" y="63" text-anchor="middle">Process · default</text>
+  <text class="note" x="252" y="87" text-anchor="middle">the command is the service</text>
+  <rect class="box" x="102" y="115" width="300" height="72" rx="10"/><text x="252" y="145" text-anchor="middle">start command</text><text class="note" x="252" y="168" text-anchor="middle">keeps running</text>
+  <rect class="box primary" x="102" y="235" width="300" height="72" rx="10"/><text x="252" y="265" text-anchor="middle">child process group</text><text class="note" x="252" y="288" text-anchor="middle">PID and output belong to Kranz</text>
+  <rect class="box" x="102" y="355" width="300" height="72" rx="10"/><text x="252" y="385" text-anchor="middle">Kranz observes the process</text><text class="note" x="252" y="408" text-anchor="middle">exit status is lifecycle truth</text>
+  <rect class="box" x="102" y="475" width="300" height="72" rx="10"/><text x="252" y="505" text-anchor="middle">Kranz or the service exits</text><text class="note" x="252" y="528" text-anchor="middle">cleanup begins</text>
+  <rect class="box" x="102" y="595" width="300" height="72" rx="10"/><text x="252" y="625" text-anchor="middle">process group is stopped</text><text class="note" x="252" y="648" text-anchor="middle">no child is left behind</text>
+  <path class="edge" d="M252 187V235" marker-end="url(#arrow)"/><path class="edge" d="M252 307V355" marker-end="url(#arrow)"/><path class="edge" d="M252 427V475" marker-end="url(#arrow)"/><path class="edge" d="M252 547V595" marker-end="url(#arrow)"/>
+
+  <rect class="panel" x="520" y="25" width="455" height="710" rx="16"/>
+  <text class="heading" x="747" y="63" text-anchor="middle">Detached · external</text>
+  <text class="note" x="747" y="87" text-anchor="middle">the command controls another resource</text>
+  <rect class="box" x="597" y="115" width="300" height="72" rx="10"/><text x="747" y="145" text-anchor="middle">lifecycle.start</text><text class="note" x="747" y="168" text-anchor="middle">command finishes</text>
+  <rect class="box primary" x="597" y="235" width="300" height="72" rx="10"/><text x="747" y="265" text-anchor="middle">external resource</text><text class="note" x="747" y="288" text-anchor="middle">no child PID belongs to Kranz</text>
+  <rect class="box" x="597" y="355" width="300" height="72" rx="10"/><text x="747" y="385" text-anchor="middle">lifecycle.status observes it</text><text class="note" x="747" y="408" text-anchor="middle">existence is lifecycle truth</text>
+  <rect class="box choice" x="597" y="475" width="300" height="72" rx="10"/><text x="747" y="505" text-anchor="middle">Kranz exits</text><text class="note" x="747" y="528" text-anchor="middle">stop_on_exit?</text>
+  <rect class="box" x="545" y="620" width="190" height="72" rx="10"/><text x="640" y="650" text-anchor="middle">leave it running</text><text class="note" x="640" y="673" text-anchor="middle">false · default</text>
+  <rect class="box" x="760" y="620" width="190" height="72" rx="10"/><text x="855" y="650" text-anchor="middle">lifecycle.stop</text><text class="note" x="855" y="673" text-anchor="middle">true</text>
+  <path class="edge" d="M747 187V235" marker-end="url(#arrow)"/><path class="edge" d="M747 307V355" marker-end="url(#arrow)"/><path class="edge" d="M747 427V475" marker-end="url(#arrow)"/>
+  <path class="edge" d="M700 547V577Q700 590 687 590H640V620" marker-end="url(#arrow)"/><text class="branch" x="649" y="582">false</text>
+  <path class="edge" d="M794 547V577Q794 590 807 590H855V620" marker-end="url(#arrow)"/><text class="branch" x="818" y="582">true</text>
+</svg>

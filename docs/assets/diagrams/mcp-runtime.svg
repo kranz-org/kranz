@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 340" role="img" aria-labelledby="title desc">
   <title id="title">One Kranz runtime for TUI, CLI, and MCP</title>
   <desc id="desc">The terminal interface, command line, and coding agent connect through one session and application API to one supervisor.</desc>
-  <style>text{font:600 17px ui-sans-serif,system-ui;fill:#172033}.box{fill:#fff;stroke:#94a3b8;stroke-width:2}.client{fill:#f8fafc}.edge{fill:none;stroke:#0ea5e9;stroke-width:3}.shared{stroke:#22c55e}.heading{font-size:22px;fill:#0284c7}.note{font-size:14px;fill:#526176}@media(prefers-color-scheme:dark){text{fill:#e7edf5}.box{fill:#111923;stroke:#526176}.client{fill:#0d131b}.heading{fill:#38bdf8}.note{fill:#9aa8b8}}</style>
+  <style>text{font:600 17px ui-sans-serif,system-ui;fill:#172033}.box{fill:#fff;stroke:#94a3b8;stroke-width:2}.client{fill:#f8fafc}.edge{fill:none;stroke:#0ea5e9;stroke-width:3}.heading{font-size:22px;fill:#0284c7}.note{font-size:14px;fill:#526176}@media(prefers-color-scheme:dark){text{fill:#e7edf5}.box{fill:#111923;stroke:#526176}.client{fill:#0d131b}.heading{fill:#38bdf8}.note{fill:#9aa8b8}}</style>
   <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0 0L9 3L0 6Z" fill="#0ea5e9"/></marker></defs>
   <text class="heading" x="35" y="38">Three clients</text>
   <rect class="box client" x="35" y="65" width="190" height="58" rx="10"/><text x="130" y="90" text-anchor="middle">Terminal UI</text><text class="note" x="130" y="111" text-anchor="middle">keyboard operator</text>
@@ -11,6 +11,6 @@
   <rect class="box" x="625" y="122" width="150" height="98" rx="12"/><text x="700" y="158" text-anchor="middle">application</text><text x="700" y="181" text-anchor="middle">API</text><text class="note" x="700" y="203" text-anchor="middle">one contract</text>
   <rect class="box" x="865" y="122" width="110" height="98" rx="12"/><text x="920" y="164" text-anchor="middle">one</text><text x="920" y="188" text-anchor="middle">supervisor</text>
   <path class="edge" d="M225 94C280 94 280 147 335 147" marker-end="url(#arrow)"/><path class="edge" d="M225 171H335" marker-end="url(#arrow)"/><path class="edge" d="M225 248C280 248 280 195 335 195" marker-end="url(#arrow)"/>
-  <path class="edge shared" d="M525 171H625" marker-end="url(#arrow)"/><path class="edge shared" d="M775 171H865" marker-end="url(#arrow)"/>
+  <path class="edge" d="M525 171H625" marker-end="url(#arrow)"/><path class="edge" d="M775 171H865" marker-end="url(#arrow)"/>
   <text class="note" x="500" y="315" text-anchor="middle">MCP attaches to an existing session; disconnecting it does not stop a TUI-owned runtime.</text>
 </svg>

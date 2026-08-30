@@ -30,7 +30,7 @@ func TestResolveCheckTreatsOmittedTCPPortAsDetected(t *testing.T) {
 	checker := NewChecker()
 	checker.SetDetectedPortsProvider(func(string) []int { return []int{43801} })
 
-	resolved, err := checker.resolveCheck("im-widgets", &config.CheckConfig{Type: config.CheckTCP})
+	resolved, err := checker.resolveCheck("api", &config.CheckConfig{Type: config.CheckTCP})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestResolveCheckTreatsOmittedHTTPURLPortAsDetected(t *testing.T) {
 	checker := NewChecker()
 	checker.SetDetectedPortsProvider(func(string) []int { return []int{43304} })
 
-	resolved, err := checker.resolveCheck("im-core", &config.CheckConfig{
+	resolved, err := checker.resolveCheck("api", &config.CheckConfig{
 		Type: config.CheckHTTP, URL: "http://localhost/api/health",
 	})
 	if err != nil {

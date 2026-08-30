@@ -2,6 +2,11 @@
 
 Kranz supports two sources of lifecycle truth.
 
+![Process supervision owns a child process while detached supervision controls and observes an external resource](../assets/diagrams/service-lifecycle.svg)
+
+Choose `process` when the command itself is the service. Choose `detached` when
+the command creates or reaches a resource that continues independently.
+
 ## Process supervision
 
 `supervision: process` is the default. Kranz owns the command's process group,

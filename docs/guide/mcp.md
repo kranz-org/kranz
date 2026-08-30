@@ -9,6 +9,11 @@ creates nothing when a client connects, and picks the runtime per call — so
 "read the logs of the service I am looking at" works in the project you are in,
 and in the one next door.
 
+Here a *runtime* is one active Kranz session for a project, not another server
+installed by the agent. If the distinction between project, runtime, service,
+and run is new, read the short [Core concepts](./core-concepts#runtime) table
+first.
+
 TUI, CLI, and MCP are three views of the same application API:
 
 ![TUI, CLI, and MCP clients converge on one Kranz session, application API, and supervisor](../assets/diagrams/mcp-runtime.svg)
@@ -152,15 +157,28 @@ not follow you as the conversation moves to another project. That lands on
 `runtime_required`, and its candidates can be passed straight back:
 
 ```json
-{"code": "runtime_required",
- "message": "no runtime was addressed and this MCP server has no project of its own",
- "details": {"candidates": [
-   {"runtime": "myclass", "id": "98784c10", "directory": "/Users/you/Dev/MyClass"},
-   {"runtime": "harness", "id": "10a2a490", "directory": "/Users/you/Dev/Harness"}]}}
+{
+  "code": "runtime_required",
+  "message": "no runtime was addressed and this MCP server has no project of its own",
+  "details": {
+    "candidates": [
+      {
+        "runtime": "shop-dev",
+        "id": "7fa21c8d",
+        "directory": "/workspace/shop"
+      },
+      {
+        "runtime": "billing",
+        "id": "91bc430a",
+        "directory": "/workspace/billing"
+      }
+    ]
+  }
+}
 ```
 
-The same holds one level down: if `im-core` is missing here but exists in
-`myclass`, `selector_not_found` carries `available_in`, and repeating the call
+The same holds one level down: if `reports` is missing here but exists in
+`billing`, `selector_not_found` carries `available_in`, and repeating the call
 with that `runtime` succeeds.
 
 ## Server, project, and runtime names
@@ -169,13 +187,18 @@ The same setup exposes three related names, each with a different job:
 
 - `kranz` in `mcp_servers.kranz`, `mcp add kranz`, or the OpenCode key is the
   MCP client's local alias for this connection;
-- `project: "Harness"` is the display title from `kranz.yaml`;
-- `harness` in `kranz ps` is the runtime name. It comes from `runtime.name`
+- `project: "Shop"` is the display title from `kranz.yaml`;
+- `shop-dev` in `kranz ps` is the runtime name. It comes from `runtime.name`
   when that field is set, otherwise from a stable lower-case slug of `project`.
 
 Runtimes and the clients attached to them are listed separately: `kranz ps`
 answers "what is running", `kranz clients` answers "who is working in it". An
 MCP server is a client, never a row in `ps`.
+
+By default that client identifies itself as `Kranz MCP`. A launcher may set
+`KRANZ_MCP_CLIENT=codex` in the MCP server environment to display `MCP: codex`
+instead, which is useful when several agent clients share a runtime. This is a
+display label only; runtime addressing still follows the rules above.
 
 ## Pinning a connection to one project
 
@@ -224,9 +247,7 @@ runtime is owned by its own background process, exactly like `kranz up -d`.
 
 The path is the same as the CLI:
 
-```text
-MCP tools → registry → IPC client → application API → supervisor
-```
+![An MCP call resolves a runtime in the registry, crosses the local IPC connection, and reaches the shared application API and supervisor](../assets/diagrams/mcp-call-path.svg)
 
 ## Actions and exact runs
 
@@ -245,12 +266,7 @@ but "what did my change do to the environment". `status` cannot answer it: a
 service that crashed and was restarted looks exactly like one that never
 moved. `changes` answers it directly.
 
-```text
-1. changes {}                    → cursor 41
-2. edit code, or run an action
-3. changes {"since": 41}         → api restarted · api ports 8080 -> 8081
-                                   · api/migrate #3 failed · exit 1
-```
+![A changes cursor anchors the journal before work and retrieves only the events that followed](../assets/diagrams/mcp-changes-cursor.svg)
 
 Anything that carries a cursor hands one back, so the loop closes: `wait`
 returns the cursor it finished at, and passing the cursor you held *before* the

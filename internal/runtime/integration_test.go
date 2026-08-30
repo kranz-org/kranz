@@ -17,7 +17,7 @@ import (
 // tears both down. It is the RPC-boundary equivalent of the manual smoke
 // test поток 1 ran by hand against examples/*/kranz.yaml.
 func startTestSupervisor(t *testing.T, cfg *config.Config, configPaths []string) (*Client, func()) {
-	return startTestSupervisorIdentity(t, cfg, configPaths, ClientIdentity{Surface: "cli", Label: "kranz CLI"})
+	return startTestSupervisorIdentity(t, cfg, configPaths, ClientIdentity{Surface: "cli", Label: "Kranz CLI"})
 }
 
 func startTestSupervisorIdentity(t *testing.T, cfg *config.Config, configPaths []string, identity ClientIdentity) (*Client, func()) {

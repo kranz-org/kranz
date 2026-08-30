@@ -85,9 +85,7 @@ group's with `group:`.
 Prerequisites run in declared order, after dependencies are ready and before
 the service starts:
 
-```text
-dependencies ready → before_start actions → service starts → readiness probe
-```
+![Dependencies become ready, before-start actions complete, the service starts, and its readiness probe runs](../assets/diagrams/prerequisite-order.svg)
 
 `run: once` is the default and means one successful run per Kranz session,
 including across restarts — a migration is not re-applied every time you

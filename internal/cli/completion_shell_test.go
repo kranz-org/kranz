@@ -161,8 +161,8 @@ _files() { print -r -- "<files>"; }
 words=("$@")
 CURRENT=$#
 source "$ZPROBE_SCRIPT"`
-	harness := filepath.Join(t.TempDir(), "probe.zsh")
-	if err := os.WriteFile(harness, []byte(stubs), 0o600); err != nil {
+	probeScript := filepath.Join(t.TempDir(), "probe.zsh")
+	if err := os.WriteFile(probeScript, []byte(stubs), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	for _, test := range []struct {
@@ -177,7 +177,7 @@ source "$ZPROBE_SCRIPT"`
 		{words: []string{"kranz", ""}, want: []string{"logs:show and clear logs"}},
 	} {
 		t.Run(strings.Join(test.words, " "), func(t *testing.T) {
-			command := exec.Command(zsh, append([]string{"-f", harness}, test.words...)...)
+			command := exec.Command(zsh, append([]string{"-f", probeScript}, test.words...)...)
 			command.Env = append(os.Environ(), "ZPROBE_SCRIPT="+script)
 			output, err := command.CombinedOutput()
 			if err != nil {

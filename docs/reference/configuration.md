@@ -14,6 +14,7 @@ is not a valid duration.
 ```yaml
 project: Northstar
 version: "1.0"
+runtime: {}
 defaults: {}
 services: {}
 action_groups: {}
@@ -24,6 +25,7 @@ ui: {}
 | --- | --- | --- | --- |
 | [`project`](#project) | string | — | **Required.** Project name shown in the header |
 | [`version`](#version) | string | — | Free-form version label for your own use |
+| [`runtime`](#runtime) | map | `{}` | Stable runtime addressing options |
 | [`defaults`](#defaults) | map | `{}` | Execution context inherited by every service |
 | [`services`](#services) | map | `{}` | Long-running processes and detached resources |
 | [`action_groups`](#action-groups) | map | `{}` | Project-level one-shot commands |
@@ -50,6 +52,24 @@ Quote it, or YAML reads `1.0` as a number.
 
 ```yaml
 version: "1.0"
+```
+
+### runtime
+
+**Type:** map · **Default:** `{}`
+
+Controls the stable name used to address a live runtime from another terminal,
+an MCP client, or a script. When omitted, Kranz derives a lowercase slug from
+`project`.
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `name` | string | project slug | Runtime name shown by `kranz ps` and accepted by `-p` or `KRANZ_PROJECT` |
+
+```yaml
+project: Northstar
+runtime:
+  name: northstar-dev
 ```
 
 ### defaults
@@ -94,6 +114,7 @@ list, so keep them short and stable.
 | [`shell`](#dir-shell) | string | `defaults.shell` | Shell for commands |
 | [`env`](#env-env-files) | map | `{}` | Environment variables |
 | [`env_files`](#env-env-files) | string list | `[]` | Dotenv files, applied in order |
+| [`is_dotenv_disabled`](#is-dotenv-disabled) | bool | `false` | Skip the adjacent automatic `.env` for this service |
 | [`ports`](#ports) | int list | `[]` | Declared ports, checked before start |
 | [`detect_ports`](#detect-ports) | bool | see below | Discover listeners at runtime |
 | [`tags`](#tags) | string list | `[]` | Grouping and selection labels |
@@ -316,6 +337,21 @@ A value already present in your shell environment wins over the adjacent
 expand after all layers merge. Every referenced dotenv file is watched, so
 editing one reloads the configuration.
 
+### is_dotenv_disabled
+
+**Type:** bool · **Default:** `false`
+
+Set this on a service when it must not inherit the automatically discovered
+`.env` beside the first configuration file. Explicit `defaults.env`,
+`defaults.env_files`, service `env_files`, and service `env` still apply.
+
+```yaml
+services:
+  worker:
+    command: npm run worker
+    is_dotenv_disabled: true
+```
+
 ### ports
 
 **Type:** int list · **Default:** `[]`
@@ -347,7 +383,7 @@ services:
 Useful when a dev server picks its own port. Details separates declared ports
 from detected ones. Not available for detached services, which have no local
 process group to inspect; setting `true` there is rejected. See
-[logs and ports](../guide/logs-and-ports).
+[logs, runs, and ports](../guide/logs-and-ports).
 
 ### tags
 

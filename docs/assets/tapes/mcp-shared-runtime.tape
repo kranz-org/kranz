@@ -2,7 +2,7 @@
 # neutral temporary directory. Setup, authentication, commands, cleanup, and
 # the user's home directory stay hidden.
 # Regenerate from the repository root:
-#   make build VERSION=v0.11.0
+#   make build VERSION=v0.11.1
 #   vhs docs/assets/tapes/mcp-shared-runtime.tape
 Output docs/assets/mcp-shared-runtime.gif
 
@@ -17,7 +17,7 @@ Set Framerate 12
 Hide
 Type "DEMO_DIR=/private/tmp/kranz-mcp-demo; DEMO_CODEX_HOME=/private/tmp/kranz-codex-demo; DEMO_SESSION=kranz-mcp-demo"
 Enter
-Type "make build VERSION=v0.11.0"
+Type "make build VERSION=v0.11.1"
 Enter
 Type `mkdir -p "$DEMO_DIR" "$DEMO_CODEX_HOME"`
 Enter

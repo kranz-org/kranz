@@ -39,7 +39,9 @@ every two seconds. Both keep running until stopped.
 kranz
 ```
 
-You should see `web` and `worker` in panel `1`. Nothing starts automatically.
+Kranz searches the current directory, finds the `Procfile` you just created,
+and opens one foreground runtime for it. You should see `web` and `worker` in
+panel `1`. Nothing starts automatically.
 
 <div class="demo-frame">
 

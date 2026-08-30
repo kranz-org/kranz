@@ -130,5 +130,5 @@ runtime. A restart from either is reflected immediately in this TUI.
 The [complete controls reference](../reference/controls) covers selection
 overrides, log navigation, health history, notifications, shell handoff, mouse
 interaction, and shutdown behavior. The guides for [actions](./actions),
-[lifecycle](./lifecycle), [logs and ports](./logs-and-ports), and
+[lifecycle](./lifecycle), [logs, runs, and ports](./logs-and-ports), and
 [appearance](./appearance) include focused recordings of those workflows.

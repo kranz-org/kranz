@@ -645,14 +645,14 @@ func TestLifecycleResolvesRuntimeFromDirectory(t *testing.T) {
 // what the user asked for.
 func TestDownRejectsServiceSelectorWithStopHint(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	if code := execute([]string{"down", "im-core"}, &stdout, &stderr); code != kranzcli.ExitUsage {
+	if code := execute([]string{"down", "reports"}, &stdout, &stderr); code != kranzcli.ExitUsage {
 		t.Fatalf("exit = %d, stderr = %q", code, stderr.String())
 	}
 	output := stderr.String()
 	if !strings.Contains(output, "does not take service selectors") {
 		t.Errorf("down rejection does not explain itself: %q", output)
 	}
-	if !strings.Contains(output, "kranz stop im-core") {
+	if !strings.Contains(output, "kranz stop reports") {
 		t.Errorf("down rejection does not point at stop: %q", output)
 	}
 }

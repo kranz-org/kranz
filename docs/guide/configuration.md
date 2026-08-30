@@ -96,9 +96,13 @@ Run with auto-discovery or explicit files:
 
 ```bash
 kranz
-kranz path/to/kranz.yaml
+kranz -f path/to/kranz.yaml
 kranz -f kranz.yaml -f kranz.local.yaml
 ```
+
+Bare `kranz` searches the current directory. Use `-f` when the file has a
+different name or lives elsewhere; repeat it only when you intentionally want
+to layer several files.
 
 Auto-discovery uses the first existing file in this order:
 

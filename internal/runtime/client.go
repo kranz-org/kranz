@@ -54,7 +54,7 @@ type ClientIdentity struct {
 // diagnostics; it does not affect protocol negotiation in this stream, since
 // client and server are always built from the same binary.
 func Dial(socketPath, clientVersion string) (*Client, error) {
-	return DialWithIdentity(socketPath, clientVersion, ClientIdentity{Surface: "cli", Label: "kranz CLI"})
+	return DialWithIdentity(socketPath, clientVersion, ClientIdentity{Surface: "cli", Label: "Kranz CLI"})
 }
 
 func DialWithIdentity(socketPath, clientVersion string, identity ClientIdentity) (*Client, error) {
@@ -63,7 +63,7 @@ func DialWithIdentity(socketPath, clientVersion string, identity ClientIdentity)
 
 // DialContext bounds both connection establishment and the hello handshake.
 func DialContext(ctx context.Context, socketPath, clientVersion string) (*Client, error) {
-	return DialContextWithIdentity(ctx, socketPath, clientVersion, ClientIdentity{Surface: "cli", Label: "kranz CLI"})
+	return DialContextWithIdentity(ctx, socketPath, clientVersion, ClientIdentity{Surface: "cli", Label: "Kranz CLI"})
 }
 
 func DialContextWithIdentity(ctx context.Context, socketPath, clientVersion string, identity ClientIdentity) (*Client, error) {

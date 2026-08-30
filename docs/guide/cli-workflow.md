@@ -8,6 +8,10 @@ reports.
 Everything below works on the project in the current directory. You never have
 to name it.
 
+In this guide, a *runtime* means one active Kranz session for a project. It owns
+the service state and logs; TUI, CLI, and MCP commands connect to it as clients.
+See [Core concepts](./core-concepts#runtime) if those names are new to you.
+
 When a shell or coding agent runs several commands from elsewhere, set a
 one-shot coordinate instead of repeating a flag:
 
@@ -64,10 +68,10 @@ false claim that a probe passed.
 
 ## Act on services
 
-```console
-$ kranz stop worker
-$ kranz start worker
-$ kranz restart api
+```bash
+kranz stop worker
+kranz start worker
+kranz restart api
 ```
 
 Selectors are service names or tags, the same ones the TUI uses. `stop` expands
@@ -76,8 +80,8 @@ survive without stops those too.
 
 `down` ends the whole runtime:
 
-```console
-$ kranz down
+```bash
+kranz down
 ```
 
 It takes no service selectors. If you name one, Kranz says which command you
@@ -91,10 +95,10 @@ Stop one service with `kranz stop worker`, or stop everything with `kranz down`.
 
 ## Read the logs
 
-```console
-$ kranz logs --tail 20
-$ kranz logs api --follow
-$ kranz logs --since 5m
+```bash
+kranz logs --tail 20
+kranz logs api --follow
+kranz logs --since 5m
 ```
 
 Logs survive the service. A worker that crashed two minutes ago still answers
@@ -103,12 +107,12 @@ Logs survive the service. A worker that crashed two minutes ago still answers
 Actions keep their own history under the same name `kranz action run` uses, so
 an action that has already finished can be read again without running it twice:
 
-```console
-$ kranz logs api/migrate
-$ kranz logs analytics/stats --run -1    # the latest execution
-$ kranz logs analytics/stats --run -2    # the one before it
-$ kranz logs analytics/stats --run 7     # run number 7
-$ kranz logs analytics/stats --runs 3    # the last three
+```bash
+kranz logs api/migrate
+kranz logs analytics/stats --run -1    # the latest execution
+kranz logs analytics/stats --run -2    # the one before it
+kranz logs analytics/stats --run 7     # run number 7
+kranz logs analytics/stats --runs 3    # the last three
 ```
 
 A positive `--run` is the run number Kranz assigned; a negative one counts back
@@ -123,10 +127,10 @@ the part explaining what the run did. `--tail` and `--all` still override both.
 The timestamp and label columns exist to tell interleaved streams apart, which
 is exactly what reading one stream back does not need:
 
-```console
-$ kranz logs analytics/stats --plain            # the output as the command printed it
-$ kranz logs analytics/stats --no-timestamps    # keep the labels, drop the clock
-$ kranz logs api --with-actions --no-labels
+```bash
+kranz logs analytics/stats --plain            # the output as the command printed it
+kranz logs analytics/stats --no-timestamps    # keep the labels, drop the clock
+kranz logs api --with-actions --no-labels
 ```
 
 `--source` narrows to where a line came from — `stdout`, `stderr`, or `kranz`
@@ -134,9 +138,9 @@ for the lifecycle notes Kranz writes into the buffer itself. It narrows before
 `--tail`, so `--source stderr --tail 20` means twenty error lines rather than
 whichever errors survive in the last twenty lines of everything:
 
-```console
-$ kranz logs api --source stderr --tail 20
-$ kranz logs analytics/stats --source stdout --plain > report.txt
+```bash
+kranz logs api --source stderr --tail 20
+kranz logs analytics/stats --source stdout --plain > report.txt
 ```
 
 ## What a selector means
@@ -166,16 +170,16 @@ of the service they act on, and `kranz logs api` already carries it.
 Buffers live in the runtime and are gone after `kranz down`. To reclaim one
 sooner:
 
-```console
-$ kranz logs clear api
-$ kranz logs clear analytics/stats
-$ kranz logs clear --force          # every stream in the project
+```bash
+kranz logs clear api
+kranz logs clear analytics/stats
+kranz logs clear --force          # every stream in the project
 ```
 
 ## Open the interface on a running project
 
-```console
-$ kranz attach
+```bash
+kranz attach
 ```
 
 The TUI connects to the runtime that is already there. Quitting the TUI leaves
@@ -185,9 +189,9 @@ it running; `down` stops it.
 
 `-p` names a runtime explicitly and always wins over the current directory:
 
-```console
-$ kranz -p billing status
-$ kranz -p billing logs api --tail 20
+```bash
+kranz -p billing status
+kranz -p billing logs api --tail 20
 ```
 
 You can use the runtime's NAME, its ID, or a unique ID prefix.
@@ -197,12 +201,12 @@ You can use the runtime's NAME, its ID, or a unique ID prefix.
 None of these need a runtime, so they answer on a project that has never been
 started:
 
-```console
-$ kranz config check
-$ kranz doctor
-$ kranz plan
-$ kranz list services
-$ kranz ports
+```bash
+kranz config check
+kranz doctor
+kranz plan
+kranz list services
+kranz ports
 ```
 
 `plan` is the useful one when a start is not doing what you expected: it prints

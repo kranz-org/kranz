@@ -788,8 +788,8 @@ func TestLightTerminalUsesCohesiveAdaptiveCanvas(t *testing.T) {
 
 	darkBackground := false
 	model := NewModelWithOptions(&config.Config{
-		Project: "MyClass", UI: config.UIConfig{Theme: "forest", Accent: "#2AB630"},
-		Services: map[string]config.Service{"im-core": {Command: "npm run dev", Description: "Messenger API"}},
+		Project: "Northstar", UI: config.UIConfig{Theme: "forest", Accent: "#2AB630"},
+		Services: map[string]config.Service{"api": {Command: "npm run dev", Description: "REST API and background scheduler"}},
 	}, "test", ModelOptions{DarkBackground: &darkBackground})
 	defer model.Shutdown()
 	model.width, model.height, model.ready = 80, 24, true

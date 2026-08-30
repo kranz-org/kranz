@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 190" role="img" aria-labelledby="title desc">
+  <title id="title">Service start order with prerequisites</title>
+  <desc id="desc">Dependencies become ready first, before-start actions run in declared order, the service starts, and then its readiness probe determines when dependents may continue.</desc>
+  <style>text{font:600 17px ui-sans-serif,system-ui;fill:#172033}.box{fill:#fff;stroke:#94a3b8;stroke-width:2}.action{fill:#e0f2fe;stroke:#0ea5e9}.edge{fill:none;stroke:#0ea5e9;stroke-width:3}.note{font-size:13px;fill:#526176}@media(prefers-color-scheme:dark){text{fill:#e7edf5}.box{fill:#111923;stroke:#526176}.action{fill:#102a3a}.note{fill:#9aa8b8}}</style>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0 0L9 3L0 6Z" fill="#0ea5e9"/></marker></defs>
+  <rect class="box" x="25" y="48" width="205" height="72" rx="10"/><text x="127" y="78" text-anchor="middle">dependencies ready</text><text class="note" x="127" y="101" text-anchor="middle">dependency gates passed</text>
+  <rect class="box action" x="280" y="48" width="205" height="72" rx="10"/><text x="382" y="78" text-anchor="middle">before_start actions</text><text class="note" x="382" y="101" text-anchor="middle">declared order</text>
+  <rect class="box" x="535" y="48" width="180" height="72" rx="10"/><text x="625" y="78" text-anchor="middle">service starts</text><text class="note" x="625" y="101" text-anchor="middle">process or lifecycle</text>
+  <rect class="box" x="765" y="48" width="210" height="72" rx="10"/><text x="870" y="78" text-anchor="middle">readiness probe</text><text class="note" x="870" y="101" text-anchor="middle">unblocks dependents</text>
+  <path class="edge" d="M230 84H280" marker-end="url(#arrow)"/><path class="edge" d="M485 84H535" marker-end="url(#arrow)"/><path class="edge" d="M715 84H765" marker-end="url(#arrow)"/>
+</svg>

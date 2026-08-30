@@ -65,6 +65,14 @@
   background: var(--vp-c-bg-soft);
 }
 
+/* Plain transcripts and terminal output are not programming languages. Keep
+   the copy affordance, but do not decorate them with a meaningless "text" or
+   "console" badge. */
+.vp-doc .language-text > .lang,
+.vp-doc .language-console > .lang {
+  display: none;
+}
+
 .example-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
