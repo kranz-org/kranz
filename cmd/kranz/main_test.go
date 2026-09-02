@@ -499,6 +499,36 @@ func TestForegroundRuntimeStatusAndRemoteDown(t *testing.T) {
 	if record.Mode != "background" || record.PID == command.Process.Pid {
 		t.Fatalf("foreground client did not use an independent runtime: mode=%q same_pid=%v", record.Mode, record.PID == command.Process.Pid)
 	}
+	probe, err := kranzruntime.Dial(record.Socket, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientDeadline := time.Now().Add(5 * time.Second)
+	for {
+		clients, clientsErr := probe.Clients()
+		if clientsErr != nil {
+			_ = probe.Close()
+			t.Fatal(clientsErr)
+		}
+		connected := false
+		for _, client := range clients {
+			if client.PID == command.Process.Pid && client.Surface == "cli" {
+				connected = true
+				break
+			}
+		}
+		if connected {
+			break
+		}
+		if time.Now().After(clientDeadline) {
+			_ = probe.Close()
+			t.Fatalf("foreground client did not connect; stderr=%s", childStderr.String())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if err := probe.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	var stdout, stderr bytes.Buffer
 	if code := execute([]string{"-p", name, "status", "--output=json"}, &stdout, &stderr); code != 0 {
