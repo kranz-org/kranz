@@ -53,6 +53,8 @@ workflow; generated binaries are never checked into the repository.
    from the latest existing tag, which is useful for ordinary development but
    does not verify release metadata. The package checks require Docker or
    Podman and pin each container to the architecture of the package under test.
+   The tag workflow repeats the exact-version snapshot and both package checks
+   before publishing, with QEMU available for the arm64 containers.
 
 4. Create an annotated tag without pushing it automatically:
 

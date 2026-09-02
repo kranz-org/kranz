@@ -41,6 +41,19 @@ jobs:
       - name: Lint source
         run: make lint
 
+      - name: Set up QEMU for arm64 package verification
+        uses: docker/setup-qemu-action@1f40c72289eff860ee54a304f1438e3cff362e0a # v4.3.0
+        with:
+          platforms: arm64
+
+      - name: Build exact-version release candidate
+        run: make snapshot RELEASE_VERSION="${GITHUB_REF_NAME#v}"
+
+      - name: Verify Linux packages
+        run: |
+          make packages-verify
+          PACKAGE_ARCH=arm64 make packages-verify
+
       - name: Publish GitHub release
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
