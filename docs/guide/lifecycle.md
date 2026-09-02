@@ -101,9 +101,9 @@ A detached service can omit capabilities it does not own. A service with only
 stop remain unavailable.
 
 Detached services default to `stop_on_exit: false`. Set it to `true` only when
-closing Kranz should execute the external stop command. Declared `ports` remain
-valid endpoint documentation, but local PID discovery is unavailable and
-`detect_ports: true` is rejected.
+runtime shutdown should execute the external stop command. Detaching a TUI does
+not invoke it. Declared `ports` remain valid endpoint documentation, but local
+PID discovery is unavailable and `detect_ports: true` is rejected.
 
 See the [lifecycle playground](../examples#detached-lifecycle-playground) for a
 safe local simulation of managed and observe-only external resources.

@@ -53,10 +53,11 @@ while it waits.
 **Stop `gateway`.** Kranz includes everything that depends on it and stops the
 dependents first, in reverse order.
 
-**Quit while `shared-infra` runs.** The exit plan separates the processes that
-will stop from the detached resource that will keep running, because it
-declares `stop_on_exit: false`. Start Kranz again: the status probe finds the
-resource and reconnects to it without running the start command.
+**Leave while `shared-infra` runs.** Choose detach to keep the whole runtime
+running, or choose shutdown to stop its managed processes. The exit plan shows
+that `shared-infra` survives even shutdown because it declares
+`stop_on_exit: false`. Start Kranz again: the status probe finds the resource
+and reconnects to it without running the start command.
 
 **Open `moonflight-web` in Details.** It declares no port; the listener shown
 was discovered from the running process.

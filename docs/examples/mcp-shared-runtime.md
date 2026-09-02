@@ -32,8 +32,8 @@ kranz down
 
 The views report one runtime identity. The action result and logs use the same
 `OWNER/ACTION#run`; the client's second result read does not execute the action
-again. Closing an MCP client attached to the TUI-owned runtime leaves the TUI
-and services running.
+again. Closing either client leaves the independently owned runtime and its
+services running.
 
 The client starts one unbound `kranz mcp` process. Point a call at another live
 runtime by passing its name from `runtimes`:
@@ -62,7 +62,7 @@ The recording is built from the same live client and project, with no fixture
 JSON or personal environment data:
 
 ```bash
-make build VERSION=v0.11.1
+make build VERSION=v0.12.0
 vhs docs/assets/tapes/mcp-shared-runtime.tape
 ```
 

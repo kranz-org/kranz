@@ -184,8 +184,9 @@ kranz logs clear --force          # every stream in the project
 kranz attach
 ```
 
-The TUI connects to the runtime that is already there. Quitting the TUI leaves
-it running; `down` stops it.
+The TUI connects to the runtime that is already there. Choose detach in its
+quit confirmation to leave the runtime running, or confirm shutdown to stop
+it. `down` provides the same explicit runtime shutdown outside the TUI.
 
 ## Work on another project without leaving this one
 

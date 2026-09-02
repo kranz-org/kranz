@@ -24,7 +24,7 @@ go install github.com/kranz-org/kranz/cmd/kranz@latest
 ## Debian and Ubuntu
 
 ```bash
-VERSION=0.11.1
+VERSION=0.12.0
 ARCH=amd64  # use arm64 on an ARM machine
 curl -fLO "https://github.com/kranz-org/kranz/releases/download/v${VERSION}/kranz_${VERSION}_linux_${ARCH}.deb"
 sudo apt install "./kranz_${VERSION}_linux_${ARCH}.deb"
@@ -40,7 +40,7 @@ Remove it with `sudo apt remove kranz`.
 ## Fedora, RHEL, and Rocky
 
 ```bash
-VERSION=0.11.1
+VERSION=0.12.0
 ARCH=amd64  # use arm64 on an ARM machine
 sudo dnf install "https://github.com/kranz-org/kranz/releases/download/v${VERSION}/kranz_${VERSION}_linux_${ARCH}.rpm"
 kranz --version

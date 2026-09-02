@@ -69,8 +69,9 @@ dot means stopped; yellow means a start, stop, or dependency wait is in flight.
 Return to panel `1`, keep both services selected, and press `s`. Kranz asks for
 confirmation before every stop. Confirm it and watch both process groups exit.
 
-Press `q` to leave. If process-supervised services are still running, quitting
-also asks for confirmation and stops them.
+Press `q` to leave. If services are still running, choose `Enter` or `y` to
+stop the runtime, `d` to detach while keeping it running, or `Esc` or `n` to
+stay in the TUI.
 
 ## 5. What to try next
 

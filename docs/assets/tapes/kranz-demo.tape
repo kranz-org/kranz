@@ -1,6 +1,6 @@
 # The site hero, recorded from the MoonFlight showcase project.
 # Regenerate from the repository root with the release binary in ./bin:
-#   make build VERSION=v0.11.1 && vhs docs/assets/tapes/kranz-demo.tape
+#   make build VERSION=v0.12.0 && vhs docs/assets/tapes/kranz-demo.tape
 Output docs/assets/kranz-demo.gif
 
 Set Shell "bash"

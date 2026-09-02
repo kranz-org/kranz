@@ -32,7 +32,7 @@ action_groups:
 
 services:
   # An external resource Kranz does not own: the start command finishes while
-  # the thing it started keeps running. Quitting Kranz leaves it alone.
+  # the thing it started keeps running. Runtime shutdown leaves it alone.
   shared-infra:
     description: Postgres and Redis for the whole team, started once per day.
     supervision: detached

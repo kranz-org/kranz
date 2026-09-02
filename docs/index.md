@@ -31,13 +31,13 @@ features:
     details: Register once, address any project per call, and let agents operate the same supervisor visible in TUI and CLI.
   - title: Bring your existing config
     details: Start with a Procfile, a supported Process Compose file, or native Kranz YAML when you need the full model.
-  - title: Foreground by design
-    details: Keep ownership visible and cleanup predictable, without a hidden daemon or second control plane.
+  - title: Independent by design
+    details: Keep one project runtime alive across client disconnects, without a global daemon or second control plane.
 ---
 
 <div class="demo-frame demo-frame--hero">
 
-![Kranz v0.11.1 starting the MoonFlight project, running a catalogue action twice, and browsing its retained runs](./assets/kranz-demo.gif)
+![Kranz v0.12.0 starting a project, running an action twice, and browsing its retained runs](./assets/kranz-demo.gif)
 
 </div>
 
@@ -52,8 +52,10 @@ commands you run by hand. Kranz turns those pieces into one local workspace:
 4. watch dependencies start in order and logs arrive in one place;
 5. press `s` again to stop, with confirmation.
 
-Kranz runs in the foreground. It is not a container runtime, a deployment
-platform, or a daemon that keeps changing your machine after you leave.
+Kranz starts one independent supervisor for each active project. The TUI, CLI,
+and MCP connect as clients; detaching a client leaves the runtime alone, while
+an explicit shutdown stops what the runtime owns. Kranz is not a container
+runtime, deployment platform, global daemon, or machine-wide control plane.
 
 ::: tip New here?
 Start with [What is Kranz?](./guide/what-is-kranz), then follow the

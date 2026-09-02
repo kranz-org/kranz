@@ -109,7 +109,7 @@ list, so keep them short and stable.
 | [`description`](#description) | string | — | One line shown in Details |
 | [`supervision`](#supervision) | enum | `process` | `process` or `detached` |
 | [`lifecycle`](#lifecycle) | map | `{}` | Explicit start, stop, status, and logs |
-| [`stop_on_exit`](#stop-on-exit) | bool | `true` / `false` | Whether quitting Kranz stops this service |
+| [`stop_on_exit`](#stop-on-exit) | bool | `true` / `false` | Whether runtime shutdown stops this service |
 | [`dir`](#dir-shell) | string | `defaults.dir` | Working directory |
 | [`shell`](#dir-shell) | string | `defaults.shell` | Shell for commands |
 | [`env`](#env-env-files) | map | `{}` | Environment variables |
@@ -282,7 +282,8 @@ stopped sets must not overlap, and each code must be between 0 and 255.
 
 **Type:** bool · **Default:** `true` for process, `false` for detached
 
-Whether quitting Kranz stops this service.
+Whether stopping the runtime also stops this service. Detaching a TUI does not
+stop the runtime and therefore does not apply this setting.
 
 ```yaml
 services:
@@ -293,9 +294,9 @@ services:
 
 Process-supervised services always stop with Kranz and cannot set `false`;
 Kranz does not leave orphaned child processes behind. A detached resource
-defaults to surviving the session, which is usually what you want for a Docker
-stack shared with other tools. The quit dialog lists exactly what will stop and
-what will be left running.
+defaults to surviving runtime shutdown, which is usually what you want for
+external infrastructure shared with other tools. The quit dialog lists exactly
+what shutdown will stop and what it will leave running.
 
 ### dir, shell
 
@@ -508,8 +509,8 @@ Cannot be combined with a readiness probe; declare one source of readiness.
 | `restart` | `no` \| `always` \| `on_failure` \| `exit_on_failure` | `no` | Recovery policy |
 | `backoff` | duration | `0s` | Wait before restarting |
 | `max_restarts` | int | `0` (unlimited) | Restart attempt limit |
-| `exit_on_end` | bool | `false` | Quit Kranz when this service ends |
-| `exit_on_skipped` | bool | `false` | Quit Kranz if a dependency gate skips it |
+| `exit_on_end` | bool | `false` | End the runtime when this service ends |
+| `exit_on_skipped` | bool | `false` | End the runtime if a dependency gate skips it |
 
 ```yaml
 availability:

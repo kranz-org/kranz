@@ -144,16 +144,18 @@ A variable already exported in your shell wins over the adjacent `.env`, but
 never over an explicit configuration value. Details shows the resolved
 environment file list for the selected service.
 
-## Quitting leaves something running
+## Leaving the TUI leaves something running
 
-That is deliberate for detached resources: they default to
-[`stop_on_exit: false`](../reference/configuration#stop-on-exit) so a shared
-Docker stack is not torn down because you closed a terminal. The quit dialog
-lists exactly what will stop and what will keep running before you confirm.
+First check which exit action you chose. Detach closes only the TUI, so the
+complete runtime and all of its services remain available to CLI, MCP, and a
+later TUI. Confirmed shutdown ends the runtime, but detached resources default
+to [`stop_on_exit: false`](../reference/configuration#stop-on-exit), so shared
+external infrastructure is not torn down merely because the runtime ended.
+The quit dialog lists both parts of this contract before you choose.
 
-Set `stop_on_exit: true` if closing Kranz should also run the external stop
-command. Process-supervised services always stop with Kranz; they cannot be
-left behind.
+Set `stop_on_exit: true` if runtime shutdown should also run the external stop
+command. Process-supervised services always stop with their runtime; they
+cannot be left behind after shutdown.
 
 ## A restart policy is being ignored
 

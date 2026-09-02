@@ -12,5 +12,5 @@
   <rect class="box" x="865" y="122" width="110" height="98" rx="12"/><text x="920" y="164" text-anchor="middle">one</text><text x="920" y="188" text-anchor="middle">supervisor</text>
   <path class="edge" d="M225 94C280 94 280 147 335 147" marker-end="url(#arrow)"/><path class="edge" d="M225 171H335" marker-end="url(#arrow)"/><path class="edge" d="M225 248C280 248 280 195 335 195" marker-end="url(#arrow)"/>
   <path class="edge" d="M525 171H625" marker-end="url(#arrow)"/><path class="edge" d="M775 171H865" marker-end="url(#arrow)"/>
-  <text class="note" x="500" y="315" text-anchor="middle">MCP attaches to an existing session; disconnecting it does not stop a TUI-owned runtime.</text>
+  <text class="note" x="500" y="315" text-anchor="middle">Clients attach to an independently owned runtime; disconnecting one does not stop it.</text>
 </svg>

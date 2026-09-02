@@ -123,10 +123,11 @@ a new session.
 
 Stop `remote-stack` and confirm. Its explicit stop command removes the markers.
 
-Now consider quitting instead. With `stop_on_exit: false` — the default for
-detached resources — quitting Kranz leaves the resource running, and the quit
-dialog says so explicitly, separating what will stop from what will be left
-alone. The status probe reconnects it on your next launch.
+Now consider leaving the TUI instead. Choose detach to keep the complete
+runtime running. If you choose **Stop runtime and quit**, `stop_on_exit: false`
+— the default for detached resources — still leaves this external resource
+alone while managed processes stop. The dialog distinguishes those outcomes,
+and the status probe reconnects the resource in the next runtime.
 
 ## The lifecycle contract
 

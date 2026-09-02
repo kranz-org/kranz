@@ -4,14 +4,34 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-09-02
+
+### Added
+
+- The TUI quit confirmation now offers three explicit outcomes: stop the
+  runtime and quit, detach while keeping the runtime running, or stay in the
+  TUI. The same choices are available from the keyboard and mouse, and the
+  dialog still distinguishes managed processes, configured external stop
+  commands, and external resources that Kranz will leave active.
+
 ### Changed
 
+- Every project runtime now has an independent background supervisor. Bare
+  `kranz`, foreground `kranz up`, attached TUIs, CLI commands, and MCP clients
+  connect to that owner instead of tying service lifetime to a client process.
+- Idle dashboards do substantially less work: rendered blocks and action state
+  are cached, redundant frames are suppressed, mouse refreshes are bounded,
+  log retention is maintained incrementally, and failed port discovery backs
+  off until there is useful work to retry.
 - `kranz clients` spells the built-in connection labels with the product name
   capitalised: `Kranz CLI`, `Kranz dashboard`, `Kranz attach`,
   `Kranz foreground`, and `Kranz background`.
 
 ### Fixed
 
+- A regular development build refreshes both `bin/kranz` and the
+  checkout-facing `bin/kranz-dev`, so a linked development command cannot lag
+  behind a successful build.
 - The configuration guide no longer shows `kranz path/to/kranz.yaml`, a form
   the CLI rejects; the documented spelling is `kranz -f path/to/kranz.yaml`.
 - The `kranz ps` and `kranz clients` reference example now matches real output:
@@ -634,7 +654,8 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 - Explicit global-user and project-config save destinations in the live theme picker.
 - Native compatibility for common Process Compose configurations.
 
-[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.11.1...HEAD
+[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/kranz-org/kranz/compare/v0.11.1...v0.12.0
 [0.11.1]: https://github.com/kranz-org/kranz/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/kranz-org/kranz/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/kranz-org/kranz/compare/v0.9.0...v0.10.0
