@@ -1,6 +1,6 @@
 # Regenerate with: vhs docs/assets/tapes/actions.tape
 # Run from the repository root with a release-stamped binary in ./bin:
-#   make build VERSION=v0.12.0
+#   make build VERSION=v0.12.1
 Output docs/assets/actions.gif
 
 Set Shell "bash"

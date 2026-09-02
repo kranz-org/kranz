@@ -4,6 +4,31 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-09-02
+
+This is the first published 0.12 release. The immutable `v0.12.0` tag stopped
+in its pre-publish workflow and produced no GitHub release or downloadable
+artifacts.
+
+### Added
+
+- The TUI quit confirmation can stop the runtime, detach while keeping it
+  running, or stay in the TUI, with the same choices for keyboard and mouse.
+
+### Changed
+
+- TUI, CLI, foreground `up`, and MCP now connect to an independently owned
+  per-project supervisor, so disconnecting a client does not stop services.
+- Idle dashboards cache rendered state, suppress redundant frames, bound mouse
+  refreshes, maintain log retention incrementally, and back off failed port
+  discovery.
+
+### Fixed
+
+- The release workflow now builds its pre-publish package snapshot through the
+  pinned GoReleaser action, avoiding a newer Go toolchain requirement than the
+  project declares while retaining amd64 and arm64 installation checks.
+
 ## [0.12.0] - 2026-09-02
 
 ### Added
@@ -654,7 +679,8 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 - Explicit global-user and project-config save destinations in the live theme picker.
 - Native compatibility for common Process Compose configurations.
 
-[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.12.1...HEAD
+[0.12.1]: https://github.com/kranz-org/kranz/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/kranz-org/kranz/compare/v0.11.1...v0.12.0
 [0.11.1]: https://github.com/kranz-org/kranz/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/kranz-org/kranz/compare/v0.10.0...v0.11.0

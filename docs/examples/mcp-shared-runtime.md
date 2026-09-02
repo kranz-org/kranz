@@ -62,7 +62,7 @@ The recording is built from the same live client and project, with no fixture
 JSON or personal environment data:
 
 ```bash
-make build VERSION=v0.12.0
+make build VERSION=v0.12.1
 vhs docs/assets/tapes/mcp-shared-runtime.tape
 ```
 

@@ -27,7 +27,7 @@ terminal tabs, alongside Docker Compose when containers remain the right home
 for infrastructure.
 
 <p align="center">
-  <img src="docs/assets/kranz-demo.gif" alt="Kranz v0.12.0 terminal interface starting a project and browsing retained action runs">
+  <img src="docs/assets/kranz-demo.gif" alt="Kranz v0.12.1 terminal interface starting a project and browsing retained action runs">
 </p>
 
 ## TUI, CLI, and MCP

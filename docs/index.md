@@ -37,7 +37,7 @@ features:
 
 <div class="demo-frame demo-frame--hero">
 
-![Kranz v0.12.0 starting a project, running an action twice, and browsing its retained runs](./assets/kranz-demo.gif)
+![Kranz v0.12.1 starting a project, running an action twice, and browsing its retained runs](./assets/kranz-demo.gif)
 
 </div>
 
