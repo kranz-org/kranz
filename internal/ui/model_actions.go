@@ -263,6 +263,9 @@ func (m *Model) cancelPendingAction() {
 }
 
 func (m *Model) handleActionResult(msg actionResultMsg) (tea.Model, tea.Cmd) {
+	m.actionStates[msg.id] = msg.result
+	m.refreshRunSummaries()
+	m.refreshLogCache(app.ActionRunTarget(msg.id))
 	level := config.LogInfo
 	message := fmt.Sprintf("%s %s in %s", msg.id.Name, msg.result.Status.String(), msg.result.Duration.Round(10*time.Millisecond))
 	if msg.err != nil {
@@ -289,6 +292,6 @@ func (m *Model) focusedActionDefinition() (config.ActionID, config.Action, app.A
 	if !exists {
 		return config.ActionID{}, config.Action{}, app.ActionResult{}, false
 	}
-	state, _ := m.app.ActionState(id)
+	state := m.cachedActionState(id)
 	return id, action, state, true
 }

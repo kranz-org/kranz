@@ -24,6 +24,7 @@ func (m *Model) View() string {
 	}
 
 	var content string
+	exact := false
 	switch m.mode {
 	case ModeHelp:
 		content = m.renderHelpView()
@@ -58,7 +59,11 @@ func (m *Model) View() string {
 	case ModeConfirmDeleteRun:
 		content = m.renderConfirmDeleteRunView()
 	default:
-		content = m.renderMainView()
+		// The dashboard reports the size it assembled itself at, so the frame
+		// can skip the measuring pass that fits it to the terminal.
+		block := m.renderDashboardBlock(m.renderStatusBar())
+		exact = block.width == m.width && len(block.lines) == m.height
+		content = block.String()
 	}
 	// Lipgloss styles embedded in a larger styled block end with SGR 0, which
 	// resets both foreground and background. Restore the canvas after those
@@ -67,8 +72,51 @@ func (m *Model) View() string {
 	if !TerminalCanvas {
 		content = preserveCanvasBackground(content, ColorBackground)
 	}
-	style := AppStyle.Width(m.width).Height(m.height).MaxWidth(m.width).MaxHeight(m.height)
+	if exact {
+		return AppStyle.Render(content)
+	}
+	return frameToTerminal(content, m.width, m.height)
+}
+
+// frameToTerminal sizes the finished frame to the terminal. Lipgloss can do it,
+// but Width makes it word-wrap the whole frame, pad it, and then truncate it
+// again under MaxWidth — three passes over the largest string in the program.
+// A frame whose lines already fit needs none of that, only padding, so it takes
+// a single-pass path. Anything that genuinely has to wrap, such as a message
+// too wide for an undersized terminal, still goes through Lipgloss.
+func frameToTerminal(content string, width, height int) string {
+	if lines, ok := padFrameLines(content, width, height); ok {
+		return AppStyle.Render(strings.Join(lines, "\n"))
+	}
+	style := AppStyle.Width(width).Height(height).MaxWidth(width).MaxHeight(height)
 	return style.Render(content)
+}
+
+// padFrameLines pads every line out to width and the frame out to height. It
+// reports false when a line is too wide to place without wrapping, which is the
+// one case the caller must hand back to Lipgloss.
+func padFrameLines(content string, width, height int) ([]string, bool) {
+	if width <= 0 || height <= 0 {
+		return nil, false
+	}
+	lines := strings.Split(content, "\n")
+	if len(lines) > height {
+		return nil, false
+	}
+	for index, line := range lines {
+		rendered := ansi.StringWidth(line)
+		if rendered > width {
+			return nil, false
+		}
+		if rendered < width {
+			lines[index] = line + strings.Repeat(" ", width-rendered)
+		}
+	}
+	blank := strings.Repeat(" ", width)
+	for len(lines) < height {
+		lines = append(lines, blank)
+	}
+	return lines, true
 }
 
 func preserveCanvasBackground(content string, background lipgloss.TerminalColor) string {
@@ -103,8 +151,14 @@ func (m *Model) renderMainView() string {
 }
 
 func (m *Model) renderDashboard(footer string) string {
+	return m.renderDashboardBlock(footer).String()
+}
+
+// renderDashboardBlock keeps the assembled frame in block form so the caller
+// can see the size it came out at without measuring it again.
+func (m *Model) renderDashboardBlock(footer string) frameBlock {
 	if m.width < 64 || m.height < 14 {
-		return renderModal("Kranz needs a terminal of at least 64×14")
+		return measureBlock(renderModal("Kranz needs a terminal of at least 64×14"))
 	}
 
 	leftWidth := m.dashboardLeftWidth()
@@ -115,8 +169,8 @@ func (m *Model) renderDashboard(footer string) string {
 	leftPanel := m.renderServiceColumn(leftWidth, panelHeight)
 	rightPanel := m.renderLogColumn(rightWidth, panelHeight)
 
-	mainContent := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
-	return lipgloss.JoinVertical(lipgloss.Left, header, mainContent, footer)
+	mainContent := joinBlocksHorizontal(measureBlock(leftPanel), measureBlock(rightPanel))
+	return joinBlocksVertical(measureBlock(header), mainContent, measureBlock(footer))
 }
 
 func (m *Model) panelStyle(focus panelFocus) lipgloss.Style {
@@ -218,7 +272,7 @@ func (m *Model) actionButtons() []actionButton {
 	allRunning := len(targets) > 0
 	canToggle := len(targets) > 0
 	for _, name := range targets {
-		svc, ok := m.app.Service(name)
+		svc, ok := m.cachedService(name)
 		primary := app.PrimaryServiceAction(svc)
 		if !ok || !app.ServiceStartPlanned(svc) {
 			allActive = false
@@ -251,7 +305,7 @@ func (m *Model) actionButtons() []actionButton {
 		toggleStyle = PrimaryButtonStyle
 		toggleLabel = "▶ Run action: s"
 		compactToggle = "Run: s"
-		if state, exists := m.app.ActionState(*m.focusedAction); exists && state.Status == app.ActionRunning {
+		if state := m.cachedActionState(*m.focusedAction); state.Status == app.ActionRunning {
 			toggleStyle = DangerButtonStyle
 			toggleLabel = "■ Stop action: s"
 			compactToggle = "Stop: s"
@@ -451,7 +505,11 @@ func renderTitledPanel(style, titleStyle lipgloss.Style, width, height int, titl
 	for index := range lines {
 		lines[index] = ansi.Truncate(lines[index], width, "")
 	}
-	bodyStyle := style.BorderTop(false).Width(width).Height(height).MaxWidth(width + 2).MaxHeight(height + 1)
+	// Every line above is already truncated to width and the slice is already
+	// capped at height, so Width and Height only pad. A MaxWidth/MaxHeight pair
+	// on top of that would re-measure the whole panel to clamp what cannot
+	// exceed the clamp.
+	bodyStyle := style.BorderTop(false).Width(width).Height(height)
 	return renderPanelTop(style, titleStyle, title, width) + "\n" + bodyStyle.Render(strings.Join(lines, "\n"))
 }
 

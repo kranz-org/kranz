@@ -78,7 +78,7 @@ func (m *Model) activeSearchLines() []string {
 		if m.runMode == runViewSingle {
 			run = m.selectedRun
 		}
-		return logEntryLines(m.entriesForRun(app.ActionRunTarget(*m.focusedAction), run))
+		return m.cachedActionOutputLines(app.ActionRunTarget(*m.focusedAction), run)
 	}
 	return m.serviceLogLines(m.FocusedService())
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -150,6 +151,10 @@ type backgroundColorMsg struct {
 type systemAppearanceMsg struct {
 	dark      bool
 	available bool
+	// scheduled marks the message as coming from the backstop tick, which is
+	// the only one that re-arms it. A probe triggered by regained focus must
+	// not start a second tick chain.
+	scheduled bool
 }
 type releasePortResultMsg struct {
 	port        int
@@ -158,8 +163,6 @@ type releasePortResultMsg struct {
 	err         error
 }
 type tickMsg time.Time
-
-const mouseTrackingRefreshInterval = 250 * time.Millisecond
 
 type configReloadMsg struct {
 	result     app.ReloadResult
@@ -185,6 +188,12 @@ type Model struct {
 	app                 app.API
 	services            []*app.ServiceSnapshot
 	allServices         []*app.ServiceSnapshot
+	runs                []app.RunSummary
+	actionStates        map[config.ActionID]app.ActionResult
+	logEntries          map[app.RunTarget][]config.LogEntry
+	actionLogLines      map[app.RunTarget][]cachedActionLogLine
+	actionRunLogLines   map[app.RunTarget]map[uint32][]cachedActionLogLine
+	logCursors          map[app.RunTarget]string
 	focused             int
 	selected            map[string]bool
 	detailOffset        int
@@ -201,9 +210,14 @@ type Model struct {
 	portDetails  map[int]*config.PortInfo
 	portError    error
 	portService  string
+	portScanKey  portScanKey
 	portChecked  time.Time
 	portScanID   int
 	portScanBusy bool
+
+	logRowCache         [logSlotCount]*logRowMetrics
+	focusReported       func()
+	lastAppearanceProbe time.Time
 
 	logSearcher      *kranzlog.Searcher
 	pinnedSearcher   *kranzlog.Searcher
@@ -283,7 +297,9 @@ type Model struct {
 	terminalDark        bool
 	backgroundProbeBusy bool
 	lastBackgroundProbe time.Time
-	lastMouseRefresh    time.Time
+	configGeneration    uint64
+	lastConfigCheck     time.Time
+	configReloadBusy    atomic.Bool
 	mousePressSequence  uint64
 	lastListClickOwner  string
 	lastListClickSeq    uint64
@@ -318,6 +334,7 @@ type Model struct {
 	shutdownOnce sync.Once
 	shutdownErr  error
 	detachOnExit bool
+	programReady func()
 }
 
 // ModelOptions supplies user-level preferences and their persistence path.
@@ -335,6 +352,13 @@ type ModelOptions struct {
 	// DetachOnExit makes q/Ctrl+C close only this delivery surface. The
 	// background runtime remains owned by its supervisor process.
 	DetachOnExit bool
+	// ProgramReady runs from Init after Bubble Tea has initialized its renderer.
+	// The executable uses it to start renderer-level recovery safely.
+	ProgramReady func()
+	// FocusReported runs the first time the terminal reports a focus change.
+	// It tells the mouse watchdog that this terminal announces the moment mouse
+	// mode needs restoring, so the frequent poll can stand down.
+	FocusReported func()
 }
 
 // NewModel creates a model with default user settings and terminal detection.
@@ -359,6 +383,7 @@ func NewModelWithOptions(cfg *config.Config, version string, options ModelOption
 		application = app.NewLocal(cfg, options.ConfigPaths, app.Options{})
 	}
 	services := application.Services()
+	project := application.Project()
 
 	model := &Model{
 		cfg:                 application.Config(),
@@ -366,8 +391,16 @@ func NewModelWithOptions(cfg *config.Config, version string, options ModelOption
 		workingDirectory:    workingDirectory,
 		app:                 application,
 		detachOnExit:        options.DetachOnExit,
+		programReady:        options.ProgramReady,
+		focusReported:       options.FocusReported,
 		services:            services,
 		allServices:         services,
+		runs:                application.Runs(),
+		actionStates:        make(map[config.ActionID]app.ActionResult),
+		logEntries:          make(map[app.RunTarget][]config.LogEntry),
+		actionLogLines:      make(map[app.RunTarget][]cachedActionLogLine),
+		actionRunLogLines:   make(map[app.RunTarget]map[uint32][]cachedActionLogLine),
+		logCursors:          make(map[app.RunTarget]string),
 		portDetails:         make(map[int]*config.PortInfo),
 		selected:            make(map[string]bool),
 		expandedTags:        make(map[string]bool),
@@ -394,6 +427,7 @@ func NewModelWithOptions(cfg *config.Config, version string, options ModelOption
 		// The executable already performed the initial detection. Suppress the
 		// focus event emitted immediately after focus reporting is enabled.
 		lastBackgroundProbe: time.Now(),
+		configGeneration:    project.Generation,
 		notifications:       make([]config.Notification, 0),
 		conflictPorts:       make(map[int]*config.PortInfo),
 		configPaths:         append([]string(nil), options.ConfigPaths...),
@@ -410,6 +444,8 @@ func NewModelWithOptions(cfg *config.Config, version string, options ModelOption
 	if len(model.services) == 0 && len(model.cfg.ActionGroups) > 0 {
 		model.focusServiceListRow(0)
 	}
+	model.refreshActionStates()
+	model.refreshVisibleLogCaches()
 	return model
 }
 
@@ -421,25 +457,20 @@ const (
 	colorModeLight     = config.UIColorModeLight
 )
 
-// Init schedules service polling and the initial port inspection.
+// Init schedules runtime polling and the initial port inspection. Mouse-mode
+// recovery is driven directly through tea.Program by the command package so
+// its 250 ms watchdog never becomes a model event or a full render.
 func (m *Model) Init() tea.Cmd {
-	return tea.Batch(m.pollServices(), m.scanFocusedPorts(true), m.pollSystemAppearance())
+	if m.programReady != nil {
+		m.programReady()
+	}
+	// The tick is only the backstop; read the appearance once straight away so
+	// startup does not wait a whole interval for the first answer.
+	return tea.Batch(m.pollServices(), m.scanFocusedPorts(true), m.pollSystemAppearance(), m.probeSystemAppearance())
 }
 
 func (m *Model) pollServices() tea.Cmd {
-	return tea.Tick(250*time.Millisecond, func(t time.Time) tea.Msg { return tickMsg(t) })
-}
-
-func (m *Model) enableMouseTracking(now time.Time) tea.Cmd {
-	m.lastMouseRefresh = now
-	return tea.EnableMouseCellMotion
-}
-
-func (m *Model) refreshMouseTracking(now time.Time) tea.Cmd {
-	if !m.lastMouseRefresh.IsZero() && now.Sub(m.lastMouseRefresh) < mouseTrackingRefreshInterval {
-		return nil
-	}
-	return m.enableMouseTracking(now)
+	return tea.Tick(m.runtimePollInterval(), func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
 // RequestedExitCode returns the exit code requested by an availability policy.
@@ -471,7 +502,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else if m.mode == ModeRunExport {
 			m.exportInput, searchCommand = m.exportInput.Update(msg)
 		}
-		return m, tea.Batch(m.enableMouseTracking(time.Now()), searchCommand)
+		if m.focusReported != nil {
+			m.focusReported()
+		}
+		return m, tea.Batch(tea.EnableMouseCellMotion, searchCommand, m.probeSystemAppearance())
 	case tea.KeyMsg:
 		return m.handleKeyMsg(msg)
 	case tea.MouseMsg:
@@ -520,7 +554,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.applyDetectedBackground(msg.dark, "Terminal")
 	case systemAppearanceMsg:
-		poll := m.pollSystemAppearance()
+		var poll tea.Cmd
+		if msg.scheduled {
+			poll = m.pollSystemAppearance()
+		}
 		if !msg.available {
 			return m, poll
 		}
@@ -547,7 +584,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tickMsg:
-		now := time.Time(msg)
 		m.refreshServices()
 		m.expireToast()
 		if requested, _ := m.app.ProjectExitRequested(); requested && !m.projectExitHandled {
@@ -558,7 +594,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pollServices(),
 			m.scanFocusedPorts(false),
 			m.reloadConfig(false),
-			m.refreshMouseTracking(now),
 		)
 	case searchNudgeMsg:
 		// Ignore a chain left over from an earlier click.
@@ -594,6 +629,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) refreshServices() {
 	m.allServices = m.app.Services()
 	m.services = m.allServices
+	m.refreshRunSummaries()
+	m.refreshActionStates()
+	m.refreshVisibleLogCaches()
 	rows := m.tagRows()
 	m.tagCursor = min(max(0, len(rows)-1), max(0, m.tagCursor))
 	if len(m.services) == 0 {

@@ -335,6 +335,10 @@ func (l *Local) ActionState(id config.ActionID) (ActionResult, bool) {
 	return l.manager.ActionState(id)
 }
 
+func (l *Local) ActionStates() []ActionResult {
+	return l.manager.ActionStates()
+}
+
 func (l *Local) ActionResult(id config.ActionID, run int) (ActionResult, error) {
 	return l.manager.ActionResult(id, run)
 }

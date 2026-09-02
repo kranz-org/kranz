@@ -110,6 +110,10 @@ type API interface {
 	// ActionState returns the last known result for id, if any action
 	// with that identity has ever run or is configured.
 	ActionState(id config.ActionID) (ActionResult, bool)
+	// ActionStates returns the current result for every configured action, in
+	// configuration order. A dashboard needs all of them on every refresh, and
+	// asking one at a time costs a round trip per action.
+	ActionStates() []ActionResult
 	// ActionResult returns a current or retained action execution. Positive
 	// run values are absolute and negative values are offsets from newest.
 	ActionResult(id config.ActionID, run int) (ActionResult, error)

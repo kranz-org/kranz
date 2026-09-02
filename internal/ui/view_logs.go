@@ -61,7 +61,8 @@ func (m *Model) renderActionLogPanel(width, height int) string {
 	if !exists {
 		return renderTitledPanel(m.panelStyle(panelLogs), m.panelTitleStyle(panelLogs), contentWidth, contentHeight, "[3] ACTION OUTPUT", []string{"", "Select an action"})
 	}
-	_, state, lines := m.actionLogContent(id, action, state)
+	content := m.actionLogContentView(id, action, state)
+	state = content.state
 	// The run label already names the run, so a "stats#3" suffix restated it —
 	// and in combined mode it named one run while the panel showed all of them.
 	// The status word trails the label rather than preceding it: an action's
@@ -72,17 +73,36 @@ func (m *Model) renderActionLogPanel(width, height int) string {
 	if word := actionStatusWord(state.Status); word != "" {
 		title += ContextBarStyle.Render(" · ") + word
 	}
-	if len(lines) == 0 {
+	if content.len() == 0 {
 		return renderTitledPanel(m.panelStyle(panelLogs), m.panelTitleStyle(panelLogs), contentWidth, contentHeight, title, []string{"", ContextBarStyle.Render("Press s to run this action")})
 	}
+	// In the normal (unwrapped) mode, determine the viewport before styling.
+	// This keeps rendering proportional to terminal height instead of retained
+	// history size; a long-lived action can therefore retain thousands of lines
+	// without every key press restyling all of them.
+	if !m.wrapLogs {
+		totalLines := content.len()
+		maxStart := max(0, totalLines-contentHeight)
+		start := maxStart
+		if !m.followMode {
+			start = max(0, maxStart-m.logOffset)
+		}
+		end := min(totalLines, start+contentHeight)
+		if maxStart > 0 {
+			title += ContextBarStyle.Render(fmt.Sprintf("  %d–%d/%d  ↑/↓", start+1, end, totalLines))
+		}
+		rows := make([]string, 0, end-start)
+		for index := start; index < end; index++ {
+			rows = append(rows, ansi.Truncate(styleLogLine(content.line(index)), contentWidth, "…"))
+		}
+		return renderTitledPanel(m.panelStyle(panelLogs), m.panelTitleStyle(panelLogs), contentWidth, contentHeight, title, rows)
+	}
+
+	lines := content.lines()
 	rows := make([]string, 0, len(lines))
 	for _, line := range lines {
 		styled := styleLogLine(line)
-		visual := []string{ansi.Truncate(styled, contentWidth, "…")}
-		if m.wrapLogs {
-			visual = strings.Split(ansi.Hardwrap(styled, contentWidth, true), "\n")
-		}
-		rows = append(rows, visual...)
+		rows = append(rows, strings.Split(ansi.Hardwrap(styled, contentWidth, true), "\n")...)
 	}
 	maxStart := max(0, len(rows)-contentHeight)
 	start := maxStart
@@ -96,7 +116,55 @@ func (m *Model) renderActionLogPanel(width, height int) string {
 	return renderTitledPanel(m.panelStyle(panelLogs), m.panelTitleStyle(panelLogs), contentWidth, contentHeight, title, rows[start:end])
 }
 
-func (m *Model) actionLogContent(id config.ActionID, action config.Action, state app.ActionResult) (uint32, app.ActionResult, []string) {
+type actionLogView struct {
+	selectedRun uint32
+	state       app.ActionResult
+	prefix      []string
+	marker      string
+	output      []cachedActionLogLine
+	running     bool
+}
+
+func (view actionLogView) len() int {
+	length := len(view.prefix) + len(view.output)
+	if view.marker != "" {
+		length++
+	}
+	if view.running {
+		length++
+	}
+	return length
+}
+
+func (view actionLogView) line(index int) string {
+	if index < len(view.prefix) {
+		return view.prefix[index]
+	}
+	index -= len(view.prefix)
+	if view.marker != "" {
+		if index == 0 {
+			return view.marker
+		}
+		index--
+	}
+	if index < len(view.output) {
+		return view.output[index].text
+	}
+	if view.running && index == len(view.output) {
+		return "Running · press s to stop"
+	}
+	return ""
+}
+
+func (view actionLogView) lines() []string {
+	lines := make([]string, view.len())
+	for index := range lines {
+		lines[index] = view.line(index)
+	}
+	return lines
+}
+
+func (m *Model) actionLogContentView(id config.ActionID, action config.Action, state app.ActionResult) actionLogView {
 	m.syncRunTarget()
 	selectedRun := state.Run
 	if m.runMode == runViewSingle && m.selectedRun > 0 {
@@ -110,26 +178,27 @@ func (m *Model) actionLogContent(id config.ActionID, action config.Action, state
 			}
 		}
 	}
-	entries := m.entriesForRun(app.ActionRunTarget(id), 0)
+	target := app.ActionRunTarget(id)
+	outputRun := uint32(0)
 	if m.runMode == runViewSingle {
-		entries = m.entriesForRun(app.ActionRunTarget(id), selectedRun)
+		outputRun = selectedRun
 	}
-	outputLines := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		prefix := ""
-		if entry.Source == "stderr" {
-			prefix = "[stderr] "
-		}
-		outputLines = appendSafeActionOutput(outputLines, entry.Raw, prefix)
-	}
-	lines := outputLines
+	view := actionLogView{selectedRun: selectedRun, state: state, output: m.cachedActionLogRecords(target, outputRun)}
 	if state.Status != app.ActionReady {
-		lines = append(appendSafeActionOutput(nil, action.Command, "$ "), lines...)
+		view.prefix = appendSafeActionOutput(nil, action.Command, "$ ")
 	}
-	if state.Status == app.ActionRunning && len(outputLines) == 0 {
-		lines = append(lines, "Running · press s to stop")
+	if outputRun > 0 {
+		if summary, ok := m.runSummary(target, outputRun); ok && summary.Output.MissingLines > 0 {
+			view.marker = formatMissingOutputMarker(summary)
+		}
 	}
-	return selectedRun, state, lines
+	view.running = state.Status == app.ActionRunning && len(view.output) == 0
+	return view
+}
+
+func (m *Model) actionLogContent(id config.ActionID, action config.Action, state app.ActionResult) (uint32, app.ActionResult, []string) {
+	view := m.actionLogContentView(id, action, state)
+	return view.selectedRun, view.state, view.lines()
 }
 
 func actionStatusFromRun(status string) app.ActionStatus {
@@ -219,6 +288,10 @@ func (m *Model) renderLogPanelMode(svc *app.ServiceSnapshot, width, height int, 
 	titleStyle := m.panelTitleStyle(panelLogs)
 	titlePrefix := "[3] LOGS"
 	followMode, logOffset, logAnchor, logPaused := m.followMode, m.logOffset, m.logAnchor, m.logPaused
+	slot := logSlotMain
+	if pinned {
+		slot = logSlotPinned
+	}
 	if pinned {
 		panelStyle = m.panelStyle(panelPinnedLogs)
 		titleStyle = m.panelTitleStyle(panelPinnedLogs)
@@ -250,14 +323,12 @@ func (m *Model) renderLogPanelMode(svc *app.ServiceSnapshot, width, height int, 
 		title += " " + RunningBadgeStyle.Render("TIME")
 	}
 
-	sourceEntries := m.app.Logs(svc.Name)
+	sourceEntries := m.cachedLogEntries(app.ServiceRunTarget(svc.Name))
 	if !pinned && m.runMode == runViewSingle {
 		sourceEntries = m.entriesForRun(app.ServiceRunTarget(svc.Name), m.selectedRun)
 	} else if pinned {
 		sourceEntries = m.pinnedEntries(app.ServiceRunTarget(svc.Name))
 	}
-	sourceLines := logEntryLines(sourceEntries)
-
 	var searchMatches []int
 	searcher, mode := m.logSearcher, m.searchMode
 	if pinned {
@@ -265,7 +336,7 @@ func (m *Model) renderLogPanelMode(svc *app.ServiceSnapshot, width, height int, 
 	}
 	hasPattern := searcher != nil && searcher.HasPattern()
 	if hasPattern {
-		searchMatches = searcher.Search(sourceLines)
+		searchMatches = searcher.Search(logEntryLines(sourceEntries))
 		modeLabel := "FILTER"
 		if mode == searchHighlight {
 			modeLabel = "HIGHLIGHT"
@@ -281,61 +352,139 @@ func (m *Model) renderLogPanelMode(svc *app.ServiceSnapshot, width, height int, 
 	for _, idx := range searchMatches {
 		matchSet[idx] = true
 	}
-	sourceIndices := make([]int, len(sourceLines))
-	for index := range sourceIndices {
-		sourceIndices[index] = index
-	}
+	// A nil selection means "every entry, in order". Materialising the identity
+	// slice would allocate one int per retained line on every frame.
+	var sourceIndices []int
 	if hasPattern && mode == searchFilter {
-		sourceIndices = append([]int(nil), searchMatches...)
+		sourceIndices = searchMatches
+	}
+	selectionLen := len(sourceEntries)
+	if sourceIndices != nil {
+		selectionLen = len(sourceIndices)
 	}
 
-	if len(sourceLines) == 0 {
+	if len(sourceEntries) == 0 {
 		return renderTitledPanel(panelStyle, titleStyle, contentWidth, contentHeight, title, []string{
 			"",
 			ContextBarStyle.Render("Output will appear after the service starts"),
 		})
 	}
-	if hasPattern && mode == searchFilter && len(sourceIndices) == 0 {
+	if hasPattern && mode == searchFilter && selectionLen == 0 {
 		return renderTitledPanel(panelStyle, titleStyle, contentWidth, contentHeight, title, []string{
 			"",
 			ContextBarStyle.Render("No log lines match this regex"),
 		})
 	}
 
-	rows := make([]string, 0, len(sourceIndices))
-	for _, actualIndex := range sourceIndices {
-		displayLine := m.displayLogEntry(sourceEntries[actualIndex])
-		for _, segment := range strings.Split(displayLine, "\n") {
-			styled := styleLogLine(segment)
-			visualLines := []string{ansi.Truncate(styled, contentWidth, "…")}
-			if m.wrapLogs {
-				visualLines = strings.Split(ansi.Hardwrap(styled, contentWidth, true), "\n")
-			}
-			for _, visualLine := range visualLines {
-				visualLine = ansi.Truncate(visualLine, contentWidth, "")
-				if mode == searchHighlight && matchSet[actualIndex] {
-					visualLine = SearchHighlightStyle.Render(preserveStyleAfterReset(visualLine, SearchHighlightStyle))
-				}
-				rows = append(rows, visualLine)
-			}
-		}
+	// Scroll arithmetic needs the total visual row count, but styling every
+	// retained line to obtain it would make a frame cost O(history). The counts
+	// are cached per log sequence instead, so only the rows the viewport
+	// actually shows are ever styled and truncated.
+	metrics := m.logRowMetricsFor(slot, app.ServiceRunTarget(svc.Name), contentWidth)
+	metrics.forget(sourceEntries)
+	totalRows := 0
+	for position := range selectionLen {
+		totalRows += metrics.rowCount(m, sourceEntries[sourceEntryIndex(sourceIndices, position)], contentWidth)
 	}
 
 	maxLines := contentHeight
-	maxStart := max(0, len(rows)-maxLines)
+	maxStart := max(0, totalRows-maxLines)
 	startIdx := maxStart
-	visibleLimit := len(rows)
+	visibleLimit := totalRows
 	if !followMode {
-		anchor := min(len(rows), max(0, logAnchor))
+		anchor := min(totalRows, max(0, logAnchor))
 		anchorStart := max(0, anchor-maxLines)
 		startIdx = max(0, anchorStart-logOffset)
 		visibleLimit = anchor
 	}
 	endIdx := min(visibleLimit, startIdx+maxLines)
 	if maxStart > 0 {
-		title += ContextBarStyle.Render(fmt.Sprintf("  %d–%d/%d  ↑/↓", startIdx+1, endIdx, len(rows)))
+		title += ContextBarStyle.Render(fmt.Sprintf("  %d–%d/%d  ↑/↓", startIdx+1, endIdx, totalRows))
 	}
-	return renderTitledPanel(panelStyle, titleStyle, contentWidth, contentHeight, title, rows[startIdx:endIdx])
+	visible := m.styleLogRowWindow(logRowWindow{
+		entries:   sourceEntries,
+		indices:   sourceIndices,
+		selection: selectionLen,
+		metrics:   metrics,
+		width:     contentWidth,
+		start:     startIdx,
+		end:       endIdx,
+		highlight: mode == searchHighlight,
+		matches:   matchSet,
+	})
+	return renderTitledPanel(panelStyle, titleStyle, contentWidth, contentHeight, title, visible)
+}
+
+// sourceEntryIndex resolves a position in the rendered selection to an index in
+// the entry slice. A nil selection is the identity mapping.
+func sourceEntryIndex(indices []int, position int) int {
+	if indices == nil {
+		return position
+	}
+	return indices[position]
+}
+
+// logRowWindow describes the slice of visual rows a panel is about to show.
+type logRowWindow struct {
+	entries   []config.LogEntry
+	indices   []int
+	selection int
+	metrics   *logRowMetrics
+	width     int
+	start     int
+	end       int
+	highlight bool
+	matches   map[int]bool
+}
+
+// styleLogRowWindow renders only the entries that overlap the visible window.
+func (m *Model) styleLogRowWindow(window logRowWindow) []string {
+	if window.end <= window.start {
+		return nil
+	}
+	rows := make([]string, 0, window.end-window.start)
+	consumed := 0
+	for position := range window.selection {
+		if consumed >= window.end {
+			break
+		}
+		actualIndex := sourceEntryIndex(window.indices, position)
+		entry := window.entries[actualIndex]
+		count := window.metrics.rowCount(m, entry, window.width)
+		if consumed+count <= window.start {
+			consumed += count
+			continue
+		}
+		entryRows := m.logEntryVisualRows(entry, window.width)
+		for offset, row := range entryRows {
+			absolute := consumed + offset
+			if absolute < window.start || absolute >= window.end {
+				continue
+			}
+			if window.highlight && window.matches[actualIndex] {
+				row = SearchHighlightStyle.Render(preserveStyleAfterReset(row, SearchHighlightStyle))
+			}
+			rows = append(rows, row)
+		}
+		consumed += count
+	}
+	return rows
+}
+
+// logEntryVisualRows expands one entry into the terminal rows it occupies.
+func (m *Model) logEntryVisualRows(entry config.LogEntry, contentWidth int) []string {
+	var rows []string
+	for _, segment := range strings.Split(m.displayLogEntry(entry), "\n") {
+		styled := styleLogLine(segment)
+		visualLines := []string{ansi.Truncate(styled, contentWidth, "…")}
+		if m.wrapLogs {
+			visualLines = strings.Split(ansi.Hardwrap(styled, contentWidth, true), "\n")
+		}
+		for _, visualLine := range visualLines {
+			rows = append(rows, ansi.Truncate(visualLine, contentWidth, ""))
+		}
+	}
+	return rows
 }
 
 func (m *Model) scrollLogs(direction int) {
@@ -427,7 +576,7 @@ func (m *Model) displayedLogLineCount() int {
 	if svc == nil {
 		return 0
 	}
-	entries := m.app.Logs(svc.Name)
+	entries := m.cachedLogEntries(app.ServiceRunTarget(svc.Name))
 	if m.syncRunTarget() && m.runMode == runViewSingle {
 		entries = m.entriesForRun(app.ServiceRunTarget(svc.Name), m.selectedRun)
 	}
@@ -468,7 +617,7 @@ func (m *Model) focusLogMatch(match int) {
 	if svc == nil || match < 0 {
 		return
 	}
-	entries := m.app.Logs(svc.Name)
+	entries := m.cachedLogEntries(app.ServiceRunTarget(svc.Name))
 	maxLines := max(1, m.currentLogPanelHeight()-2)
 	displayLines := make([]string, 0, min(match, len(entries)))
 	for _, entry := range entries[:min(match, len(entries))] {
@@ -519,7 +668,7 @@ func (m *Model) serviceLogLines(svc *app.ServiceSnapshot) []string {
 	if m.runMode == runViewSingle && m.runTarget == app.ServiceRunTarget(svc.Name) {
 		return logEntryLines(m.entriesForRun(m.runTarget, m.selectedRun))
 	}
-	return logEntryLines(m.app.Logs(svc.Name))
+	return logEntryLines(m.cachedLogEntries(app.ServiceRunTarget(svc.Name)))
 }
 
 func logEntryLines(entries []config.LogEntry) []string {

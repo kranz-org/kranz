@@ -137,6 +137,9 @@ var handlers = map[string]handlerFunc{
 		result, ok := l.ActionState(req.ID)
 		return actionStateResponse{Result: result, Ok: ok}, nil
 	}),
+	methodActionStates: handler(func(_ context.Context, l *app.Local, _ emptyRequest) (actionStatesResponse, error) {
+		return actionStatesResponse{States: l.ActionStates()}, nil
+	}),
 	methodActionResult: handler(func(_ context.Context, l *app.Local, req actionResultRequest) (app.ActionResult, error) {
 		return l.ActionResult(req.ID, req.Run)
 	}),

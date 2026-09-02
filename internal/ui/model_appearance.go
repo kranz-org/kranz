@@ -153,11 +153,33 @@ func newThemeColorInput() textinput.Model {
 	return input
 }
 
+// systemAppearanceInterval is a backstop, not the primary signal. Reading the
+// system appearance forks a helper process, and the moment that actually
+// matters — the user changing the OS theme — always ends with the terminal
+// regaining focus, which probes immediately.
+const systemAppearanceInterval = 30 * time.Second
+
+// systemAppearanceDebounce keeps a burst of focus events from forking a helper
+// process for each one.
+const systemAppearanceDebounce = 2 * time.Second
+
 func (m *Model) pollSystemAppearance() tea.Cmd {
-	return tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+	return tea.Tick(systemAppearanceInterval, func(time.Time) tea.Msg {
+		dark, available := detectSystemDarkMode()
+		return systemAppearanceMsg{dark: dark, available: available, scheduled: true}
+	})
+}
+
+// probeSystemAppearance reads the system appearance once, outside the tick.
+func (m *Model) probeSystemAppearance() tea.Cmd {
+	if time.Since(m.lastAppearanceProbe) < systemAppearanceDebounce {
+		return nil
+	}
+	m.lastAppearanceProbe = time.Now()
+	return func() tea.Msg {
 		dark, available := detectSystemDarkMode()
 		return systemAppearanceMsg{dark: dark, available: available}
-	})
+	}
 }
 
 func (m *Model) probeTerminalBackground(force bool) tea.Cmd {

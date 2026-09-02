@@ -2,11 +2,14 @@ package ui
 
 import (
 	"fmt"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/kranz-org/kranz/internal/app"
 	"github.com/kranz-org/kranz/internal/config"
 )
+
+const configCheckInterval = time.Second
 
 // Configuration hot reload. The stamping, debounce, and ApplyConfig work
 // itself lives in internal/app; this file only reacts to the result on the
@@ -16,13 +19,25 @@ func (m *Model) reloadConfig(force bool) tea.Cmd {
 	if m.operation != "" {
 		return nil
 	}
-	before := m.app.Project().Generation
+	now := time.Now()
+	if !force && !m.lastConfigCheck.IsZero() && now.Sub(m.lastConfigCheck) < configCheckInterval {
+		return nil
+	}
+	if !m.configReloadBusy.CompareAndSwap(false, true) {
+		return nil
+	}
+	m.lastConfigCheck = now
+	before := m.configGeneration
 	return func() tea.Msg {
+		defer m.configReloadBusy.Store(false)
 		result, err := m.app.Reload(force)
 		if err != nil {
 			return configReloadMsg{err: err}
 		}
 		project := m.app.Project()
+		if !force && project.Generation == before {
+			return nil
+		}
 		return configReloadMsg{result: result, generation: project.Generation, changed: project.Generation != before}
 	}
 }
@@ -35,6 +50,8 @@ func (m *Model) handleConfigReload(msg configReloadMsg) (tea.Model, tea.Cmd) {
 	if !msg.changed {
 		return m, nil
 	}
+	m.configGeneration = msg.generation
+	m.resetLogCaches()
 	focusedName := ""
 	if svc := m.FocusedService(); svc != nil {
 		focusedName = svc.Name

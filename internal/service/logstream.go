@@ -277,7 +277,9 @@ func (s *logStream) CopyFrom(previous *logStream) {
 }
 
 // defaultLogBufferSize bounds one stream's history when no size is configured.
-const defaultLogBufferSize = 1000
+// Action runs share one target stream, so this needs enough room for ordinary
+// multi-run history rather than only the most recent handful of executions.
+const defaultLogBufferSize = 10_000
 
 // defaultLogBufferBytes independently bounds retained output for one target.
-const defaultLogBufferBytes = 4 * 1024 * 1024
+const defaultLogBufferBytes = 16 * 1024 * 1024

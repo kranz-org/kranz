@@ -7,11 +7,13 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/kranz-org/kranz/internal/app"
 	"github.com/kranz-org/kranz/internal/config"
 )
 
@@ -181,7 +183,7 @@ func TestPanelFocusUsesNumbersAndContextualArrows(t *testing.T) {
 	}
 
 	for index := range 40 {
-		model.app.AppendLogForTest(model.FocusedService().Name, fmt.Sprintf("line %d", index))
+		appendTestLog(model, model.FocusedService().Name, fmt.Sprintf("line %d", index))
 	}
 	_, _ = model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
 	_, _ = model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyUp})
@@ -1067,6 +1069,16 @@ func newTestModel() *Model {
 			"worker": {Command: "exit 0", Dir: ".", Shell: "sh", DependsOn: []string{"api"}, Tags: []string{"jobs"}},
 		},
 	}, "test")
+}
+
+func appendTestLog(model *Model, name, line string) {
+	model.app.AppendLogForTest(name, line)
+	model.refreshLogCache(app.ServiceRunTarget(name))
+}
+
+func appendTestLogAt(model *Model, name string, captured time.Time, line string) {
+	model.app.AppendLogAtForTest(name, captured, line)
+	model.refreshLogCache(app.ServiceRunTarget(name))
 }
 
 func pressKey(model *Model, character rune) {

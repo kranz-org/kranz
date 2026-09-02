@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	defaultActionLogBuffer = 1000
+	defaultActionLogBuffer = defaultLogBufferSize
 	actionStopGracePeriod  = time.Second
 )
 

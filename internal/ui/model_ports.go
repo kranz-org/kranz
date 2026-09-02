@@ -4,11 +4,31 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/kranz-org/kranz/internal/app"
 	"github.com/kranz-org/kranz/internal/config"
 )
 
 // Port inspection and the external-process conflict dialog. Terminating a
 // listener Kranz does not own is always an explicit user action.
+
+// portScanBackstop bounds how stale port ownership may get while nothing about
+// the focused service has changed. Inspecting ports shells out to lsof, which
+// costs around twenty milliseconds of CPU, so it cannot sit on a two-second
+// clock. Anything that can actually change who holds the port — a different
+// service in focus, a start, a stop, a new PID — rescans immediately.
+const portScanBackstop = 15 * time.Second
+
+// portScanKey is the state a port scan is an answer about. When it changes, the
+// answer is stale no matter how recent it is.
+type portScanKey struct {
+	service string
+	status  config.ServiceStatus
+	pid     int
+}
+
+func focusedPortScanKey(svc *app.ServiceSnapshot) portScanKey {
+	return portScanKey{service: svc.Name, status: svc.State.Status, pid: svc.State.PID}
+}
 
 func (m *Model) scanFocusedPorts(force bool) tea.Cmd {
 	svc := m.FocusedService()
@@ -17,17 +37,20 @@ func (m *Model) scanFocusedPorts(force bool) tea.Cmd {
 	}
 	if len(svc.Config.Ports) == 0 {
 		m.portService = svc.Name
+		m.portScanKey = focusedPortScanKey(svc)
 		m.portDetails = make(map[int]*config.PortInfo)
 		m.portError = nil
 		m.portChecked = time.Now()
 		return nil
 	}
+	key := focusedPortScanKey(svc)
 	if m.portScanBusy && m.portService == svc.Name {
 		return nil
 	}
-	if !force && m.portService == svc.Name && time.Since(m.portChecked) < 2*time.Second {
+	if !force && m.portScanKey == key && time.Since(m.portChecked) < portScanBackstop {
 		return nil
 	}
+	m.portScanKey = key
 
 	m.portScanID++
 	scanID := m.portScanID

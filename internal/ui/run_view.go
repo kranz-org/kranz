@@ -67,9 +67,8 @@ func (m *Model) syncRunTarget() bool {
 }
 
 func (m *Model) runsForTarget(target app.RunTarget) []app.RunSummary {
-	all := m.app.Runs()
 	runs := make([]app.RunSummary, 0)
-	for _, run := range all {
+	for _, run := range m.runs {
 		if run.Target == target {
 			runs = append(runs, run)
 		}
@@ -191,12 +190,7 @@ func (m *Model) restoreRunViewport() {
 }
 
 func (m *Model) entriesForRun(target app.RunTarget, run uint32) []config.LogEntry {
-	var entries []config.LogEntry
-	if target.Kind == app.RunKindService {
-		entries = m.app.Logs(target.Name)
-	} else {
-		entries = m.app.ActionLogs(target.Action)
-	}
+	entries := m.cachedLogEntries(target)
 	if run == 0 {
 		return entries
 	}
@@ -613,6 +607,10 @@ func (m *Model) confirmDeleteRun() {
 		m.cancelDeleteRun()
 		return
 	}
+	m.refreshRunSummaries()
+	m.logEntries[target] = slices.DeleteFunc(m.logEntries[target], func(entry config.LogEntry) bool { return entry.Run == run })
+	m.actionLogLines[target] = slices.DeleteFunc(m.actionLogLines[target], func(line cachedActionLogLine) bool { return line.run == run })
+	delete(m.actionRunLogLines[target], run)
 	for key := range m.runViewports {
 		if key.Target == target && key.Run == run {
 			delete(m.runViewports, key)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -57,14 +58,25 @@ func runAttachedTUI(client *kranzruntime.Client, cfg *config.Config) (runErr err
 		userSettings = settings.Settings{}
 	}
 	darkBackground := lipgloss.HasDarkBackground()
-	model := ui.NewModelWithOptions(cfg, version, ui.ModelOptions{Settings: userSettings, SettingsPath: settingsPath, ConfigPaths: cfg.Paths, DarkBackground: &darkBackground, App: client, DetachOnExit: true})
+	programReady := make(chan struct{})
+	focusReported := make(chan struct{})
+	var focusOnce sync.Once
+	model := ui.NewModelWithOptions(cfg, version, ui.ModelOptions{Settings: userSettings, SettingsPath: settingsPath, ConfigPaths: cfg.Paths, DarkBackground: &darkBackground, App: client, DetachOnExit: true, ProgramReady: func() { close(programReady) },
+		FocusReported: func() { focusOnce.Do(func() { close(focusReported) }) }})
 	defer func() { runErr = errors.Join(runErr, model.Shutdown()) }()
-	program := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithReportFocus())
+	program := tea.NewProgram(model, dashboardProgramOptions()...)
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer signal.Stop(signals)
 	done := make(chan struct{})
 	defer close(done)
+	go runMouseWatchdog(program, mouseWatchdogConfig{
+		interval: mouseRecoveryInterval,
+		backstop: mouseRecoveryBackstop,
+		ready:    programReady,
+		relaxed:  focusReported,
+		done:     done,
+	})
 	go func() {
 		select {
 		case <-signals:

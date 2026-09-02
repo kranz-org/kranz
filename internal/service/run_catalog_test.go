@@ -207,6 +207,30 @@ func TestLogStreamEnforcesByteAndEntryBudgetsIndependently(t *testing.T) {
 	}
 }
 
+func TestDefaultActionStreamRetainsTenOrdinaryReportRuns(t *testing.T) {
+	catalog := NewRunCatalog(defaultRunCatalogSize)
+	target := ActionRunTarget(config.ActionID{OwnerKind: config.ActionOwnerGroup, Owner: "tools", Name: "report"})
+	stream := newLogStream(defaultActionLogBuffer)
+	stream.SetCatalog(catalog, target)
+	for run := uint32(1); run <= 10; run++ {
+		stream.BeginRunNumber(run)
+		catalog.Begin(RunSummary{Target: target, Run: run, Status: "running", StartedAt: time.Now()})
+		for line := 0; line < 125; line++ {
+			stream.Append(time.Now(), "stdout", "report line")
+		}
+		catalog.Finish(target, run, "succeeded", time.Now(), 0, nil)
+	}
+
+	if got := len(stream.Entries()); got != 1250 {
+		t.Fatalf("retained entries = %d, want 1250", got)
+	}
+	for _, summary := range catalog.List(target) {
+		if summary.Output.State != RunOutputComplete || summary.Output.MissingLines != 0 {
+			t.Fatalf("run %d output unexpectedly truncated: %+v", summary.Run, summary.Output)
+		}
+	}
+}
+
 func TestRunCatalogPublishesOldestBoundaryAfterSummaryEviction(t *testing.T) {
 	catalog := NewRunCatalog(2)
 	target := ServiceRunTarget("api")

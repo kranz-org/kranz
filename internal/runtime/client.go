@@ -426,6 +426,14 @@ func (c *Client) ActionState(id config.ActionID) (app.ActionResult, bool) {
 	return resp.Result, resp.Ok
 }
 
+func (c *Client) ActionStates() []app.ActionResult {
+	resp, err := call[emptyRequest, actionStatesResponse](c, context.Background(), methodActionStates, emptyRequest{})
+	if err != nil {
+		return nil
+	}
+	return resp.States
+}
+
 func (c *Client) ActionResult(id config.ActionID, run int) (app.ActionResult, error) {
 	return call[actionResultRequest, app.ActionResult](c, context.Background(), methodActionResult, actionResultRequest{ID: id, Run: run})
 }

@@ -25,6 +25,7 @@ type Manager struct {
 	portChecker          port.Checker
 	listenerScanner      port.ListenerScanner
 	listenerScanInterval time.Duration
+	discoveryWake        chan struct{}
 	discoveryMu          sync.Mutex
 	discoveryCancel      context.CancelFunc
 	discoveryDone        chan struct{}

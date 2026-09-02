@@ -92,6 +92,7 @@ func TestCombinedActionOutputScrollsAcrossAllRetainedRuns(t *testing.T) {
 		}
 	}
 	model.focusedAction = &id
+	model.refreshServices()
 	model.width, model.height, model.ready = 100, 14, true
 	model.panelFocus = panelLogs
 	model.syncRunTarget()
@@ -292,10 +293,10 @@ func TestEachRunRestoresItsOwnScrollFollowAndSearchState(t *testing.T) {
 func TestPinnedAndCurrentPanelsKeepIndependentSearchState(t *testing.T) {
 	model := newTestModel()
 	defer model.Shutdown()
-	model.app.AppendLogForTest("api", "API only")
+	appendTestLog(model, "api", "API only")
 	model.togglePinnedLog()
 	model.moveFocus(1)
-	model.app.AppendLogForTest("worker", "WORKER only")
+	appendTestLog(model, "worker", "WORKER only")
 	model.panelFocus = panelPinnedLogs
 	_ = model.pinnedSearcher.SetPattern("API")
 	model.pinnedSearchMode = searchFilter
@@ -321,6 +322,7 @@ func TestActionOutputDefaultsToSingleLatestRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	model.focusedAction = &id
+	model.refreshServices()
 	plain := ansi.Strip(model.renderActionLogPanel(100, 12))
 	if model.runMode != runViewSingle || model.selectedRun != 1 || !strings.Contains(plain, "check · RUN #1/1") || !strings.Contains(plain, "action-output") {
 		t.Fatalf("action did not open latest single run: mode=%d run=%d\n%s", model.runMode, model.selectedRun, plain)
@@ -358,7 +360,7 @@ func TestRunExportFileIncludesIdentityProvenanceAndTruncationMetadata(t *testing
 func finishTestServiceRun(t *testing.T, model *Model, name string, exitCode int, output string) {
 	t.Helper()
 	model.app.SetServiceStatusForTest(name, config.StatusStarting)
-	model.app.AppendLogForTest(name, output)
+	appendTestLog(model, name, output)
 	snapshot, ok := model.app.Service(name)
 	if !ok {
 		t.Fatal("service disappeared")
@@ -511,6 +513,7 @@ func TestActionRunLabelHoldsItsColumnWhateverTheOutcome(t *testing.T) {
 			t.Fatal(err)
 		}
 		model.focusedAction = &id
+		model.refreshServices()
 		model.syncRunTarget()
 		title := ansi.Strip(model.renderActionLogPanel(110, 8))
 		index := strings.Index(title, "RUN #")

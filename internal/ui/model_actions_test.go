@@ -41,6 +41,7 @@ func TestSConfirmsBeforeStoppingRunningAction(t *testing.T) {
 	if state.Status != app.ActionRunning || state.PID <= 0 || !strings.Contains(strings.Join(state.Stdout, ""), "started") {
 		t.Fatalf("long-running action state = %#v", state)
 	}
+	model.refreshServices()
 	buttons := model.actionButtons()
 	if !strings.Contains(ansi.Strip(buttons[0].rendered), "Stop action: s") {
 		t.Fatalf("running action controls = %#v", buttons)

@@ -162,7 +162,7 @@ func (m *Model) renderServiceListRow(index int, row actionListRow, width int) st
 		line := "   " + ContextBarStyle.Render(disclosure) + "  " + ServiceNameStyle.Render(row.Group)
 		return renderListLine(line, width, focused)
 	case actionRowAction:
-		state, _ := m.app.ActionState(row.Action)
+		state := m.cachedActionState(row.Action)
 		name := actionRunName(row.Action.Name, state.Run)
 		status := actionStatusIndicator(state.Status) + " " + name
 		if state.Status != app.ActionReady {

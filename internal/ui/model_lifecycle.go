@@ -115,7 +115,9 @@ func (m *Model) beginClearLogs() bool {
 
 func (m *Model) clearConfirmedLogs() {
 	if m.clearAction != nil {
+		target := app.ActionRunTarget(*m.clearAction)
 		m.app.ClearActionLogs(*m.clearAction)
+		m.invalidateLogCache(target)
 		m.addNotification(runTargetLabel(app.ActionRunTarget(*m.clearAction)), "Action logs cleared", config.LogInfo)
 		m.clearAction = nil
 		m.clearTarget = ""
@@ -126,6 +128,7 @@ func (m *Model) clearConfirmedLogs() {
 	svc, ok := m.app.Service(m.clearTarget)
 	if ok {
 		m.app.ClearLogs(svc.Name)
+		m.invalidateLogCache(app.ServiceRunTarget(svc.Name))
 		svc.State.NewLogCount = 0
 		if focused := m.FocusedService(); focused != nil && focused.Name == svc.Name {
 			m.logOffset, m.logAnchor, m.followMode, m.logPaused = 0, 0, true, false

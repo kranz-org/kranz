@@ -47,6 +47,7 @@ const (
 	methodShutdown                        = "shutdown"
 	methodRunAction                       = "runAction"
 	methodActionState                     = "actionState"
+	methodActionStates                    = "actionStates"
 	methodActionResult                    = "actionResult"
 	methodCancelAction                    = "cancelAction"
 	methodAcquireInteractiveAction        = "acquireInteractiveAction"
@@ -168,6 +169,10 @@ type shutdownPlanResponse struct {
 type projectExitRequestedResponse struct {
 	Requested bool `json:"requested"`
 	Code      int  `json:"code"`
+}
+
+type actionStatesResponse struct {
+	States []app.ActionResult `json:"states"`
 }
 
 type actionStateResponse struct {

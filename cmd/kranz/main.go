@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"text/tabwriter"
@@ -507,7 +508,10 @@ func runTUI(options kranzcli.GlobalOptions) (runErr error) {
 	ownershipDone := make(chan struct{})
 	go func() {
 		defer close(ownershipDone)
-		ticker := time.NewTicker(250 * time.Millisecond)
+		// Ownership is registry safety metadata, not UI animation. A one-second
+		// cadence keeps force-down evidence current without four full service
+		// snapshot RPCs per second while the runtime is idle.
+		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
 		for {
 			_ = session.UpdateOwnership(client.Services())
@@ -521,9 +525,13 @@ func runTUI(options kranzcli.GlobalOptions) (runErr error) {
 	defer func() { close(stopOwnership); <-ownershipDone }()
 
 	darkBackground := lipgloss.HasDarkBackground()
+	programReady := make(chan struct{})
+	focusReported := make(chan struct{})
+	var focusOnce sync.Once
 	model := ui.NewModelWithOptions(cfg, version, ui.ModelOptions{
 		Settings: userSettings, SettingsPath: settingsPath, ConfigPaths: cfgPaths,
-		DarkBackground: &darkBackground, App: client,
+		DarkBackground: &darkBackground, App: client, ProgramReady: func() { close(programReady) },
+		FocusReported: func() { focusOnce.Do(func() { close(focusReported) }) },
 	})
 	var remoteDown atomic.Bool
 	defer func() {
@@ -532,12 +540,19 @@ func runTUI(options kranzcli.GlobalOptions) (runErr error) {
 		}
 	}()
 
-	program := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithReportFocus())
+	program := tea.NewProgram(model, dashboardProgramOptions()...)
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer signal.Stop(signals)
 	runDone := make(chan struct{})
 	defer close(runDone)
+	go runMouseWatchdog(program, mouseWatchdogConfig{
+		interval: mouseRecoveryInterval,
+		backstop: mouseRecoveryBackstop,
+		ready:    programReady,
+		relaxed:  focusReported,
+		done:     runDone,
+	})
 	go func() {
 		select {
 		case <-signals:

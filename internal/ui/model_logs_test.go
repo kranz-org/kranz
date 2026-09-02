@@ -19,8 +19,8 @@ func TestFocusingServiceClearsUnreadLogs(t *testing.T) {
 	defer model.Shutdown()
 	firstName := model.services[0].Name
 	secondName := model.services[1].Name
-	model.app.AppendLogForTest(firstName, "first unread")
-	model.app.AppendLogForTest(secondName, "second unread")
+	appendTestLog(model, firstName, "first unread")
+	appendTestLog(model, secondName, "second unread")
 
 	model.moveFocus(1)
 	first, _ := model.app.Service(firstName)
@@ -32,7 +32,7 @@ func TestFocusingServiceClearsUnreadLogs(t *testing.T) {
 		t.Fatalf("newly focused service has %d unread logs", second.State.NewLogCount)
 	}
 
-	model.app.AppendLogForTest(secondName, "visible while focused")
+	appendTestLog(model, secondName, "visible while focused")
 	model.refreshServices()
 	second, _ = model.app.Service(secondName)
 	if second.State.NewLogCount != 0 {
@@ -44,7 +44,7 @@ func TestClearLogsRequiresConfirmationForFocusedAndPinnedPanels(t *testing.T) {
 	model := newTestModel()
 	defer model.Shutdown()
 	api := model.FocusedService()
-	model.app.AppendLogForTest(api.Name, "api output")
+	appendTestLog(model, api.Name, "api output")
 	model.panelFocus = panelLogs
 
 	pressKey(model, 'c')
@@ -61,7 +61,7 @@ func TestClearLogsRequiresConfirmationForFocusedAndPinnedPanels(t *testing.T) {
 
 	model.moveFocus(1)
 	worker := model.FocusedService()
-	model.app.AppendLogForTest(worker.Name, "worker output")
+	appendTestLog(model, worker.Name, "worker output")
 	model.pinnedLog = api.Name
 	model.panelFocus = panelPinnedLogs
 	pressKey(model, 'c')
@@ -121,7 +121,7 @@ func TestShiftThreePinsLogsAboveFocusedLogs(t *testing.T) {
 	defer model.Shutdown()
 	model.width, model.height, model.ready = 100, 28, true
 	api := model.FocusedService()
-	model.app.AppendLogForTest(api.Name, "api log remains visible")
+	appendTestLog(model, api.Name, "api log remains visible")
 
 	pressKey(model, '#')
 	if model.pinnedLog != "api" || model.PinnedService() != api {
@@ -129,8 +129,8 @@ func TestShiftThreePinsLogsAboveFocusedLogs(t *testing.T) {
 	}
 	model.moveFocus(1)
 	worker := model.FocusedService()
-	model.app.AppendLogForTest(worker.Name, "hidden worker line")
-	model.app.AppendLogForTest(worker.Name, "WORKER matched line")
+	appendTestLog(model, worker.Name, "hidden worker line")
+	appendTestLog(model, worker.Name, "WORKER matched line")
 	if err := model.logSearcher.SetPattern("WORKER"); err != nil {
 		t.Fatal(err)
 	}
@@ -159,12 +159,12 @@ func TestThreeSwitchesAndScrollsPinnedLogsIndependently(t *testing.T) {
 	defer model.Shutdown()
 	model.width, model.height, model.ready = 100, 28, true
 	for index := range 40 {
-		model.app.AppendLogForTest(model.FocusedService().Name, fmt.Sprintf("pinned line %d", index))
+		appendTestLog(model, model.FocusedService().Name, fmt.Sprintf("pinned line %d", index))
 	}
 	pressKey(model, '#')
 	model.moveFocus(1)
 	for index := range 40 {
-		model.app.AppendLogForTest(model.FocusedService().Name, fmt.Sprintf("current line %d", index))
+		appendTestLog(model, model.FocusedService().Name, fmt.Sprintf("current line %d", index))
 	}
 
 	pressKey(model, '3')
@@ -220,7 +220,7 @@ func TestMouseHoverAndWheelFocusLogPanel(t *testing.T) {
 	defer model.Shutdown()
 	model.width, model.height, model.ready = 100, 24, true
 	for index := range 40 {
-		model.app.AppendLogForTest(model.FocusedService().Name, fmt.Sprintf("line %d", index))
+		appendTestLog(model, model.FocusedService().Name, fmt.Sprintf("line %d", index))
 	}
 	model.panelFocus = panelServices
 	serviceIndex := model.focused
@@ -249,10 +249,10 @@ func TestManualLogPauseFreezesVisibleTail(t *testing.T) {
 	defer model.Shutdown()
 	model.width, model.height, model.ready = 80, 10, true
 	for index := range 10 {
-		model.app.AppendLogForTest(model.FocusedService().Name, fmt.Sprintf("before %02d", index))
+		appendTestLog(model, model.FocusedService().Name, fmt.Sprintf("before %02d", index))
 	}
 	pressKey(model, 'f')
-	model.app.AppendLogForTest(model.FocusedService().Name, "after pause")
+	appendTestLog(model, model.FocusedService().Name, "after pause")
 
 	plain := ansi.Strip(model.renderLogPanel(model.FocusedService(), 70, 8))
 	if !strings.Contains(plain, "PAUSED") || strings.Contains(plain, "after pause") {
@@ -266,7 +266,7 @@ func TestLogWrappingKeepsPanelAndDashboardGeometry(t *testing.T) {
 	model.width, model.height, model.ready = 80, 24, true
 	model.panelFocus = panelLogs
 	for range 3 {
-		model.app.AppendLogForTest(model.FocusedService().Name, strings.Repeat("long-log-value ", 40))
+		appendTestLog(model, model.FocusedService().Name, strings.Repeat("long-log-value ", 40))
 	}
 
 	plainRows := model.displayedLogLineCount()
@@ -297,7 +297,7 @@ func TestLogTimestampToggleUsesCaptureTimeWithoutChangingSearchText(t *testing.T
 	defer model.Shutdown()
 	model.width, model.height, model.ready = 90, 24, true
 	captured := time.Date(2026, 7, 20, 12, 34, 56, 789000000, time.Local)
-	model.app.AppendLogAtForTest(model.FocusedService().Name, captured, "request complete")
+	appendTestLogAt(model, model.FocusedService().Name, captured, "request complete")
 
 	pressKey(model, 'i')
 	plain := ansi.Strip(model.renderLogPanel(model.FocusedService(), 70, 10))
@@ -322,7 +322,7 @@ func TestServiceLogCannotClearOrRepositionTheTUI(t *testing.T) {
 	model := newTestModel()
 	defer model.Shutdown()
 	model.width, model.height, model.ready = 90, 24, true
-	model.app.AppendLogForTest(model.FocusedService().Name, "\x1b[2J\x1b[H\x1b[31mserver ready\x1b[0m")
+	appendTestLog(model, model.FocusedService().Name, "\x1b[2J\x1b[H\x1b[31mserver ready\x1b[0m")
 
 	rendered := model.View()
 	if strings.Contains(rendered, "\x1b[2J") || strings.Contains(rendered, "\x1b[H") {
