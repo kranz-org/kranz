@@ -4,16 +4,22 @@ package main
 
 /*
 #include <errno.h>
+#include <pthread.h>
 #include <signal.h>
 #include <unistd.h>
 
 static int kranz_signal_default_and_raise(int sig) {
 	struct sigaction action;
+	sigset_t set;
 	if (sigemptyset(&action.sa_mask) != 0) return errno;
 	action.sa_handler = SIG_DFL;
 	action.sa_flags = 0;
 	if (sigaction(sig, &action, NULL) != 0) return errno;
-	if (kill(getpid(), sig) != 0) return errno;
+	if (sigemptyset(&set) != 0) return errno;
+	if (sigaddset(&set, sig) != 0) return errno;
+	int result = pthread_sigmask(SIG_UNBLOCK, &set, NULL);
+	if (result != 0) return result;
+	if (raise(sig) != 0) return errno;
 	return 0;
 }
 */

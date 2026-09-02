@@ -25,6 +25,9 @@ artifacts.
 
 ### Fixed
 
+- Foreground `kranz up` now reliably preserves `SIGINT` and `SIGTERM` process
+  death on macOS even when the signal was temporarily blocked during handler
+  restoration.
 - The release workflow now builds its pre-publish package snapshot through the
   pinned GoReleaser action, avoiding a newer Go toolchain requirement than the
   project declares while retaining amd64 and arm64 installation checks.
