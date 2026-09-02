@@ -97,6 +97,12 @@ func TestForegroundHelperProcess(t *testing.T) {
 		return
 	}
 	directory := os.Getenv("KRANZ_TEST_PROJECT_DIR")
+	newBackgroundCommand = func(_ string, args ...string) *exec.Cmd {
+		data, _ := json.Marshal(args)
+		command := exec.Command(os.Args[0], "-test.run=^TestBackgroundHelperProcess$")
+		command.Env = append(os.Environ(), "KRANZ_TEST_BACKGROUND_HELPER=1", "KRANZ_TEST_BACKGROUND_ARGS="+base64.StdEncoding.EncodeToString(data))
+		return command
+	}
 	os.Exit(execute([]string{"-C", directory, "up", "--no-start"}, os.Stdout, os.Stderr))
 }
 
@@ -234,6 +240,62 @@ func TestBackgroundRuntimeReadinessConflictAndDown(t *testing.T) {
 			t.Fatalf("background runtime remained after down: %v", err)
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func TestDashboardStartsIndependentBackgroundRuntime(t *testing.T) {
+	directory := t.TempDir()
+	name := fmt.Sprintf("test-dashboard-%d", os.Getpid())
+	configPath := filepath.Join(directory, "kranz.yaml")
+	configText := fmt.Sprintf("project: Test Dashboard\nruntime:\n  name: %s\nservices:\n  worker:\n    command: sleep 60\n", name)
+	if err := os.WriteFile(configPath, []byte(configText), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	previousFactory := newBackgroundCommand
+	newBackgroundCommand = func(_ string, args ...string) *exec.Cmd {
+		data, _ := json.Marshal(args)
+		command := exec.Command(os.Args[0], "-test.run=^TestBackgroundHelperProcess$")
+		command.Env = append(os.Environ(), "KRANZ_TEST_BACKGROUND_HELPER=1", "KRANZ_TEST_BACKGROUND_ARGS="+base64.StdEncoding.EncodeToString(data))
+		return command
+	}
+	defer func() { newBackgroundCommand = previousFactory }()
+	t.Cleanup(func() { _ = execute([]string{"-p", name, "down"}, io.Discard, io.Discard) })
+
+	record, err := resolveOrStartDashboardRuntime(
+		kranzcli.GlobalOptions{Directory: directory},
+		[]string{configPath},
+		name,
+		directory,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Mode != "background" {
+		t.Fatalf("dashboard runtime mode = %q, want background", record.Mode)
+	}
+	client, err := kranzruntime.Dial(record.Socket, version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client.HasRunningServices() {
+		t.Fatal("dashboard runtime auto-started services")
+	}
+	if err := client.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	registry, err := kranzruntime.DefaultRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	remaining, err := registry.Resolve(ctx, name, version)
+	if err != nil {
+		t.Fatalf("dashboard runtime did not outlive its client: %v", err)
+	}
+	if remaining.ID != record.ID {
+		t.Fatalf("dashboard re-resolved runtime %q, want %q", remaining.ID, record.ID)
 	}
 }
 
@@ -421,9 +483,10 @@ func TestForegroundRuntimeStatusAndRemoteDown(t *testing.T) {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(5 * time.Second)
+	var record kranzruntime.SessionRecord
 	for {
 		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
-		_, err = registry.Resolve(ctx, name, "test")
+		record, err = registry.Resolve(ctx, name, "test")
 		cancel()
 		if err == nil {
 			break
@@ -432,6 +495,9 @@ func TestForegroundRuntimeStatusAndRemoteDown(t *testing.T) {
 			t.Fatalf("runtime did not appear: %v; stderr=%s", err, childStderr.String())
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+	if record.Mode != "background" || record.PID == command.Process.Pid {
+		t.Fatalf("foreground client did not use an independent runtime: mode=%q same_pid=%v", record.Mode, record.PID == command.Process.Pid)
 	}
 
 	var stdout, stderr bytes.Buffer
@@ -451,10 +517,10 @@ func TestForegroundRuntimeStatusAndRemoteDown(t *testing.T) {
 	select {
 	case err := <-done:
 		if err != nil {
-			t.Fatalf("foreground owner exit: %v; stderr=%s", err, childStderr.String())
+			t.Fatalf("foreground client exit: %v; stderr=%s", err, childStderr.String())
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("foreground owner did not exit after remote down")
+		t.Fatal("foreground client did not exit after remote down")
 	}
 }
 

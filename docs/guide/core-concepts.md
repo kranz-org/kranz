@@ -20,10 +20,11 @@ These names describe different levels:
 
 ![A project configuration creates one runtime, TUI CLI and MCP connect as clients, and services and actions produce numbered runs](../assets/diagrams/runtime-model.svg)
 
-Running bare `kranz` creates a foreground runtime and opens its TUI. Running
-`kranz up -d` creates a background runtime; `kranz attach` opens a TUI client
-on it, and `kranz down` ends it. Use `kranz ps` when you are unsure which
-runtimes already exist.
+Running bare `kranz` ensures an independent runtime exists and opens its TUI.
+The quit confirmation can either stop that runtime or detach the TUI and leave
+everything running. `kranz up -d` starts without opening a long-lived client;
+`kranz attach` opens another TUI client, and `kranz down` ends the runtime. Use
+`kranz ps` when you are unsure which runtimes already exist.
 
 ## Service
 

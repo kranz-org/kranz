@@ -525,14 +525,24 @@ func (m *Model) handleOperationResult(msg operationResultMsg) (tea.Model, tea.Cm
 }
 
 func (m *Model) beginShutdown() (tea.Model, tea.Cmd) {
+	m.detachOnExit = false
+	return m.beginExit("Shutting down")
+}
+
+func (m *Model) beginDetach() (tea.Model, tea.Cmd) {
+	m.detachOnExit = true
+	return m.beginExit("Detaching")
+}
+
+func (m *Model) beginExit(operation string) (tea.Model, tea.Cmd) {
 	if m.operationCancel != nil {
 		m.operationCancel()
 		m.operationCancel = nil
 	}
 	m.operationID++
 	m.operationKind = ""
-	if m.operation != "Shutting down" {
-		m.operation = "Shutting down"
+	if m.operation != operation {
+		m.operation = operation
 	}
 	m.mode = ModeNormal
 	return m, func() tea.Msg { return shutdownResultMsg{err: m.Shutdown()} }
@@ -542,6 +552,8 @@ func (m *Model) handleConfirmQuitKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "y", "Y", "enter":
 		return m.beginShutdown()
+	case "d", "D":
+		return m.beginDetach()
 	case "n", "N", "esc":
 		m.mode = ModeNormal
 	}

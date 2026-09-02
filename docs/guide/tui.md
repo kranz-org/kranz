@@ -99,10 +99,12 @@ the TUI later with:
 kranz attach
 ```
 
-Quitting an attached TUI disconnects only that view; the background runtime and
-its services continue. By contrast, the TUI created by running bare `kranz`
-owns its foreground runtime. Quitting it confirms cleanup for process-owned
-services and for detached services whose `stop_on_exit` is enabled.
+Every TUI is attached to an independently owned runtime, including the one
+opened by bare `kranz`. When services are active, the quit confirmation shows
+which managed processes and configured detached resources will stop and which
+external resources will remain active. Confirm shutdown with `Enter` or `y`,
+press `d` to detach the TUI and keep the complete runtime running, or use `Esc`
+or `n` to stay.
 
 The [CLI workflow](./cli-workflow) and [MCP guide](./mcp) operate the same live
 runtime. A restart from either is reflected immediately in this TUI.

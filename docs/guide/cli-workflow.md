@@ -34,8 +34,10 @@ Started shop-dev (7fa21c8d), PID 18421.
 back. The processes belong to that runtime, not to your shell, so closing the
 terminal leaves them alone.
 
-Without `-d`, `up` stays in the foreground and streams every service's output
-with a prefix. That is the shape you want inside a container or under another
+Without `-d`, `up` keeps a foreground client attached and streams every
+service's output with a prefix. The runtime supervisor is still a separate
+process; `Ctrl+C` explicitly asks it to shut down before the foreground client
+terminates. This is the shape you want inside a container or under another
 supervisor.
 
 ## See what is running

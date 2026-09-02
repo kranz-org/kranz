@@ -161,9 +161,9 @@ when any check fails.
 ```bash
 kranz ps                            # every runtime this user has running
 kranz clients                       # who is attached to those runtimes
-kranz up [SELECTOR ...]             # foreground runtime with multiplexed logs
+kranz up [SELECTOR ...]             # start runtime and stream multiplexed logs
 kranz up -d [SELECTOR ...]          # background runtime, returns the prompt
-kranz up --no-start                 # an empty foreground runtime
+kranz up --no-start                 # empty runtime with foreground log client
 kranz attach                        # open the TUI on a running runtime
 kranz status [SELECTOR ...]
 kranz start SELECTOR ...
@@ -178,8 +178,9 @@ kranz down --force                  # recover a runtime that stopped answering
 single service. `down --force` is emergency recovery for an unreachable
 session, not the ordinary way to stop a project.
 
-Leaving an attached TUI does not stop a background runtime. An external `down`
-closes attached clients cleanly.
+Every runtime has an independent background supervisor. Leaving a TUI through
+its detach action does not stop it; confirming shutdown or running an external
+`down` stops the runtime and closes attached clients cleanly.
 
 `ps` lists runtimes; `clients` lists each runtime's owner together with the CLI,
 TUI, and MCP connections working in it, including surface, label, PID, and
@@ -190,12 +191,13 @@ is running, and who is using it. Narrow either one to a single runtime with
 ```console
 $ kranz ps
 ID        NAME       PROJECT    SERVICES  CLIENTS  STATE    UPTIME
-7fa21c8d  shop-dev   Shop       4/4       2        running  18m
+7fa21c8d  shop-dev   Shop       4/4       3        running  18m
 91bc430a  billing    Billing    3/3       1        running  6m
 3de94a71  analytics  Analytics  2/2       2        running  2m
 
 $ kranz clients
 RUNTIME    SURFACE     CLIENT            PID    CONNECTED
+shop-dev   background  Kranz background  18400  18m
 shop-dev   tui         Kranz dashboard   18421  18m
 shop-dev   mcp         Kranz MCP         18472  4m
 billing    background  Kranz background  18022  6m
@@ -203,27 +205,26 @@ analytics  background  Kranz background  19001  2m
 analytics  cli         Kranz CLI         19108  <1s
 ```
 
-The two `shop-dev` clients share one runtime row. Every running runtime has at
-least one client, because the process that owns it holds a connection of its
-own: `shop-dev` is owned by its TUI, `billing` and `analytics` by their
-`kranz up -d` processes. The short-lived command on `analytics` appears only
-while it is connected; it does not become another runtime owner. `kranz
-clients` never counts itself.
+The `shop-dev` clients share one runtime row. Every running runtime has a
+background owner connection; TUI, foreground log streaming, CLI, and MCP
+connections come and go without taking ownership. The short-lived command on
+`analytics` appears only while it is connected. `kranz clients` never counts
+itself.
 
 These are the built-in client labels. The TUI reports `Kranz dashboard` (or
-`Kranz attach` when opened with `kranz attach`), an owning `kranz up` process
-reports `Kranz foreground` or `Kranz background`, MCP reports `Kranz MCP`, and
-ordinary commands report `Kranz CLI`. An MCP launcher can set
+`Kranz attach` when opened with `kranz attach`), the runtime owner reports
+`Kranz background`, a foreground `kranz up` client reports `Kranz foreground`,
+MCP reports `Kranz MCP`, and ordinary commands report `Kranz CLI`. An MCP launcher can set
 `KRANZ_MCP_CLIENT=codex` to replace the default MCP label with `MCP: codex` when
 several agent clients need to be distinguished. The label changes only what
 `kranz clients` displays; it does not select or rename a runtime.
 
-Every `ps` row is a lifecycle owner: a `kranz up` process or a TUI that started
-the project. An attached TUI, a CLI command, and an MCP server are clients of
-that session — they appear in `clients`, never as a second `ps` row. The same
-project can have several rows when each was given a distinct runtime name with
-`-p`. `--output json` still carries the launch `mode`, `services`, `running`,
-and `clients` counts for scripts that want them.
+Every `ps` row is an independently owned lifecycle runtime. A TUI, foreground
+log stream, CLI command, and MCP server are clients of that session — they
+appear in `clients`, never as a second `ps` row. The same project can have
+several rows when each was given a distinct runtime name with `-p`. `--output
+json` still carries the launch `mode`, `services`, `running`, and `clients`
+counts for scripts that want them.
 
 ### Serving runtimes to a coding agent
 

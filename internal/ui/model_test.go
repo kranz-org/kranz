@@ -687,7 +687,10 @@ func TestQuitConfirmationDescribesManagedAndDetachedExitPlan(t *testing.T) {
 		"remote-stopped",
 		"⚠ WILL REMAIN RUNNING AFTER KRANZ EXITS",
 		"remote-kept",
-		"[Enter/y] Apply this plan and quit",
+		"EXIT",
+		"[Enter/y] Stop runtime and quit",
+		"[d]       Detach and keep runtime running",
+		"[Esc/n]   Stay here",
 	} {
 		if !strings.Contains(plain, expected) {
 			t.Errorf("quit confirmation does not contain %q:\n%s", expected, plain)
@@ -700,14 +703,14 @@ func TestQuitConfirmationDescribesManagedAndDetachedExitPlan(t *testing.T) {
 
 func TestQuitConfirmationCanLeaveOnlyDetachedResourcesRunning(t *testing.T) {
 	model := NewModel(&config.Config{Project: "Exit plan", Services: map[string]config.Service{
-		"mk-backend-stack": {
+		"external-stack": {
 			Supervision: config.SupervisionDetached,
 			Lifecycle:   config.LifecycleConfig{Stop: &config.Action{Command: "true"}},
 		},
 	}}, "test")
 	defer model.Shutdown()
 	model.width, model.height, model.ready = 100, 40, true
-	svc, _ := model.app.Service("mk-backend-stack")
+	svc, _ := model.app.Service("external-stack")
 	model.app.SetServiceStatusForTest(svc.Name, config.StatusRunning)
 	svc.State.Status = config.StatusRunning
 
@@ -715,8 +718,9 @@ func TestQuitConfirmationCanLeaveOnlyDetachedResourcesRunning(t *testing.T) {
 	for _, expected := range []string{
 		"No managed processes will be stopped.",
 		"⚠ WILL REMAIN RUNNING AFTER KRANZ EXITS",
-		"mk-backend-stack",
-		"[Enter/y] Leave detached resources running and quit",
+		"external-stack",
+		"[Enter/y] Stop runtime and quit",
+		"[d]       Detach and keep runtime running",
 	} {
 		if !strings.Contains(plain, expected) {
 			t.Errorf("quit confirmation does not contain %q:\n%s", expected, plain)
@@ -728,14 +732,14 @@ func TestQuitConfirmationEmphasizesRetainedDetachedResources(t *testing.T) {
 	model := NewModel(&config.Config{Project: "Exit plan"}, "test")
 	defer model.Shutdown()
 
-	lines := appendQuitRetainedResources(nil, []string{"mk-backend-stack"})
+	lines := appendQuitRetainedResources(nil, []string{"external-stack"})
 	if len(lines) != 2 {
 		t.Fatalf("retained resource block has %d lines, want 2", len(lines))
 	}
 	if lines[0] != StartingBadgeStyle.Render("⚠ WILL REMAIN RUNNING AFTER KRANZ EXITS") {
 		t.Fatalf("retained resource heading is not warning-emphasized: %q", lines[0])
 	}
-	if lines[1] != "  "+ServiceNameStyle.Render("mk-backend-stack") {
+	if lines[1] != "  "+ServiceNameStyle.Render("external-stack") {
 		t.Fatalf("retained resource name is not bold: %q", lines[1])
 	}
 }

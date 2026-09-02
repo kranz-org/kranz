@@ -20,9 +20,11 @@ It understands dependency order, readiness and liveness, process groups,
 runtime ports, logs, one-shot actions, and detached infrastructure whose life is
 not tied to a local PID.
 
-It runs in the foreground without a daemon or control plane. Use it for the
-processes you would otherwise spread across terminal tabs, alongside Docker
-Compose when containers remain the right home for infrastructure.
+Each project runtime is owned by a separate user-level supervisor; the TUI,
+CLI, and MCP connect to it as clients. There is no system service or shared
+control plane. Use it for the processes you would otherwise spread across
+terminal tabs, alongside Docker Compose when containers remain the right home
+for infrastructure.
 
 <p align="center">
   <img src="docs/assets/kranz-demo.gif" alt="Kranz v0.11.1 terminal interface starting MoonFlight and browsing retained action runs">

@@ -18,9 +18,12 @@ all: build
 build:
 	@mkdir -p $(BIN_DIR)
 	$(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(APP_NAME) ./cmd/$(APP_NAME)
+	$(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(APP_NAME)-dev ./cmd/$(APP_NAME)
 
 # dev creates a deliberately separate executable so a released kranz binary
-# can stay installed while the current checkout is exercised end to end.
+# can stay installed while the current checkout is exercised end to end. The
+# Regular development builds refresh it too so the checkout-facing command
+# never lags behind a successful build.
 dev:
 	@mkdir -p $(BIN_DIR)
 	$(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(APP_NAME)-dev ./cmd/$(APP_NAME)

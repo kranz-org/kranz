@@ -31,6 +31,81 @@ func TestDetachOnExitLeavesRuntimeUsable(t *testing.T) {
 	}
 }
 
+func TestQuitConfirmationCanStopOrDetachRuntime(t *testing.T) {
+	t.Run("detach", func(t *testing.T) {
+		cfg := &config.Config{Project: "Detached exit", Services: map[string]config.Service{"worker": {Command: "sleep 60"}}}
+		local := app.NewLocal(cfg, nil, app.Options{})
+		if err := local.StartServicesContext(context.Background(), []string{"worker"}); err != nil {
+			t.Fatal(err)
+		}
+		model := NewModelWithOptions(cfg, "test", ModelOptions{App: local, DetachOnExit: true})
+		model.mode = ModeConfirmQuit
+		_, command := model.handleConfirmQuitKeys(keyMessage("d"))
+		if command == nil || !model.detachOnExit {
+			t.Fatalf("detach command = %v, detachOnExit = %v", command, model.detachOnExit)
+		}
+		message, ok := command().(shutdownResultMsg)
+		if !ok || message.err != nil {
+			t.Fatalf("detach result = %#v", message)
+		}
+		if !local.HasRunningServices() {
+			t.Fatal("detach stopped the running service")
+		}
+		if err := local.Shutdown(); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("stop", func(t *testing.T) {
+		cfg := &config.Config{Project: "Stopped exit", Services: map[string]config.Service{"worker": {Command: "sleep 60"}}}
+		local := app.NewLocal(cfg, nil, app.Options{})
+		if err := local.StartServicesContext(context.Background(), []string{"worker"}); err != nil {
+			t.Fatal(err)
+		}
+		model := NewModelWithOptions(cfg, "test", ModelOptions{App: local, DetachOnExit: true})
+		model.mode = ModeConfirmQuit
+		_, command := model.handleConfirmQuitKeys(keyMessage("enter"))
+		if command == nil || model.detachOnExit {
+			t.Fatalf("shutdown command = %v, detachOnExit = %v", command, model.detachOnExit)
+		}
+		message, ok := command().(shutdownResultMsg)
+		if !ok || message.err != nil {
+			t.Fatalf("shutdown result = %#v", message)
+		}
+		if local.HasRunningServices() {
+			t.Fatal("confirmed shutdown left the service running")
+		}
+	})
+
+	t.Run("stay", func(t *testing.T) {
+		model := newTestModel()
+		defer model.Shutdown()
+		model.mode = ModeConfirmQuit
+		_, command := model.handleConfirmQuitKeys(keyMessage("n"))
+		if command != nil || model.mode != ModeNormal {
+			t.Fatalf("stay result = command %v, mode %v", command, model.mode)
+		}
+	})
+}
+
+func TestQuitConfirmationMouseCanDetach(t *testing.T) {
+	model := newTestModel()
+	model.detachOnExit = false
+	model.width, model.height, model.ready = 100, 40, true
+	model.mode = ModeConfirmQuit
+	command := clickRenderedText(t, model, "[d]       Detach and keep runtime running")
+	if command == nil || !model.detachOnExit {
+		t.Fatalf("detach click = command %v, detachOnExit %v", command, model.detachOnExit)
+	}
+	message, ok := command().(shutdownResultMsg)
+	if !ok || message.err != nil {
+		t.Fatalf("detach click result = %#v", message)
+	}
+	if err := model.app.Shutdown(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // Tests for service lifecycle actions driven from the dashboard.
 
 func TestEnterDoesNotControlServiceLifecycle(t *testing.T) {

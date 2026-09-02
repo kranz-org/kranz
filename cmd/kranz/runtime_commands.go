@@ -41,7 +41,7 @@ type runtimeHost struct {
 // inside a temp directory after it had been removed.
 var runtimeDirectoryMu sync.Mutex
 
-func startRuntime(options kranzcli.GlobalOptions, mode string) (*runtimeHost, *config.Config, error) {
+func startRuntime(options kranzcli.GlobalOptions) (*runtimeHost, *config.Config, error) {
 	runtimeDirectoryMu.Lock()
 	originalDirectory, err := os.Getwd()
 	if err != nil {
@@ -93,7 +93,7 @@ func startRuntime(options kranzcli.GlobalOptions, mode string) (*runtimeHost, *c
 	if err != nil {
 		return fail(err)
 	}
-	metadata, err := session.Prepare(cfg.Project, version, mode, directory)
+	metadata, err := session.Prepare(cfg.Project, version, "background", directory)
 	if err != nil {
 		_ = session.Close()
 		return fail(err)
@@ -112,7 +112,7 @@ func startRuntime(options kranzcli.GlobalOptions, mode string) (*runtimeHost, *c
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- supervisor.Serve() }()
 	client, err := kranzruntime.DialWithIdentity(metadata.Socket, version,
-		kranzruntime.ClientIdentity{Surface: mode, Label: "Kranz " + mode})
+		kranzruntime.ClientIdentity{Surface: "background", Label: "Kranz background"})
 	if err != nil {
 		_ = supervisor.Close()
 		<-serveErr
@@ -190,59 +190,30 @@ func runUp(options kranzcli.GlobalOptions, args []string, stdout io.Writer) erro
 	signals := make(chan os.Signal, 2)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(signals)
-	host, cfg, err := startRuntime(options, "foreground")
+	if err := spawnBackground(options, selectors, noStart, io.Discard); err != nil {
+		return classifyRuntimeError(err)
+	}
+	record, err := resolveSession(options)
+	if err != nil {
+		return err
+	}
+	client, err := kranzruntime.DialWithIdentity(record.Socket, version,
+		kranzruntime.ClientIdentity{Surface: "cli", Label: "Kranz foreground"})
 	if err != nil {
 		return classifyRuntimeError(err)
 	}
-	closed := false
-	closeHost := func() error {
-		if closed {
-			return nil
-		}
-		closed = true
-		return host.Close()
-	}
-	defer func() { _ = closeHost() }()
-	if !noStart {
-		if len(selectors) == 0 {
-			for _, name := range cfg.ServiceOrder {
-				if !cfg.Services[name].Disabled {
-					selectors = append(selectors, name)
-				}
-			}
-		}
-		for _, name := range selectors {
-			if _, ok := cfg.Services[name]; !ok {
-				_ = host.client.Shutdown()
-				return &kranzcli.Error{Code: "service_not_found", Message: fmt.Sprintf("service %q was not found", name), ExitCode: kranzcli.ExitNotFound}
-			}
-		}
-		startCtx, cancelStart := context.WithCancel(context.Background())
-		startDone := make(chan error, 1)
-		go func() { startDone <- host.client.StartServicesContext(startCtx, selectors) }()
-		select {
-		case err := <-startDone:
-			cancelStart()
-			if err != nil {
-				_ = host.client.Shutdown()
-				return err
-			}
-			if err := host.session.UpdateOwnership(host.client.Services()); err != nil {
-				_ = host.client.Shutdown()
-				return fmt.Errorf("record runtime ownership: %w", err)
-			}
-		case sig := <-signals:
-			cancelStart()
-			<-startDone
-			return terminateForegroundWithSignal(host, closeHost, signals, sig)
-		}
+	defer func() { _ = client.Close() }()
+	cfg := client.Config()
+	if cfg == nil {
+		_ = client.Shutdown()
+		return errors.New("runtime returned no effective configuration")
 	}
 	effectiveName := cfg.RuntimeName()
 	if options.Project != "" {
 		effectiveName = options.Project
 	}
 	if _, err := fmt.Fprintf(stdout, "Kranz runtime %s is ready (%s). Press Ctrl+C to stop.\n", cfg.Project, effectiveName); err != nil {
-		_ = host.client.Shutdown()
+		_ = client.Shutdown()
 		return err
 	}
 
@@ -252,12 +223,12 @@ func runUp(options kranzcli.GlobalOptions, args []string, stdout io.Writer) erro
 	for {
 		select {
 		case sig := <-signals:
-			return terminateForegroundWithSignal(host, closeHost, signals, sig)
-		case <-host.supervisor.ShutdownRequested():
-			return closeHost()
+			return terminateForegroundWithSignal(client, record, signals, sig)
+		case <-client.Done():
+			return nil
 		case <-ticker.C:
-			for _, service := range host.client.Services() {
-				entries := host.client.Logs(service.Name)
+			for _, service := range client.Services() {
+				entries := client.Logs(service.Name)
 				start := logOffsets[service.Name]
 				if start > len(entries) {
 					start = 0
@@ -271,11 +242,8 @@ func runUp(options kranzcli.GlobalOptions, args []string, stdout io.Writer) erro
 				}
 				logOffsets[service.Name] = len(entries)
 			}
-			if requested, code := host.client.ProjectExitRequested(); requested {
-				_ = host.client.Shutdown()
-				if err := closeHost(); err != nil {
-					return err
-				}
+			if requested, code := client.ProjectExitRequested(); requested {
+				_ = client.Shutdown()
 				if code != 0 {
 					return requestedExitError{code: code}
 				}
@@ -413,7 +381,7 @@ func runBackgroundChild(options kranzcli.GlobalOptions, selectors []string, noSt
 	signals := make(chan os.Signal, 2)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(signals)
-	host, cfg, err := startRuntime(options, "background")
+	host, cfg, err := startRuntime(options)
 	if err != nil {
 		classified := kranzcli.AsError(classifyRuntimeError(err))
 		_ = sendReady(backgroundReady{Error: classified.Error(), Code: classified.Code, Hint: classified.Hint, ExitCode: classified.ExitCode})
@@ -512,10 +480,15 @@ func shortID(id string) string {
 	return id
 }
 
-func terminateForegroundWithSignal(host *runtimeHost, closeHost func() error, signals chan os.Signal, sig os.Signal) error {
-	shutdownErr := host.client.Shutdown()
-	closeErr := closeHost()
-	if err := errors.Join(shutdownErr, closeErr); err != nil {
+func terminateForegroundWithSignal(client *kranzruntime.Client, record kranzruntime.SessionRecord, signals chan os.Signal, sig os.Signal) error {
+	if err := client.Shutdown(); err != nil {
+		return err
+	}
+	registry, err := kranzruntime.DefaultRegistry()
+	if err != nil {
+		return err
+	}
+	if err := waitForRuntimeShutdown(registry, record, 5*time.Second); err != nil {
 		return err
 	}
 	signal.Stop(signals)

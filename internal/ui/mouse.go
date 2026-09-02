@@ -355,8 +355,11 @@ func (m *Model) handleOverlayMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	case ModeHealthHistory, ModeNotifications:
 		return m.closeOverlayOnClick(rendered, msg)
 	case ModeConfirmQuit:
-		if renderedTextHit(rendered, msg.X, msg.Y, "[Enter/y] Stop everything and quit") {
+		if renderedTextHit(rendered, msg.X, msg.Y, "[Enter/y] Stop runtime and quit") {
 			return m.beginShutdown()
+		}
+		if renderedTextHit(rendered, msg.X, msg.Y, "[d]       Detach and keep runtime running") {
+			return m.beginDetach()
 		}
 		if renderedTextHit(rendered, msg.X, msg.Y, "[Esc/n]   Stay here") {
 			m.mode = ModeNormal

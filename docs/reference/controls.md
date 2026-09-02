@@ -101,8 +101,11 @@ accent-coloured shortcuts.
 | `Ctrl+L` | Reload configuration and terminal appearance |
 | `Ctrl+O` | Hand terminal to a shell; press again to return |
 | `?` | Help |
-| `q` | Confirm quit when services are active |
+| `q` | Open the quit confirmation when services are active |
 | `Ctrl+C` | Immediate shutdown |
 
-Shutdown stops process-owned services and only detached services with
-`stop_on_exit: true`.
+The quit confirmation shows the complete shutdown plan. `Enter` or `y` stops
+the runtime and quits, `d` detaches the TUI while keeping the runtime running,
+and `Esc` or `n` stays in the TUI. Shutdown stops process-owned services and
+only detached services with `stop_on_exit: true`; other external resources are
+listed and remain active.

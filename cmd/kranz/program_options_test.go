@@ -2,9 +2,8 @@ package main
 
 import "testing"
 
-// Both dashboards must agree on the terminal contract: the attached client and
-// the foreground runtime render the same UI and should not differ in mouse
-// reporting, focus reporting, or repaint cadence.
+// Every dashboard is an attached client and must share one terminal contract,
+// regardless of whether it started or discovered the independent runtime.
 func TestBothDashboardsShareProgramOptions(t *testing.T) {
 	if got := len(dashboardProgramOptions()); got != 4 {
 		t.Fatalf("dashboard program options = %d, want alt screen, mouse, focus and FPS", got)

@@ -7,24 +7,14 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/signal"
 	"strconv"
 	"strings"
-	"sync"
-	"sync/atomic"
-	"syscall"
 	"text/tabwriter"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-
-	"github.com/kranz-org/kranz/internal/app"
 	kranzcli "github.com/kranz-org/kranz/internal/cli"
 	"github.com/kranz-org/kranz/internal/config"
 	kranzruntime "github.com/kranz-org/kranz/internal/runtime"
-	"github.com/kranz-org/kranz/internal/settings"
-	"github.com/kranz-org/kranz/internal/ui"
 )
 
 var (
@@ -421,154 +411,57 @@ func runTUI(options kranzcli.GlobalOptions) (runErr error) {
 	if err != nil {
 		return &kranzcli.Error{Code: "invalid_config", Message: "load configuration", ExitCode: kranzcli.ExitConfig, Cause: err}
 	}
-	registry, err := kranzruntime.DefaultRegistry()
-	if err != nil {
-		return fmt.Errorf("open runtime registry: %w", err)
-	}
-	lookupCtx, cancelLookup := context.WithTimeout(context.Background(), 2*time.Second)
-	record, lookupErr := registry.Resolve(lookupCtx, cfg.RuntimeName(), version)
-	cancelLookup()
-	if lookupErr == nil {
-		client, dialErr := kranzruntime.DialWithIdentity(record.Socket, version,
-			kranzruntime.ClientIdentity{Surface: "tui", Label: "Kranz dashboard"})
-		if dialErr != nil {
-			return classifyRuntimeError(dialErr)
-		}
-		defer func() { runErr = errors.Join(runErr, client.Close()) }()
-		activeConfig := client.Config()
-		if activeConfig == nil {
-			return errors.New("runtime returned no effective configuration")
-		}
-		return runAttachedTUI(client, activeConfig)
-	}
-	var missingRuntime *kranzruntime.SessionNotFoundError
-	if !errors.As(lookupErr, &missingRuntime) {
-		return classifyRuntimeError(lookupErr)
-	}
 	directory, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("resolve runtime directory: %w", err)
 	}
-	session, err := registry.Acquire(cfg.RuntimeName())
+	record, err := resolveOrStartDashboardRuntime(options, cfgPaths, cfg.RuntimeName(), directory)
 	if err != nil {
-		var conflict *kranzruntime.SessionConflictError
-		if errors.As(err, &conflict) {
-			return &kranzcli.Error{Code: "runtime_conflict", Message: conflict.Error(), Hint: "Use `kranz -p " + cfg.RuntimeName() + " attach` or `kranz -p " + cfg.RuntimeName() + " down`.", ExitCode: kranzcli.ExitConflict}
-		}
-		return fmt.Errorf("acquire runtime session: %w", err)
-	}
-	defer func() { runErr = errors.Join(runErr, session.Close()) }()
-	metadata, err := session.Prepare(cfg.Project, version, "tui", directory)
-	if err != nil {
-		return fmt.Errorf("prepare runtime session: %w", err)
+		return err
 	}
 
-	settingsPath, settingsPathErr := settings.DefaultPath()
-	if settingsPathErr != nil {
-		fmt.Fprintf(os.Stderr, "Kranz settings warning: %v\n", settingsPathErr)
-	}
-	userSettings, settingsErr := settings.Load(settingsPath)
-	if settingsErr != nil {
-		fmt.Fprintf(os.Stderr, "Kranz settings warning: %v\n", settingsErr)
-		userSettings = settings.Settings{}
-	}
-
-	// The runtime always speaks the socket protocol, even for an ordinary
-	// foreground `kranz` with no other client. The published registry session
-	// lets ps and later attach/down clients discover this same supervisor.
-	local := app.NewLocal(cfg, cfgPaths, app.Options{SessionID: metadata.ID})
-	supervisor := kranzruntime.NewSupervisor(local)
-	if err := supervisor.Listen(metadata.Socket); err != nil {
-		return fmt.Errorf("start runtime supervisor: %w", err)
-	}
-	if err := session.Publish(); err != nil {
-		_ = supervisor.Close()
-		return fmt.Errorf("publish runtime session: %w", err)
-	}
-	serveErr := make(chan error, 1)
-	go func() { serveErr <- supervisor.Serve() }()
-	defer func() {
-		// Make the old session undiscoverable before attached clients receive
-		// EOF. A supervised MCP bridge may restart immediately on disconnect;
-		// it must see a free registry entry rather than stale locked metadata.
-		runErr = errors.Join(runErr, session.Close())
-		runErr = errors.Join(runErr, supervisor.Close())
-		if err := <-serveErr; err != nil {
-			runErr = errors.Join(runErr, err)
-		}
-	}()
-
-	client, err := kranzruntime.DialWithIdentity(metadata.Socket, version,
+	client, err := kranzruntime.DialWithIdentity(record.Socket, version,
 		kranzruntime.ClientIdentity{Surface: "tui", Label: "Kranz dashboard"})
 	if err != nil {
-		return fmt.Errorf("connect to runtime: %w", err)
+		return classifyRuntimeError(err)
 	}
 	defer func() { runErr = errors.Join(runErr, client.Close()) }()
-	stopOwnership := make(chan struct{})
-	ownershipDone := make(chan struct{})
-	go func() {
-		defer close(ownershipDone)
-		// Ownership is registry safety metadata, not UI animation. A one-second
-		// cadence keeps force-down evidence current without four full service
-		// snapshot RPCs per second while the runtime is idle.
-		ticker := time.NewTicker(time.Second)
-		defer ticker.Stop()
-		for {
-			_ = session.UpdateOwnership(client.Services())
-			select {
-			case <-ticker.C:
-			case <-stopOwnership:
-				return
-			}
-		}
-	}()
-	defer func() { close(stopOwnership); <-ownershipDone }()
-
-	darkBackground := lipgloss.HasDarkBackground()
-	programReady := make(chan struct{})
-	focusReported := make(chan struct{})
-	var focusOnce sync.Once
-	model := ui.NewModelWithOptions(cfg, version, ui.ModelOptions{
-		Settings: userSettings, SettingsPath: settingsPath, ConfigPaths: cfgPaths,
-		DarkBackground: &darkBackground, App: client, ProgramReady: func() { close(programReady) },
-		FocusReported: func() { focusOnce.Do(func() { close(focusReported) }) },
-	})
-	var remoteDown atomic.Bool
-	defer func() {
-		if !remoteDown.Load() {
-			runErr = errors.Join(runErr, model.Shutdown())
-		}
-	}()
-
-	program := tea.NewProgram(model, dashboardProgramOptions()...)
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
-	defer signal.Stop(signals)
-	runDone := make(chan struct{})
-	defer close(runDone)
-	go runMouseWatchdog(program, mouseWatchdogConfig{
-		interval: mouseRecoveryInterval,
-		backstop: mouseRecoveryBackstop,
-		ready:    programReady,
-		relaxed:  focusReported,
-		done:     runDone,
-	})
-	go func() {
-		select {
-		case <-signals:
-			program.Quit()
-		case <-supervisor.ShutdownRequested():
-			remoteDown.Store(true)
-			program.Quit()
-		case <-runDone:
-		}
-	}()
-
-	if _, err := program.Run(); err != nil {
-		return &kranzcli.Error{Code: "tui", Message: "run TUI", ExitCode: kranzcli.ExitInternal, Cause: err}
+	activeConfig := client.Config()
+	if activeConfig == nil {
+		return errors.New("runtime returned no effective configuration")
 	}
-	if code := model.RequestedExitCode(); code != 0 {
-		return requestedExitError{code: code}
+	return runAttachedTUI(client, activeConfig)
+}
+
+func resolveOrStartDashboardRuntime(options kranzcli.GlobalOptions, cfgPaths []string, runtimeName, directory string) (kranzruntime.SessionRecord, error) {
+	registry, err := kranzruntime.DefaultRegistry()
+	if err != nil {
+		return kranzruntime.SessionRecord{}, fmt.Errorf("open runtime registry: %w", err)
 	}
-	return nil
+	resolve := func() (kranzruntime.SessionRecord, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		return registry.Resolve(ctx, runtimeName, version)
+	}
+	record, lookupErr := resolve()
+	if lookupErr == nil {
+		return record, nil
+	}
+	var missingRuntime *kranzruntime.SessionNotFoundError
+	if !errors.As(lookupErr, &missingRuntime) {
+		return kranzruntime.SessionRecord{}, classifyRuntimeError(lookupErr)
+	}
+
+	backgroundOptions := options
+	backgroundOptions.Directory = directory
+	backgroundOptions.ConfigPaths = cfgPaths
+	backgroundOptions.Output = kranzcli.OutputText
+	if err := spawnBackground(backgroundOptions, nil, true, io.Discard); err != nil {
+		return kranzruntime.SessionRecord{}, classifyRuntimeError(err)
+	}
+	record, err = resolve()
+	if err != nil {
+		return kranzruntime.SessionRecord{}, classifyRuntimeError(err)
+	}
+	return record, nil
 }

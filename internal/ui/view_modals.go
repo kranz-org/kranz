@@ -252,17 +252,14 @@ func (m *Model) renderConfirmQuitView() string {
 	if m.operation != "" {
 		body = append(body, "", "The current operation will be cancelled.")
 	}
-	action := "[Enter/y] Stop managed services and quit"
-	if len(managed) == 0 && len(detachedStop) == 0 && len(detachedKeep) > 0 {
-		action = "[Enter/y] Leave detached resources running and quit"
-	} else if len(detachedKeep) > 0 {
-		action = "[Enter/y] Apply this plan and quit"
-	}
+	body = append(body, "", HelpSectionStyle.Render("EXIT"))
 	content := renderConfirmationModal(
 		"Quit Kranz?",
 		body,
-		action,
-		"[Esc/n]   Stay here",
+		"  [Enter/y] Stop runtime and quit",
+		"  [d]       Detach and keep runtime running",
+		"",
+		"  [Esc/n]   Stay here",
 	)
 	return m.placeOverlay(content)
 }

@@ -138,7 +138,7 @@ func DefaultTree() *Command {
 			{Name: "inspect", Summary: "identify a port listener", Usage: "kranz port inspect PORT"},
 		}},
 		{Name: "up", Summary: "create a project runtime", Usage: "kranz up [SELECTOR ...] [-d|--detach]\n  kranz up --no-start [-d|--detach]", Options: []Option{
-			{Flags: "-d, --detach", Summary: "leave the runtime in the background and return"},
+			{Flags: "-d, --detach", Summary: "return after starting the independent runtime"},
 			{Flags: "--no-start", Summary: "create the runtime without starting any service"},
 		}},
 		{Name: "start", Summary: "start services", Usage: "kranz start SELECTOR ..."},
