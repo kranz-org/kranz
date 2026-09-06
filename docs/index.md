@@ -32,12 +32,12 @@ features:
   - title: Bring your existing config
     details: Start with a Procfile, a supported Process Compose file, or native Kranz YAML when you need the full model.
   - title: Independent by design
-    details: Keep one project runtime alive across client disconnects, without a global daemon or second control plane.
+    details: Keep project runtimes alive across client disconnects and switch between them in one TUI, without a global daemon or second control plane.
 ---
 
 <div class="demo-frame demo-frame--hero">
 
-![Kranz v0.12.1 starting a project, running an action twice, and browsing its retained runs](./assets/kranz-demo.gif)
+![Kranz v0.13.0 switching between two live project runtimes](./assets/kranz-demo.gif)
 
 </div>
 
