@@ -4,6 +4,37 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### Added
+
+- The TUI can switch between local Kranz runtimes without restarting: press
+  `p` for a live-updating list of every runtime registered on the machine,
+  and connect to another one in place. Each visited runtime keeps its own
+  selection, log filters, pinned log, and scroll position for the life of
+  the TUI process.
+- Losing the connection to the current runtime no longer closes the TUI; a
+  recovery screen offers to restart the same project or choose another
+  already-running runtime.
+- Running bare `kranz` outside a project directory now opens the same
+  runtime list immediately, when at least one local runtime is running,
+  instead of failing outright.
+
+### Changed
+
+- Pressing `q` in the TUI always opens the quit confirmation, including when
+  no service is running, so detaching can preserve the runtime and run history.
+- Switching runtimes never stops, restarts, or cancels work already accepted
+  by the runtime being left; an in-flight operation keeps running and its
+  result is shown if you switch back to it later.
+- Runtime discovery probes registered supervisors with bounded concurrency,
+  so one slow socket does not consume the rest of the list's refresh budget.
+- The runtime switcher now has aligned status, client-surface, service-count,
+  uptime, and directory columns, including a visible table header.
+
+### Fixed
+
+- Supervisor client surfaces and labels are stripped of terminal control
+  characters and length-limited before they reach runtime lists or logs.
+
 ## [0.12.1] - 2026-09-02
 
 This is the first published 0.12 release. The immutable `v0.12.0` tag stopped

@@ -100,8 +100,9 @@ accent-coloured shortcuts.
 | `Ctrl+T` | Theme and appearance picker |
 | `Ctrl+L` | Reload configuration and terminal appearance |
 | `Ctrl+O` | Hand terminal to a shell; press again to return |
+| `p` | Switch to another local Kranz runtime |
 | `?` | Help |
-| `q` | Open the quit confirmation when services are active |
+| `q` | Always open the quit confirmation |
 | `Ctrl+C` | Immediate shutdown |
 
 The quit confirmation shows the complete shutdown plan. `Enter` or `y` stops
@@ -109,3 +110,59 @@ the runtime and quits, `d` detaches the TUI while keeping the runtime running,
 and `Esc` or `n` stays in the TUI. Shutdown stops process-owned services and
 only detached services with `stop_on_exit: true`; other external resources are
 listed and remain active.
+
+## Switching runtimes
+
+`p` opens a list of every Kranz runtime registered on the machine, current
+runtime first, then the rest ordered by how recently they started. It
+refreshes on its own while open — a runtime that starts or stops elsewhere
+appears or disappears without reopening the modal.
+
+| Key | Action |
+| --- | --- |
+| `↑` / `↓`, `j` / `k` | Move the selection |
+| `Enter` | Connect to the selected runtime |
+| `Esc` or `p` | Close the modal and stay on the current runtime |
+
+The table has separate `RUNTIME`, `STATUS`, `CLIENTS`, `SERVICES`, `UPTIME`,
+and `DIRECTORY` columns. `STATUS` is `current` for the runtime already open
+and `started` for another available runtime. `CLIENTS` lists the unique client
+surfaces connected to it (for example `TUI · MCP`) without counts, while
+`SERVICES` shows running/total in the same `3/5` form as `kranz ps`. A runtime
+running an incompatible protocol version, or one the switcher cannot currently
+reach, is shown greyed out with the reason and cannot be selected; in a narrow
+terminal the directory, uptime, and client detail give way before the runtime
+name or status. Mouse clicks move the selection the same way arrow keys do,
+and a second click on the same row within the usual double-click window
+connects to it.
+
+Connecting is all-or-nothing: Kranz only switches once the new runtime has
+answered a handshake and handed over its configuration and current state. A
+failed connection leaves the previous runtime's dashboard exactly as it was,
+with an error explaining why. Switching never stops, restarts, or otherwise
+disturbs the runtime being left — a start, stop, or restart it already
+accepted keeps running, and its result is shown if you switch back before it
+finishes. Each visited runtime keeps its own selection, filters, pinned log,
+and scroll position for the life of the TUI process; none of it is written to
+disk, and it is cleared on exit.
+
+If `kranz` is started outside a project directory but at least one local
+runtime is already running, the switcher opens immediately instead of
+failing. If neither a configuration nor a runtime is found, Kranz prints an
+error to the terminal and exits without opening a screen at all.
+
+### If the current runtime stops
+
+Losing the connection to the runtime the dashboard is showing does not close
+the TUI. Instead it shows a recovery screen:
+
+| Key | Action |
+| --- | --- |
+| `r` or `Enter` | Restart the same project's runtime and reattach |
+| `c` | Choose a different, already-running runtime |
+| `q` or `Ctrl+C` | Close only the TUI |
+
+A restart reuses the project directory and configuration paths Kranz already
+had for that runtime; it does not repeat any command a user typed. If it
+fails, the reason stays on screen and either action can be tried again. Both
+options are also available by clicking their label.

@@ -100,7 +100,7 @@ kranz attach
 ```
 
 Every TUI is attached to an independently owned runtime, including the one
-opened by bare `kranz`. When services are active, the quit confirmation shows
+opened by bare `kranz`. The quit confirmation always shows
 which managed processes and configured detached resources will stop and which
 external resources will remain active. Confirm shutdown with `Enter` or `y`,
 press `d` to detach the TUI and keep the complete runtime running, or use `Esc`
@@ -108,6 +108,32 @@ or `n` to stay.
 
 The [CLI workflow](./cli-workflow) and [MCP guide](./mcp) operate the same live
 runtime. A restart from either is reflected immediately in this TUI.
+
+## Switch between local runtimes
+
+Working on several projects at once no longer means running a separate TUI
+for each. Press `p` to open a modal styled like Run history with every Kranz
+runtime registered on this machine — current runtime first — and press
+`Enter` on another one to attach to it in the same process. `Esc` closes the
+modal without changing anything.
+
+Each runtime you visit keeps its own selection, log filters, pinned log, and
+scroll position for as long as this TUI process runs, so returning to one
+looks exactly as you left it. Switching never stops, restarts, or otherwise
+touches the runtime you are leaving: an operation it already accepted keeps
+running, and you see its result if you switch back before it finishes.
+
+Starting `kranz` outside a project directory behaves the same way it always
+has once one is found. Without one, if any local runtime is already running,
+the same list opens immediately instead of failing; if none is, Kranz prints
+an error and exits.
+
+If the runtime the dashboard is currently showing stops — the process
+crashed, or was stopped from elsewhere — the TUI shows a recovery screen
+instead of closing, offering `r` to restart that project or `c` to choose
+another running one. See the [switching runtimes
+reference](../reference/controls#switching-runtimes) for the complete key
+list, row states, and recovery behavior.
 
 ## Common keys
 
@@ -124,10 +150,11 @@ runtime. A restart from either is reflected immediately in this TUI.
 | `[` / `]` | Move to the previous/next run |
 | `v` | Open run history; filter and select with keyboard or mouse |
 | `e` / `Shift+E` | Export the selected run to clipboard / a chosen file |
+| `p` | Switch to another local Kranz runtime |
 | `Ctrl+T` | Open the theme and appearance picker |
 | `Ctrl+L` | Reload configuration |
 | `?` | Open help |
-| `q` | Quit, with cleanup confirmation when required |
+| `q` | Open the quit confirmation |
 
 The [complete controls reference](../reference/controls) covers selection
 overrides, log navigation, health history, notifications, shell handoff, mouse

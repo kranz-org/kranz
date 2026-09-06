@@ -4,6 +4,11 @@ Kranz has one binary and no daemon. Running `kranz` with no subcommand opens the
 terminal UI; every other command either describes a project or talks to one
 running project runtime.
 
+Outside a project directory, a bare `kranz` opens a list of any local runtimes
+already running instead of failing, and lets you attach to one from there
+(see [switching runtimes](./controls#switching-runtimes)). It only reports an
+error if it finds neither a configuration nor a runtime.
+
 ## Synopsis
 
 ```bash
