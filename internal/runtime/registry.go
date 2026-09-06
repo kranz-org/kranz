@@ -422,6 +422,11 @@ func (r *Registry) probeRecord(ctx context.Context, path string, metadata Sessio
 	record := SessionRecord{SessionMetadata: metadata, State: SessionUnreachable}
 	client, dialErr := DialContextWithIdentity(ctx, metadata.Socket, clientVersion,
 		ClientIdentity{Surface: registryProbeSurface, Label: "Kranz runtime discovery"})
+	// Only a failed dial is evidence that the socket behind this record is
+	// gone; a runtime that answered and then ran out of the caller's listing
+	// budget is alive and must keep its registration. Deleting is driven by
+	// dialErr alone, never by an inspection error recorded after a successful
+	// handshake.
 	if dialErr == nil {
 		// Client inspection methods predate context-aware discovery. Closing the
 		// probe on cancellation makes their background RPCs obey the caller's
@@ -460,11 +465,6 @@ func (r *Registry) probeRecord(ctx context.Context, path string, metadata Sessio
 			sort.Strings(surfaces)
 			record.Clients = &others
 			record.ClientSurfaces = surfaces
-		} else {
-			dialErr = clientsErr
-			if dialErr == nil {
-				dialErr = ctx.Err()
-			}
 		}
 	} else {
 		var mismatch *VersionMismatchError

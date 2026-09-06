@@ -113,7 +113,7 @@ func (m *Model) handleRuntimeLostKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // paths — never a shell string built from user input (PRD 7) — then polls
 // the registry until it publishes and answers a handshake.
 func (m *Model) beginRuntimeRestart() tea.Cmd {
-	if m.restartRuntime == nil || !m.switcherSupported() || m.recoveryBusy {
+	if m.restartRuntime == nil || !m.switcherSupported() || m.recoveryBusy || m.exiting {
 		return nil
 	}
 	m.recoveryBusy = true

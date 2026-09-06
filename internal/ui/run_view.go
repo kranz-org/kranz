@@ -505,10 +505,10 @@ func newRunListLayout(width int) []runListColumn {
 		base[adjustment.key] = column
 	}
 	if runListTableWidth(columns()) > width {
-		delete(selected, "duration")
+		selected["duration"] = false
 	}
 	if runListTableWidth(columns()) > width {
-		delete(selected, "output")
+		selected["output"] = false
 	}
 	for _, adjustment := range []struct {
 		key   string

@@ -206,22 +206,60 @@ func (m *Model) applyUIState(state runtimeUIState) {
 		_ = m.pinnedSearcher.SetPattern(state.pinnedPattern)
 	}
 
+	// runTarget is derived from the focus restored above rather than cached,
+	// so the two can never disagree about which target's runs the fields
+	// below describe. It has to be derived *before* them: syncRunTarget
+	// treats an unset runTarget as entering a new target and resets the run
+	// selection to that target's defaults, which would discard exactly what
+	// this function is restoring.
+	m.runTarget = app.RunTarget{}
+	m.syncRunTarget()
+
 	m.runMode = state.runMode
 	m.selectedRun = state.selectedRun
 	m.runFollowsLatest = state.runFollowsLatest
 	m.runListCursor = state.runListCursor
 	m.runStatusFilter = state.runStatusFilter
 	m.runViewports = copyViewportMap(state.runViewports)
+	m.reconcileRestoredRunSelection()
+	// syncRunTarget skipped its own restore while runTarget was still being
+	// established; the log panel has to be pointed at the cached viewport now
+	// that both the target and the selected run are back.
+	m.restoreRunViewport()
 	m.notifMu.Lock()
 	m.notifications = append([]config.Notification(nil), state.notifications...)
 	m.toastMessage, m.toastTimer = state.toastMessage, state.toastTimer
 	m.notifMu.Unlock()
-	// runTarget itself is deliberately left for syncRunTarget to derive from
-	// the focus just restored above: it recomputes on every render already,
-	// and deriving it here as well would let the two disagree about which
-	// target's runs m.selectedRun and m.runViewports actually describe.
-	m.runTarget = app.RunTarget{}
-	m.syncRunTarget()
+}
+
+// reconcileRestoredRunSelection keeps an exact saved run when it still
+// exists. If retention removed it while this runtime was detached, the
+// closest retained run becomes selected instead; follow-latest state always
+// advances to the current latest run.
+func (m *Model) reconcileRestoredRunSelection() {
+	if m.runMode != runViewSingle {
+		return
+	}
+	runs := m.runsForTarget(m.runTarget)
+	if m.runFollowsLatest || m.selectedRun == 0 {
+		m.selectedRun = latestRun(runs)
+		return
+	}
+	closest := uint32(0)
+	closestDistance := ^uint32(0)
+	for _, run := range runs {
+		if run.Run == m.selectedRun {
+			return
+		}
+		distance := run.Run - m.selectedRun
+		if run.Run < m.selectedRun {
+			distance = m.selectedRun - run.Run
+		}
+		if distance < closestDistance {
+			closest, closestDistance = run.Run, distance
+		}
+	}
+	m.selectedRun = closest
 }
 
 // resetUIStateToDefaults restores the values NewModelWithOptions gives a

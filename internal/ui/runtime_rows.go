@@ -43,8 +43,8 @@ type runtimeListMsg struct {
 
 // discoverRuntimeRows lists every locally registered runtime and classifies
 // each one for display. currentSessionID marks (and always sorts first) the
-// runtime the caller is already attached to; selfPID excludes the caller's
-// own connection from that runtime's reported client surfaces.
+// runtime the caller is already attached to; this process's own PID excludes
+// its dashboard connection from that runtime's reported client surfaces.
 func discoverRuntimeRows(ctx context.Context, registry *kranzruntime.Registry, clientVersion, currentSessionID string) ([]runtimeRow, error) {
 	records, err := registry.ListForSwitcher(ctx, clientVersion, "tui", os.Getpid())
 	if err != nil {
@@ -57,11 +57,11 @@ func discoverRuntimeRows(ctx context.Context, registry *kranzruntime.Registry, c
 		case kranzruntime.SessionRunning:
 			row.Selectable = !row.IsCurrent
 		case kranzruntime.SessionIncompatible:
-			row.Reason = "incompatible protocol version"
+			row.Reason = "This runtime speaks a different protocol version. Update Kranz to attach to it."
 		case kranzruntime.SessionUnreachable:
-			row.Reason = "unreachable"
+			row.Reason = "This runtime is registered but is not answering. The list keeps retrying it."
 		default:
-			row.Reason = string(record.State)
+			row.Reason = "This runtime reports state " + string(record.State) + " and cannot be attached to."
 		}
 		rows = append(rows, row)
 	}
@@ -88,9 +88,12 @@ func sortRuntimeRows(rows []runtimeRow) {
 	})
 }
 
-// runtimeRowUptime formats how long a runtime has been running the same way
-// `kranz ps` does, so the switcher and the CLI never disagree about what an
-// age looks like.
+// runtimeRowUptime formats how long a runtime has been running. It follows
+// cmd/kranz's shortDuration for every unit above a minute, and deliberately
+// differs below one: a table read at a glance says "just now" where a CLI
+// column that is scanned for exact values says "42s". It is a copy rather
+// than a call because shortDuration lives in package main and cannot be
+// imported here; change the two together.
 func runtimeRowUptime(record kranzruntime.SessionRecord) string {
 	d := time.Since(record.StartedAt)
 	if d < 0 {
@@ -122,10 +125,10 @@ func runtimeRowSurfaceLabel(row runtimeRow) string {
 	return strings.Join(labels, " · ")
 }
 
-// runtimeRowBaseStatus is the row's status word without any client-surface
-// detail: the part PRD 3.2 keeps visible even in a narrow terminal, after
-// the path and the surface list have already given way.
-func runtimeRowBaseStatus(row runtimeRow) string {
+// runtimeRowStatusLabel is the row's status word on its own, never merged
+// with client-surface detail: PRD 3.2 keeps it visible even in a narrow
+// terminal, after the path and the surface list have already given way.
+func runtimeRowStatusLabel(row runtimeRow) string {
 	if row.IsCurrent {
 		return "current"
 	}
@@ -139,12 +142,6 @@ func runtimeRowBaseStatus(row runtimeRow) string {
 	default:
 		return string(row.Record.State)
 	}
-}
-
-// runtimeRowStatusLabel is kept separate from client surfaces so "current"
-// never competes with connection information for the same table cell.
-func runtimeRowStatusLabel(row runtimeRow) string {
-	return runtimeRowBaseStatus(row)
 }
 
 func runtimeRowServicesLabel(row runtimeRow) string {
@@ -163,12 +160,9 @@ func runtimeRowDisplayName(row runtimeRow) string {
 	return row.Record.Project
 }
 
-// runtimeRowLine lays out one row within width, dropping the path and then
-// the client-surface detail before it would ever truncate the name or the
-// base status word (PRD 3.2: "path and client surfaces shrink before name
-// and state"). It takes width explicitly rather than reading it off a
-// *Model so the bare-launch runtime picker, which has no Model, can render
-// identical rows.
+// runtimeTableLayout is the column budget one runtime table was laid out
+// with: which optional columns survived the available width, and how wide
+// each surviving column ended up.
 type runtimeTableLayout struct {
 	nameWidth, statusWidth, clientsWidth, servicesWidth, uptimeWidth, pathWidth int
 	showClients, showUptime, showPath                                           bool
@@ -246,6 +240,12 @@ func runtimeRowHeader(width int) string {
 	return layout.columns("RUNTIME", "STATUS", "CLIENTS", "SERVICES", "UPTIME", "DIRECTORY")
 }
 
+// runtimeRowLine lays out one row within width, dropping the path and then
+// the client-surface detail before it would ever truncate the name or the
+// status word (PRD 3.2: "path and client surfaces shrink before name and
+// state"). It takes width explicitly rather than reading it off a *Model so
+// the bare-launch runtime picker, which has no Model, can render identical
+// rows.
 func runtimeRowLine(row runtimeRow, width int) string {
 	layout := newRuntimeTableLayout(width)
 	clients := runtimeRowSurfaceLabel(row)

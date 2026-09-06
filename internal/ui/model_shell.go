@@ -26,10 +26,11 @@ func (m *Model) openCommandShell() tea.Cmd {
 	})
 }
 
-func commandShell() (*exec.Cmd, func(), error) {
-	return commandShellInDirectory("")
-}
-
+// commandShellInDirectory builds the interactive shell handed the terminal
+// by Ctrl+O. An empty directory inherits the process's own working
+// directory; the dashboard always passes the current runtime's project
+// directory, which is not the process's own once the TUI has switched
+// runtimes.
 func commandShellInDirectory(directory string) (*exec.Cmd, func(), error) {
 	shell := strings.TrimSpace(os.Getenv("SHELL"))
 	if shell == "" {

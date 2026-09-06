@@ -56,7 +56,11 @@ func (p *RuntimePicker) Init() tea.Cmd {
 	return p.refresh()
 }
 
+// refresh starts one discovery round. Bumping the generation first makes any
+// still-running earlier round's result stale, so a slow probe cannot land on
+// top of a newer one.
 func (p *RuntimePicker) refresh() tea.Cmd {
+	p.generation++
 	generation := p.generation
 	registry := p.registry
 	clientVersion := p.clientVersion

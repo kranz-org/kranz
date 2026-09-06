@@ -125,6 +125,15 @@ func emptyProjectConfig(project string) *config.Config {
 	return &config.Config{Project: project, Services: map[string]config.Service{}}
 }
 
+// serviceProjectConfig gives a test runtime one service, which is what the
+// run-history half of the UI state needs: without a service there is no run
+// target to select a run within.
+func serviceProjectConfig(project, service string) *config.Config {
+	return &config.Config{Project: project, Services: map[string]config.Service{
+		service: {Command: "sleep 60", Dir: ".", Shell: "sh"},
+	}}
+}
+
 // switchTo drives the full PRD 3.3 algorithm (discover, select, dial,
 // handshake, install) against a real target and fails the test if the
 // target never appears in discovery or the connection is refused.
@@ -155,10 +164,14 @@ func switchTo(t *testing.T, model *Model, target kranzruntime.SessionRecord) {
 
 func TestRuntimeSwitcherEndToEndSwitchesAndRestoresState(t *testing.T) {
 	registry := testRegistry(t)
-	alpha := startTestRuntime(t, registry, "switch-alpha", emptyProjectConfig("Alpha"), t.TempDir())
+	alpha := startTestRuntime(t, registry, "switch-alpha", serviceProjectConfig("Alpha", "api"), t.TempDir())
 	beta := startTestRuntime(t, registry, "switch-beta", emptyProjectConfig("Beta"), t.TempDir())
 
 	model := newSwitchableTestModel(t, registry, alpha, ModelOptions{})
+	if err := alpha.client.StartServicesContext(context.Background(), []string{"api"}); err != nil {
+		t.Fatalf("start api: %v", err)
+	}
+	model.refreshRunSummaries()
 	if model.cfg.Project != "Alpha" {
 		t.Fatalf("initial project = %q, want Alpha", model.cfg.Project)
 	}
@@ -168,6 +181,13 @@ func TestRuntimeSwitcherEndToEndSwitchesAndRestoresState(t *testing.T) {
 	// restore it on return, is unambiguous.
 	model.panelFocus = panelDetails
 	model.wrapLogs = true
+	// The run half of PRD 3.4's field list: which run is open, and where its
+	// output is scrolled. Both are derived state elsewhere in the model, so
+	// they are the parts a restore is most likely to quietly drop.
+	model.syncRunTarget()
+	model.runMode, model.selectedRun, model.runFollowsLatest = runViewSingle, 1, false
+	alphaViewport := model.runViewportKey()
+	model.runViewports[alphaViewport] = runViewportState{Offset: 17, Anchor: 4}
 	model.operation = "Starting alpha"
 	oldOperationCanceled := false
 	model.operationCancel = func() { oldOperationCanceled = true }
@@ -213,6 +233,14 @@ func TestRuntimeSwitcherEndToEndSwitchesAndRestoresState(t *testing.T) {
 	}
 	if model.panelFocus != panelDetails || !model.wrapLogs {
 		t.Fatalf("alpha's UI state was not restored on return: panelFocus=%v wrapLogs=%v", model.panelFocus, model.wrapLogs)
+	}
+	if model.runTarget != app.ServiceRunTarget("api") || model.runMode != runViewSingle || model.selectedRun != 1 {
+		t.Fatalf("alpha's run selection was not restored: target=%#v runMode=%v selectedRun=%d",
+			model.runTarget, model.runMode, model.selectedRun)
+	}
+	if model.logOffset != 17 || model.logAnchor != 4 {
+		t.Fatalf("alpha's run history scroll position was not restored: offset=%d anchor=%d",
+			model.logOffset, model.logAnchor)
 	}
 
 	switchTo(t, model, beta.record)

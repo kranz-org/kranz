@@ -130,10 +130,12 @@ and `started` for another available runtime. `CLIENTS` lists the unique client
 surfaces connected to it (for example `TUI · MCP`) without counts, while
 `SERVICES` shows running/total in the same `3/5` form as `kranz ps`. A runtime
 running an incompatible protocol version, or one the switcher cannot currently
-reach, is shown greyed out with the reason and cannot be selected; in a narrow
-terminal the directory, uptime, and client detail give way before the runtime
-name or status. Mouse clicks move the selection the same way arrow keys do,
-and a second click on the same row within the usual double-click window
+reach, is shown greyed out and cannot be selected; selecting it spells the
+reason out under the list. In a narrow terminal the directory is dropped
+first, then the client surfaces shorten, then the runtime name; `UPTIME` and
+`CLIENTS` disappear only after that, and `STATUS` and `SERVICES` are the last
+to give up any width. Mouse clicks move the selection the same way arrow keys
+do, and a second click on the same row within the usual double-click window
 connects to it.
 
 The runtime and Run history modals keep a small dashboard gutter instead of

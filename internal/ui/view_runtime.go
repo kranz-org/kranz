@@ -42,13 +42,25 @@ func (m *Model) renderRuntimeSwitcherView() string {
 // renderRuntimeRowLines renders a windowed, cursor-highlighted list of rows
 // shared by the switcher, the recovery screen's "choose running runtime",
 // and the bare-launch runtime picker (none of which share a common *Model).
+// The status column only has room for the state word, so when the cursor is
+// on a row that cannot be selected, the reason behind that word is spelled
+// out on its own line below the list (PRD 3.2: an unavailable runtime stays
+// visible and explains why it is unavailable).
 func renderRuntimeRowLines(rows []runtimeRow, cursor int, capacity int, width int) []string {
 	if len(rows) == 0 {
 		return nil
 	}
 	rowWidth := max(8, width-2)
-	start, visible, windowed := runListWindow(len(rows), cursor, max(1, capacity-1))
-	lines := make([]string, 0, visible+2)
+	reason := ""
+	if cursor >= 0 && cursor < len(rows) {
+		reason = rows[cursor].Reason
+	}
+	listCapacity := max(1, capacity-1) // the header row
+	if reason != "" {
+		listCapacity = max(1, listCapacity-1)
+	}
+	start, visible, windowed := runListWindow(len(rows), cursor, listCapacity)
+	lines := make([]string, 0, visible+3)
 	lines = append(lines, "  "+HelpSectionStyle.Render(runtimeRowHeader(rowWidth)))
 	for index := start; index < start+visible; index++ {
 		row := rows[index]
@@ -63,6 +75,9 @@ func renderRuntimeRowLines(rows []runtimeRow, cursor int, capacity int, width in
 	}
 	if windowed {
 		lines = append(lines, "  "+ContextBarStyle.Render(fmt.Sprintf("%d/%d", cursor+1, len(rows))))
+	}
+	if reason != "" {
+		lines = append(lines, "  "+ContextBarStyle.Render(ansi.Truncate(reason, rowWidth, "…")))
 	}
 	return lines
 }

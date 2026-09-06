@@ -985,7 +985,7 @@ func TestZshCommandShellBindsCtrlOAndPreservesEnvironment(t *testing.T) {
 	}
 	t.Setenv("SHELL", "/bin/zsh")
 	t.Setenv("ZDOTDIR", "/tmp/user-zdotdir")
-	command, cleanup, err := commandShell()
+	command, cleanup, err := commandShellInDirectory("")
 	if err != nil {
 		t.Fatal(err)
 	}

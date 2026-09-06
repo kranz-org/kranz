@@ -24,11 +24,39 @@ func rowFor(id, name string, startedAt time.Time, current bool, state kranzrunti
 	case kranzruntime.SessionRunning:
 		row.Selectable = !current
 	case kranzruntime.SessionIncompatible:
-		row.Reason = "incompatible protocol version"
+		row.Reason = "This runtime speaks a different protocol version. Update Kranz to attach to it."
 	case kranzruntime.SessionUnreachable:
-		row.Reason = "unreachable"
+		row.Reason = "This runtime is registered but is not answering. The list keeps retrying it."
 	}
 	return row
+}
+
+// TestSwitcherShowsWhyTheSelectedRowCannotBeSelected covers PRD 3.2's
+// requirement that an unavailable runtime stays visible *and* explains why:
+// the status column only fits the state word, so the reason belongs on
+// screen too rather than only in the row struct.
+func TestSwitcherShowsWhyTheSelectedRowCannotBeSelected(t *testing.T) {
+	model := newTestModel()
+	defer model.Shutdown()
+	model.width, model.height, model.ready = 100, 24, true
+	model.mode = ModeRuntimeSwitcher
+	incompatible := rowFor("bad", "old-runtime", time.Now(), false, kranzruntime.SessionIncompatible)
+	available := rowFor("ok", "new-runtime", time.Now(), false, kranzruntime.SessionRunning)
+	model.switcherRows = []runtimeRow{incompatible, available}
+
+	model.switcherCursor = 0
+	plain := ansi.Strip(model.renderRuntimeSwitcherView())
+	if !strings.Contains(plain, "Update Kranz to attach to it") {
+		t.Fatalf("switcher does not explain why the selected row is disabled:\n%s", plain)
+	}
+
+	// A selectable row has nothing to explain, so the line goes away again
+	// instead of leaving a stale reason under the list.
+	model.switcherCursor = 1
+	plain = ansi.Strip(model.renderRuntimeSwitcherView())
+	if strings.Contains(plain, "Update Kranz to attach to it") {
+		t.Fatalf("a disabled row's reason survived moving to a selectable row:\n%s", plain)
+	}
 }
 
 func TestSortRuntimeRowsPutsCurrentFirstThenNewestThenStableTiebreak(t *testing.T) {
