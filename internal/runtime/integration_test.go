@@ -259,6 +259,20 @@ func TestRunCatalogPreservesConnectionProvenanceAcrossRPC(t *testing.T) {
 	}
 }
 
+func TestSupervisorSanitizesClientIdentity(t *testing.T) {
+	client, cleanup := startTestSupervisorIdentity(t, &config.Config{Project: "Identity"}, nil,
+		ClientIdentity{Surface: "tu\x1bi", Label: "dashboard\n" + strings.Repeat("x", 100)})
+	defer cleanup()
+
+	clients, err := client.Clients()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(clients) != 1 || clients[0].Surface != "tui" || strings.ContainsAny(clients[0].Label, "\x1b\r\n") || len([]rune(clients[0].Label)) > 80 {
+		t.Fatalf("sanitized client identity = %#v", clients)
+	}
+}
+
 func TestDeleteRunCrossesRPCWithTypedErrors(t *testing.T) {
 	cfg := &config.Config{Project: "RPC delete", ActionGroups: map[string]config.ActionGroup{
 		"ops": {Actions: map[string]config.Action{"ping": {Command: "echo pong", Shell: "/bin/sh"}}},

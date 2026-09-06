@@ -37,6 +37,12 @@ type Client struct {
 	pendingMu sync.Mutex
 	pending   map[uint64]chan envelope
 
+	// inFlight counts requests currently between send and reply on this
+	// connection. CloseAfterIdle waits on it so retiring a client a TUI has
+	// switched away from never aborts an operation the supervisor already
+	// accepted (PRD: a switch must not cancel supervisor-owned work).
+	inFlight sync.WaitGroup
+
 	readErr   atomic.Value // error
 	closeOnce sync.Once
 	closeErr  error
@@ -156,6 +162,44 @@ func (c *Client) Close() error {
 
 func (c *Client) Done() <-chan struct{} { return c.done }
 
+// Retain reserves this connection for work that has been scheduled by a
+// caller but may not have entered roundTrip yet. The returned release must be
+// called exactly once. Runtime switching uses this boundary before handing a
+// command to Bubble Tea, so CloseAfterIdle cannot observe a transient zero and
+// close the old socket before that command's goroutine starts.
+func (c *Client) Retain() func() {
+	c.inFlight.Add(1)
+	var once sync.Once
+	return func() { once.Do(c.inFlight.Done) }
+}
+
+// CloseAfterIdle closes the connection once every retained or in-flight
+// request on it has returned, or after timeout, whichever comes first. A
+// non-positive timeout waits without a deadline. It
+// does not wait for or cancel anything itself — the goroutine that issued
+// each in-flight call is already waiting on its own result independent of
+// this client's lifetime — it only defers the socket teardown so a reply
+// already accepted by the supervisor is never lost to a closed connection.
+// The timeout is a backstop against a wedged call, not the expected path.
+func (c *Client) CloseAfterIdle(timeout time.Duration) {
+	idle := make(chan struct{})
+	go func() {
+		c.inFlight.Wait()
+		close(idle)
+	}()
+	go func() {
+		if timeout > 0 {
+			select {
+			case <-idle:
+			case <-time.After(timeout):
+			}
+		} else {
+			<-idle
+		}
+		_ = c.Close()
+	}()
+}
+
 func (c *Client) readLoop() {
 	defer c.doneOnce.Do(func() { close(c.done) })
 	for {
@@ -186,6 +230,8 @@ func (c *Client) failAllPending(err error) {
 // roundTrip sends one request and returns its response body, or the
 // reconstructed error if the server answered with one.
 func (c *Client) roundTrip(ctx context.Context, method string, reqBody []byte) (json.RawMessage, error) {
+	c.inFlight.Add(1)
+	defer c.inFlight.Done()
 	id := c.idSeq.Add(1)
 	replyCh := make(chan envelope, 1)
 	c.pendingMu.Lock()

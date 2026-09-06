@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 
 	"github.com/kranz-org/kranz/internal/app"
 	"github.com/kranz-org/kranz/internal/config"
@@ -378,8 +379,30 @@ func (s *Supervisor) handshake(c *codec) (service.RunProvenance, ClientInfo, boo
 	if c.send(envelope{Type: messageResponse, ID: msg.ID, Body: body}) != nil {
 		return service.RunProvenance{}, ClientInfo{}, false
 	}
-	info := ClientInfo{Surface: req.Surface, Label: req.ClientLabel, PID: req.ClientPID, Version: req.ClientVersion, ConnectedAt: time.Now()}
-	return service.RunProvenance{Surface: req.Surface, ClientLabel: req.ClientLabel}, info, true
+	surface := sanitizeClientIdentityText(req.Surface, 32)
+	if surface == "" {
+		surface = "unknown"
+	}
+	label := sanitizeClientIdentityText(req.ClientLabel, 80)
+	info := ClientInfo{Surface: surface, Label: label, PID: req.ClientPID, Version: req.ClientVersion, ConnectedAt: time.Now()}
+	return service.RunProvenance{Surface: surface, ClientLabel: label}, info, true
+}
+
+// sanitizeClientIdentityText keeps untrusted handshake metadata safe for TUI
+// rows, logs, and CLI tables. Control and formatting code points cannot reach
+// a terminal, and a peer cannot grow a row without bound.
+func sanitizeClientIdentityText(value string, maxRunes int) string {
+	clean := make([]rune, 0, min(len([]rune(value)), maxRunes))
+	for _, char := range value {
+		if unicode.IsControl(char) || unicode.In(char, unicode.Cf, unicode.Zl, unicode.Zp) {
+			continue
+		}
+		clean = append(clean, char)
+		if len(clean) == maxRunes {
+			break
+		}
+	}
+	return string(clean)
 }
 
 func (s *Supervisor) dispatch(ctx context.Context, c *codec, msg envelope, leases *connectionLeases) {

@@ -59,6 +59,11 @@ type SessionRecord struct {
 	// Clients counts the connections the runtime is serving, nil when it could
 	// not be reached. The listing probe is itself one of them and is excluded.
 	Clients *int `json:"clients"`
+	// ClientSurfaces lists the unique delivery-surface labels (for example
+	// "tui", "mcp") currently connected, excluding the listing probe itself
+	// and the background owner connection a detached runtime keeps for its
+	// own ownership bookkeeping. Nil when the runtime could not be reached.
+	ClientSurfaces []string `json:"client_surfaces"`
 }
 
 type Registry struct {
@@ -339,16 +344,48 @@ func atomicJSON(path string, value any) error {
 	return os.Rename(tmpName, path)
 }
 
+// registryProbeSurface identifies the transient connection List/Resolve opens
+// to inspect each session. It is deliberately distinct from every real
+// delivery surface ("tui", "cli", "mcp", ...) so it can be excluded from
+// client-facing counts and labels by identity rather than by a fragile
+// off-by-one assumption.
+const registryProbeSurface = "probe"
+
+// backgroundOwnerSurface is the connection a detached runtime's owning
+// process keeps open for the lifetime of the runtime to record ownership
+// snapshots. It is infrastructure, not a delivery surface a person or agent
+// is using, so it is excluded the same way the probe is.
+const backgroundOwnerSurface = "background"
+
+// registryProbeConcurrency keeps discovery responsive when one registered
+// socket is slow without opening an unbounded number of connections when a
+// user has many runtimes.
+const registryProbeConcurrency = 8
+
 func (r *Registry) List(ctx context.Context, clientVersion string) ([]SessionRecord, error) {
-	return r.list(ctx, clientVersion, false)
+	return r.list(ctx, clientVersion, false, "", 0)
 }
 
-func (r *Registry) list(ctx context.Context, clientVersion string, includeStale bool) ([]SessionRecord, error) {
+// ListForSwitcher lists sessions the same way List does, additionally
+// excluding one caller connection identified by (selfSurface, selfPID) from
+// the computed client surfaces of whichever session it happens to be
+// connected to. A TUI passes its own surface and PID so its own dashboard
+// connection to the current runtime does not inflate that runtime's own row;
+// the exclusion is a no-op for every other session, since a caller can only
+// ever be connected, under its own PID, to the one runtime it is attached to.
+func (r *Registry) ListForSwitcher(ctx context.Context, clientVersion, selfSurface string, selfPID int) ([]SessionRecord, error) {
+	return r.list(ctx, clientVersion, false, selfSurface, selfPID)
+}
+
+func (r *Registry) list(ctx context.Context, clientVersion string, includeStale bool, excludeSurface string, excludePID int) ([]SessionRecord, error) {
 	paths, err := filepath.Glob(filepath.Join(r.root, "*.json"))
 	if err != nil {
 		return nil, err
 	}
 	records := make([]SessionRecord, 0, len(paths))
+	var recordsMu sync.Mutex
+	var probes sync.WaitGroup
+	probeSlots := make(chan struct{}, registryProbeConcurrency)
 	for _, path := range paths {
 		if strings.HasSuffix(path, ".ownership.json") {
 			continue
@@ -362,10 +399,39 @@ func (r *Registry) list(ctx context.Context, clientVersion string, includeStale 
 		if probeErr != nil {
 			continue
 		}
-		record := SessionRecord{SessionMetadata: metadata, State: SessionUnreachable}
-		client, dialErr := DialContext(ctx, metadata.Socket, clientVersion)
-		if dialErr == nil {
-			snapshots := client.Services()
+		probes.Add(1)
+		go func(path string, metadata SessionMetadata, locked bool) {
+			defer probes.Done()
+			probeSlots <- struct{}{}
+			defer func() { <-probeSlots }()
+			record, keep := r.probeRecord(ctx, path, metadata, locked, clientVersion, includeStale, excludeSurface, excludePID)
+			if !keep {
+				return
+			}
+			recordsMu.Lock()
+			records = append(records, record)
+			recordsMu.Unlock()
+		}(path, metadata, locked)
+	}
+	probes.Wait()
+	sort.Slice(records, func(i, j int) bool { return records[i].Name < records[j].Name })
+	return records, nil
+}
+
+func (r *Registry) probeRecord(ctx context.Context, path string, metadata SessionMetadata, locked bool, clientVersion string, includeStale bool, excludeSurface string, excludePID int) (SessionRecord, bool) {
+	record := SessionRecord{SessionMetadata: metadata, State: SessionUnreachable}
+	client, dialErr := DialContextWithIdentity(ctx, metadata.Socket, clientVersion,
+		ClientIdentity{Surface: registryProbeSurface, Label: "Kranz runtime discovery"})
+	if dialErr == nil {
+		// Client inspection methods predate context-aware discovery. Closing the
+		// probe on cancellation makes their background RPCs obey the caller's
+		// list deadline as one unit.
+		stopClose := context.AfterFunc(ctx, func() { _ = client.Close() })
+		snapshots := client.Services()
+		connected, clientsErr := client.Clients()
+		stopClose()
+		_ = client.Close()
+		if ctx.Err() == nil && clientsErr == nil {
 			count := len(snapshots)
 			running := 0
 			for _, snapshot := range snapshots {
@@ -375,33 +441,48 @@ func (r *Registry) list(ctx context.Context, clientVersion string, includeStale 
 			}
 			record.Services, record.Running = &count, &running
 			record.State = SessionRunning
-			if connected, clientsErr := client.Clients(); clientsErr == nil {
-				// This probe holds one of those connections; reporting it would
-				// tell every reader a runtime nobody uses has one client.
-				others := max(0, len(connected)-1)
-				record.Clients = &others
+			others := 0
+			seen := make(map[string]bool, len(connected))
+			surfaces := make([]string, 0, len(connected))
+			for _, info := range connected {
+				if info.Surface == registryProbeSurface || info.Surface == backgroundOwnerSurface {
+					continue
+				}
+				if excludeSurface != "" && info.Surface == excludeSurface && info.PID == excludePID {
+					continue
+				}
+				others++
+				if !seen[info.Surface] {
+					seen[info.Surface] = true
+					surfaces = append(surfaces, info.Surface)
+				}
 			}
-			_ = client.Close()
+			sort.Strings(surfaces)
+			record.Clients = &others
+			record.ClientSurfaces = surfaces
 		} else {
-			var mismatch *VersionMismatchError
-			if errors.As(dialErr, &mismatch) {
-				record.State = SessionIncompatible
+			dialErr = clientsErr
+			if dialErr == nil {
+				dialErr = ctx.Err()
 			}
 		}
-		if !locked && dialErr != nil && record.State == SessionUnreachable {
-			_ = os.Remove(metadata.Socket)
-			_ = os.Remove(path)
-			_ = os.Remove(r.ownershipPath(metadata.Name))
-			if includeStale {
-				record.State = SessionStale
-				records = append(records, record)
-			}
-			continue
+	} else {
+		var mismatch *VersionMismatchError
+		if errors.As(dialErr, &mismatch) {
+			record.State = SessionIncompatible
 		}
-		records = append(records, record)
 	}
-	sort.Slice(records, func(i, j int) bool { return records[i].Name < records[j].Name })
-	return records, nil
+	if !locked && dialErr != nil && record.State == SessionUnreachable {
+		_ = os.Remove(metadata.Socket)
+		_ = os.Remove(path)
+		_ = os.Remove(r.ownershipPath(metadata.Name))
+		if includeStale {
+			record.State = SessionStale
+			return record, true
+		}
+		return SessionRecord{}, false
+	}
+	return record, true
 }
 
 // Resolve accepts an exact NAME, a full ID, or a unique ID prefix.
@@ -418,7 +499,7 @@ func (r *Registry) Resolve(ctx context.Context, reference, clientVersion string)
 // fallback for that launch instead of silently converting stale evidence into
 // "not found" and racing an unproven supervisor.
 func (r *Registry) ResolveForAttach(ctx context.Context, reference, clientVersion string) (SessionRecord, error) {
-	records, err := r.list(ctx, clientVersion, true)
+	records, err := r.list(ctx, clientVersion, true, "", 0)
 	if err != nil {
 		return SessionRecord{}, err
 	}
