@@ -6,6 +6,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	kranzruntime "github.com/kranz-org/kranz/internal/runtime"
 )
@@ -107,6 +109,31 @@ func TestRuntimeTableSeparatesStatusClientsAndServices(t *testing.T) {
 	for _, value := range []string{"shop", "started", "MCP · TUI", "3/5"} {
 		if !strings.Contains(line, value) {
 			t.Fatalf("runtime row is missing %q: %q", value, line)
+		}
+	}
+}
+
+func TestRuntimeSwitcherFitsNarrowTerminalWithoutLosingCoreControls(t *testing.T) {
+	model := newTestModel()
+	defer model.Shutdown()
+	model.width, model.height, model.ready = 62, 18, true
+	model.mode = ModeRuntimeSwitcher
+	row := rowFor("s", "shop", time.Now(), false, kranzruntime.SessionRunning)
+	row.Record.ClientSurfaces = []string{"mcp", "tui"}
+	services, running := 5, 3
+	row.Record.Services, row.Record.Running = &services, &running
+	model.switcherRows = []runtimeRow{row}
+
+	rendered := model.renderRuntimeSwitcherView()
+	plain := ansi.Strip(rendered)
+	for _, expected := range []string{"RUNTIME", "STATUS", "CLIENTS", "SERVICES", "shop", "started", "MCP", "3/5", "[Enter] Connect", "[Esc] Cancel"} {
+		if !strings.Contains(plain, expected) {
+			t.Fatalf("narrow runtime modal lost %q:\n%s", expected, plain)
+		}
+	}
+	for index, line := range strings.Split(rendered, "\n") {
+		if width := lipgloss.Width(line); width > model.width {
+			t.Fatalf("narrow runtime modal row %d is %d cells wide in a %d-cell terminal", index, width, model.width)
 		}
 	}
 }

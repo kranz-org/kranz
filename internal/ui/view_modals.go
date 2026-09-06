@@ -790,6 +790,66 @@ func renderModalShortcuts(value string, textStyle lipgloss.Style) string {
 	return result.String()
 }
 
+// flushModalContentWidth leaves room for the flush modal's own padding and a
+// small strip of dimmed dashboard on either side. preferred keeps list modals
+// readable on a very wide terminal instead of turning them into full-screen
+// tables.
+func flushModalContentWidth(terminalWidth, preferred int) int {
+	const flushChromeAndGutters = 10
+	return max(8, min(preferred, terminalWidth-flushChromeAndGutters))
+}
+
+// renderModalShortcutRows wraps controls only between complete key/action
+// groups. A narrow modal therefore gains another footer row instead of
+// cutting a key binding or its label in half.
+func renderModalShortcutRows(groups []string, width int, textStyle lipgloss.Style) []string {
+	const indent = "  "
+	rows := make([]string, 0, 2)
+	current := indent
+	for _, group := range groups {
+		if group == "" {
+			continue
+		}
+		if lipgloss.Width(indent+group) > width {
+			if current != indent {
+				rows = append(rows, renderModalShortcuts(current, textStyle))
+				current = indent
+			}
+			wrappedGroup := ansi.Hardwrap(ansi.Wordwrap(indent+group, width, ""), width, true)
+			for _, wrapped := range strings.Split(wrappedGroup, "\n") {
+				rows = append(rows, renderModalShortcuts(wrapped, textStyle))
+			}
+			continue
+		}
+		candidate := current
+		if candidate != indent {
+			candidate += "  "
+		}
+		candidate += group
+		if current != indent && lipgloss.Width(candidate) > width {
+			rows = append(rows, renderModalShortcuts(current, textStyle))
+			current = indent + group
+			continue
+		}
+		current = candidate
+	}
+	if current != indent {
+		rows = append(rows, renderModalShortcuts(current, textStyle))
+	}
+	return rows
+}
+
+func modalTextRows(value string, width int) []string {
+	const indent = "  "
+	available := max(1, width-lipgloss.Width(indent))
+	wrapped := ansi.Hardwrap(ansi.Wordwrap(value, available, ""), available, true)
+	parts := strings.Split(wrapped, "\n")
+	for index := range parts {
+		parts[index] = indent + parts[index]
+	}
+	return parts
+}
+
 func renderConfirmationModal(title string, bodyLines []string, actionLines ...string) string {
 	lines := []string{renderConfirmTitle(title)}
 	if len(bodyLines) > 0 {

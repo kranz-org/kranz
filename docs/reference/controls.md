@@ -136,6 +136,12 @@ name or status. Mouse clicks move the selection the same way arrow keys do,
 and a second click on the same row within the usual double-click window
 connects to it.
 
+The runtime and Run history modals keep a small dashboard gutter instead of
+growing to the full terminal width. When space is limited, their tables remove
+secondary columns and shorten cells before any horizontal clipping occurs.
+Shortcut groups wrap onto complete additional rows, and list windowing reserves
+those rows so the cursor and close action remain visible.
+
 Connecting is all-or-nothing: Kranz only switches once the new runtime has
 answered a handshake and handed over its configuration and current state. A
 failed connection leaves the previous runtime's dashboard exactly as it was,

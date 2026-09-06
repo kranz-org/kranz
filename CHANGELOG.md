@@ -32,6 +32,9 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ### Fixed
 
+- Runtime and run-history modals now fit narrow terminals by selecting compact
+  table columns, wrapping complete shortcut groups, and reserving the wrapped
+  footer's height instead of clipping content at the screen edge.
 - Supervisor client surfaces and labels are stripped of terminal control
   characters and length-limited before they reach runtime lists or logs.
 

@@ -407,6 +407,28 @@ func TestRunListWindowsLongHistoryIntoTheTerminal(t *testing.T) {
 	}
 }
 
+func TestRunListKeepsControlsAndCoreColumnsInNarrowTerminal(t *testing.T) {
+	model := newTestModel()
+	defer model.Shutdown()
+	model.width, model.height, model.ready = 46, 18, true
+	finishTestServiceRun(t, model, "api", 0, "done")
+	model.refreshServices()
+	model.openRunList()
+
+	rendered := model.renderRunListView()
+	plain := ansi.Strip(rendered)
+	for _, expected := range []string{"RUN", "STATUS", "#1", "[Enter] Open run", "[Esc] Close"} {
+		if !strings.Contains(plain, expected) {
+			t.Fatalf("narrow run modal lost %q:\n%s", expected, plain)
+		}
+	}
+	for index, line := range strings.Split(rendered, "\n") {
+		if width := lipgloss.Width(line); width > model.width {
+			t.Fatalf("narrow run modal row %d is %d cells wide in a %d-cell terminal", index, width, model.width)
+		}
+	}
+}
+
 func TestRunListClickSelectsTheClickedRunNotItsPrefix(t *testing.T) {
 	model := newTestModel()
 	defer model.Shutdown()

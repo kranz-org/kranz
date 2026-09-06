@@ -189,25 +189,30 @@ func (p *RuntimePicker) View() string {
 	if !p.ready {
 		return ""
 	}
-	lines := []string{
-		ModalTitleStyle.Render(" Kranz "),
-		"",
-		"  No Kranz configuration was found in this directory.",
-		"  Choose a local runtime to attach to, or press q to quit.",
-		"",
-	}
+	contentWidth := flushModalContentWidth(p.width, 110)
+	shortcutRows := renderModalShortcutRows([]string{"[↑/↓ · j/k] Select", "[Enter] Connect", "[q] Quit"}, contentWidth, lipgloss.NewStyle().Foreground(ColorDim))
+	lines := []string{ModalTitleStyle.Render(" Kranz "), ""}
+	lines = append(lines, modalTextRows("No Kranz configuration was found in this directory.", contentWidth)...)
+	lines = append(lines, modalTextRows("Choose a local runtime to attach to, or press q to quit.", contentWidth)...)
+	lines = append(lines, "")
 	if p.errText != "" {
-		lines = append(lines, ContextBarStyle.Render("  "+p.errText), "")
+		for _, line := range modalTextRows(p.errText, contentWidth) {
+			lines = append(lines, ContextBarStyle.Render(line))
+		}
+		lines = append(lines, "")
 	} else if p.loading && len(p.rows) == 0 {
-		lines = append(lines, "  Discovering local runtimes…", "")
+		lines = append(lines, modalTextRows("Discovering local runtimes…", contentWidth)...)
+		lines = append(lines, "")
 	}
-	rowLines := renderRuntimeRowLines(p.rows, p.cursor, capacityForHeight(p.height, len(lines)), p.width)
+	rowLines := renderRuntimeRowLines(p.rows, p.cursor,
+		capacityForHeight(p.height, len(lines)+max(0, len(shortcutRows)-1)), contentWidth)
 	if len(rowLines) == 0 && p.errText == "" && !p.loading {
-		lines = append(lines, "  No local runtimes are registered")
+		lines = append(lines, modalTextRows("No local runtimes are registered", contentWidth)...)
 	} else {
 		lines = append(lines, rowLines...)
 	}
-	lines = append(lines, "", runtimeModalShortcuts("  [↑/↓ · j/k] Select  [Enter] Connect  [q] Quit"))
+	lines = append(lines, "")
+	lines = append(lines, shortcutRows...)
 	// The picker has no dashboard to overlay, so it centres the same modal on
 	// an empty canvas instead of calling placeOverlay. The chrome, the row
 	// rendering, and the shortcut strip are the ones the in-dashboard

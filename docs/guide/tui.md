@@ -117,6 +117,11 @@ runtime registered on this machine — current runtime first — and press
 `Enter` on another one to attach to it in the same process. `Esc` closes the
 modal without changing anything.
 
+Runtime and Run history tables adapt to the terminal width. Wide terminals
+show their complete detail; narrower ones remove secondary columns first and
+wrap shortcut groups onto additional footer rows, keeping the selection and
+close controls visible without horizontal clipping.
+
 Each runtime you visit keeps its own selection, log filters, pinned log, and
 scroll position for as long as this TUI process runs, so returning to one
 looks exactly as you left it. Switching never stops, restarts, or otherwise

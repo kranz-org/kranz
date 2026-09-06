@@ -447,26 +447,131 @@ func (m *Model) handleRunListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+type runListColumn struct {
+	key, label string
+	width      int
+}
+
+func runListTableWidth(columns []runListColumn) int {
+	width := max(0, 2*(len(columns)-1))
+	for _, column := range columns {
+		width += column.width
+	}
+	return width
+}
+
+func newRunListLayout(width int) []runListColumn {
+	base := map[string]runListColumn{
+		"run":       {key: "run", label: "RUN", width: 5},
+		"status":    {key: "status", label: "STATUS", width: 10},
+		"start":     {key: "start", label: "START", width: 8},
+		"duration":  {key: "duration", label: "DURATION", width: 10},
+		"exit":      {key: "exit", label: "EXIT", width: 6},
+		"reason":    {key: "reason", label: "REASON", width: 14},
+		"initiator": {key: "initiator", label: "INITIATOR", width: 14},
+		"output":    {key: "output", label: "OUTPUT", width: 10},
+	}
+	selected := map[string]bool{"run": true, "status": true, "duration": true, "output": true}
+	ordered := []string{"run", "status", "start", "duration", "exit", "reason", "initiator", "output"}
+	columns := func() []runListColumn {
+		result := make([]runListColumn, 0, len(ordered))
+		for _, key := range ordered {
+			if selected[key] {
+				result = append(result, base[key])
+			}
+		}
+		return result
+	}
+
+	for _, key := range []string{"exit", "start", "reason", "initiator"} {
+		selected[key] = true
+		if runListTableWidth(columns()) > width {
+			selected[key] = false
+		}
+	}
+	if runListTableWidth(columns()) <= width {
+		return columns()
+	}
+
+	for _, adjustment := range []struct {
+		key   string
+		floor int
+	}{{"output", 6}, {"status", 8}, {"duration", 8}} {
+		if runListTableWidth(columns()) <= width {
+			break
+		}
+		column := base[adjustment.key]
+		column.width = max(adjustment.floor, column.width-(runListTableWidth(columns())-width))
+		base[adjustment.key] = column
+	}
+	if runListTableWidth(columns()) > width {
+		delete(selected, "duration")
+	}
+	if runListTableWidth(columns()) > width {
+		delete(selected, "output")
+	}
+	for _, adjustment := range []struct {
+		key   string
+		floor int
+	}{{"status", 4}, {"run", 3}} {
+		if runListTableWidth(columns()) <= width {
+			break
+		}
+		column := base[adjustment.key]
+		column.width = max(adjustment.floor, column.width-(runListTableWidth(columns())-width))
+		base[adjustment.key] = column
+	}
+	return columns()
+}
+
+func renderRunListColumns(layout []runListColumn, values map[string]string) string {
+	columns := make([]string, 0, len(layout))
+	for _, column := range layout {
+		columns = append(columns, padOrTruncate(values[column.key], column.width))
+	}
+	return strings.Join(columns, "  ")
+}
+
 func (m *Model) renderRunListView() string {
 	runs := m.filteredRunList()
-	lines := []string{ModalTitleStyle.Render(" Run history · " + runTargetLabel(m.runTarget)), ""}
+	contentWidth := flushModalContentWidth(m.width, 104)
+	rowWidth := max(3, contentWidth-2)
+	layout := newRunListLayout(rowWidth)
+	shortcutGroups := []string{"[↑/↓] Select", "[Enter] Open run", "[d] Delete"}
+	if filters := m.runStatusFilters(); len(filters) > 1 {
+		filter := m.runStatusFilter
+		if filter == "" {
+			filter = runFilterAll
+		}
+		shortcutGroups = append(shortcutGroups, "[Tab] "+filter)
+	}
+	shortcutGroups = append(shortcutGroups, "[Esc] Close")
+	shortcutRows := renderModalShortcutRows(shortcutGroups, contentWidth, lipgloss.NewStyle().Foreground(ColorDim))
+	lines := []string{ansi.Truncate(ModalTitleStyle.Render(" Run history · "+runTargetLabel(m.runTarget)), contentWidth, "…"), ""}
 	// Retention is an exception report, not a permanent header. While nothing
 	// has been lost, the budgets only told the user that nothing had been lost,
 	// in ninety characters. They appear when they explain a gap.
 	if notice := m.runRetentionNotice(); notice != "" {
-		lines = append(lines, ContextBarStyle.Render("  "+notice), "")
+		for _, wrapped := range modalTextRows(notice, contentWidth) {
+			lines = append(lines, ContextBarStyle.Render(wrapped))
+		}
+		lines = append(lines, "")
 	}
 	if len(runs) == 0 {
-		lines = append(lines, "  No runs match this filter")
+		lines = append(lines, ansi.Truncate("  No runs match this filter", contentWidth, "…"))
 	} else {
-		lines = append(lines, DetailLabelStyle.Render(fmt.Sprintf("  %-5s %-10s  %-8s  %8s  %-8s  %-18s  %-18s  %s",
-			"RUN", "STATUS", "START", "DURATION", "EXIT", "REASON", "INITIATOR", "OUTPUT")))
+		header := make(map[string]string, len(layout))
+		for _, column := range layout {
+			header[column.key] = column.label
+		}
+		lines = append(lines, DetailLabelStyle.Render("  "+renderRunListColumns(layout, header)))
 	}
 	// A target retains up to RunRetention().MaxRuns summaries, far more than any
 	// terminal can show. Without a window the modal grew past m.height, the
 	// overlay clipped the bottom, and the cursor and the shortcut footer both
 	// vanished — the list looked frozen while the selection kept moving.
-	start, visible, windowed := runListWindow(len(runs), m.runListCursor, m.runListCapacity(len(lines)))
+	start, visible, windowed := runListWindow(len(runs), m.runListCursor,
+		m.runListCapacity(len(lines)+max(0, len(shortcutRows)-1)))
 	for index := start; index < start+visible; index++ {
 		run := runs[index]
 		exit := "-"
@@ -481,8 +586,12 @@ func (m *Model) renderRunListView() string {
 		if run.ClientLabel != "" {
 			initiator += ":" + run.ClientLabel
 		}
-		line := fmt.Sprintf("  %-5s %-10s  %-8s  %8s  %-8s  %-18s  %-18s  %s", fmt.Sprintf("#%d", run.Run), run.Status,
-			run.StartedAt.Local().Format("15:04:05"), duration.Round(time.Millisecond), exit, run.StartReason, initiator, run.Output.State)
+		values := map[string]string{
+			"run": fmt.Sprintf("#%d", run.Run), "status": run.Status,
+			"start": run.StartedAt.Local().Format("15:04:05"), "duration": duration.Round(time.Millisecond).String(),
+			"exit": exit, "reason": run.StartReason, "initiator": initiator, "output": string(run.Output.State),
+		}
+		line := "  " + renderRunListColumns(layout, values)
 		if index == m.runListCursor {
 			line = SelectionStyle.Render(line)
 		}
@@ -493,15 +602,8 @@ func (m *Model) renderRunListView() string {
 	}
 	// The filter belongs with the key that changes it. As its own header line it
 	// spent a row restating "all" on the common path where nothing is filtered.
-	shortcuts := "  [↑/↓] Select  [Enter] Open run  [d] Delete"
-	if filters := m.runStatusFilters(); len(filters) > 1 {
-		filter := m.runStatusFilter
-		if filter == "" {
-			filter = runFilterAll
-		}
-		shortcuts += "  [Tab] " + filter
-	}
-	lines = append(lines, "", renderModalShortcuts(shortcuts+"  [Esc] Close", lipgloss.NewStyle().Foreground(ColorDim)))
+	lines = append(lines, "")
+	lines = append(lines, shortcutRows...)
 	return m.placeOverlay(renderFlushModal(strings.Join(lines, "\n")))
 }
 
