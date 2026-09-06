@@ -58,6 +58,10 @@ func (m *Model) View() string {
 		content = m.renderRunExportView()
 	case ModeConfirmDeleteRun:
 		content = m.renderConfirmDeleteRunView()
+	case ModeRuntimeSwitcher:
+		content = m.renderRuntimeSwitcherView()
+	case ModeRuntimeLost:
+		content = m.renderRuntimeLostView()
 	default:
 		// The dashboard reports the size it assembled itself at, so the frame
 		// can skip the measuring pass that fits it to the terminal.

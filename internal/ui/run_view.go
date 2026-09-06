@@ -561,8 +561,15 @@ func formatBytes(bytes uint64) string {
 // rows already collected, the trailing blank and shortcut rows, and the modal's
 // own vertical padding are subtracted from the terminal height.
 func (m *Model) runListCapacity(headerLines int) int {
+	return capacityForHeight(m.height, headerLines)
+}
+
+// capacityForHeight is runListCapacity's underlying arithmetic, taken out so
+// a screen with no *Model — the bare-launch runtime picker — can size its
+// own list the same way the in-dashboard modals do.
+func capacityForHeight(height, headerLines int) int {
 	const trailingRows = 2 // the blank separator and the shortcut footer
-	return max(1, m.height-modalVerticalChrome-headerLines-trailingRows)
+	return max(1, height-modalVerticalChrome-headerLines-trailingRows)
 }
 
 // runListWindow centres a capacity-sized window on the cursor and reports

@@ -58,14 +58,16 @@ func (m *Model) scanFocusedPorts(force bool) tea.Cmd {
 	ports := append([]int(nil), svc.Config.Ports...)
 	m.portService = serviceName
 	m.portScanBusy = true
-	application := m.app
+	application, sessionGen := m.app, m.sessionGeneration
+	release := retainRuntimeApplication(application)
 	return func() tea.Msg {
+		defer release()
 		details, err := application.InspectPorts(ports)
 		if details == nil {
 			details = make(map[int]*config.PortInfo)
 		}
 		return portDetailsMsg{
-			id: scanID, service: serviceName, details: details, err: err, checked: time.Now(),
+			id: scanID, service: serviceName, details: details, err: err, checked: time.Now(), sessionGen: sessionGen,
 		}
 	}
 }
@@ -94,15 +96,17 @@ func (m *Model) handlePortConflictKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) releaseExternalPort(portNumber, expectedPID int) tea.Cmd {
-	application := m.app
+	application, sessionGen := m.app, m.sessionGeneration
+	release := retainRuntimeApplication(application)
 	return func() tea.Msg {
+		defer release()
 		alreadyFree, err := application.ReleaseExternalPort(portNumber, expectedPID)
 		if err != nil {
-			return releasePortResultMsg{port: portNumber, pid: expectedPID, err: err}
+			return releasePortResultMsg{port: portNumber, pid: expectedPID, err: err, sessionGen: sessionGen}
 		}
 		if alreadyFree {
-			return releasePortResultMsg{port: portNumber, pid: expectedPID, alreadyFree: true}
+			return releasePortResultMsg{port: portNumber, pid: expectedPID, alreadyFree: true, sessionGen: sessionGen}
 		}
-		return releasePortResultMsg{port: portNumber, pid: expectedPID}
+		return releasePortResultMsg{port: portNumber, pid: expectedPID, sessionGen: sessionGen}
 	}
 }

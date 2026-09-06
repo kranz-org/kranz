@@ -44,6 +44,7 @@ type KeyMap struct {
 	Cancel        key.Binding
 	Yes           key.Binding
 	No            key.Binding
+	Runtimes      key.Binding
 }
 
 // DefaultKeyMap returns Kranz's standard keyboard bindings.
@@ -196,6 +197,10 @@ func DefaultKeyMap() KeyMap {
 		No: key.NewBinding(
 			key.WithKeys("n", "esc"),
 			key.WithHelp("n", "no"),
+		),
+		Runtimes: key.NewBinding(
+			key.WithKeys("p"),
+			key.WithHelp("p", "switch runtime"),
 		),
 	}
 }

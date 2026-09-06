@@ -88,6 +88,16 @@ func TestQuitConfirmationCanStopOrDetachRuntime(t *testing.T) {
 	})
 }
 
+func TestQuitAlwaysConfirmsWhenRuntimeHasNoRunningServices(t *testing.T) {
+	model := NewModelWithOptions(&config.Config{Project: "Idle runtime"}, "test", ModelOptions{DetachOnExit: true})
+	defer model.Shutdown()
+
+	_, command := model.handleKeyMsg(keyMessage("q"))
+	if command != nil || model.mode != ModeConfirmQuit {
+		t.Fatalf("idle runtime quit = command %v, mode %v", command, model.mode)
+	}
+}
+
 func TestQuitConfirmationMouseCanDetach(t *testing.T) {
 	model := newTestModel()
 	model.detachOnExit = false

@@ -14,6 +14,7 @@ import (
 	"github.com/kranz-org/kranz/internal/app"
 	"github.com/kranz-org/kranz/internal/config"
 	kranzlog "github.com/kranz-org/kranz/internal/log"
+	kranzruntime "github.com/kranz-org/kranz/internal/runtime"
 	usersettings "github.com/kranz-org/kranz/internal/settings"
 )
 
@@ -38,6 +39,8 @@ const (
 	ModeRunList
 	ModeRunExport
 	ModeConfirmDeleteRun
+	ModeRuntimeSwitcher
+	ModeRuntimeLost
 )
 
 type runViewMode uint8
@@ -126,16 +129,18 @@ const (
 )
 
 type operationResultMsg struct {
-	id     int
-	kind   operationKind
-	target string
-	err    error
+	id         int
+	kind       operationKind
+	target     string
+	err        error
+	sessionGen uint64
 }
 
 type actionResultMsg struct {
-	id     config.ActionID
-	result app.ActionResult
-	err    error
+	id         config.ActionID
+	result     app.ActionResult
+	err        error
+	sessionGen uint64
 }
 
 type shutdownResultMsg struct{ err error }
@@ -161,22 +166,30 @@ type releasePortResultMsg struct {
 	pid         int
 	alreadyFree bool
 	err         error
+	sessionGen  uint64
 }
 type tickMsg time.Time
 
 type configReloadMsg struct {
-	result     app.ReloadResult
-	err        error
+	result app.ReloadResult
+	err    error
+	// generation is the *configuration* generation (app.ProjectSnapshot.
+	// Generation), used to detect whether the project itself changed.
 	generation uint64
 	changed    bool
+	// sessionGen is the runtime-session generation active when this reload
+	// was dispatched, guarding against a reload begun before a switch being
+	// applied to the dashboard of a different runtime after it.
+	sessionGen uint64
 }
 
 type portDetailsMsg struct {
-	id      int
-	service string
-	details map[int]*config.PortInfo
-	err     error
-	checked time.Time
+	id         int
+	service    string
+	details    map[int]*config.PortInfo
+	err        error
+	checked    time.Time
+	sessionGen uint64
 }
 
 // Model owns Kranz's Bubble Tea state and runtime service integrations.
@@ -335,6 +348,36 @@ type Model struct {
 	shutdownErr  error
 	detachOnExit bool
 	programReady func()
+
+	// Runtime switching. rpcClient is the same value as app when the model is
+	// attached to a real local supervisor over the wire; it is nil for tests
+	// and embedders that pass another app.API implementation, which makes
+	// every field and method below a no-op rather than a nil-pointer risk.
+	rpcClient          *kranzruntime.Client
+	registry           *kranzruntime.Registry
+	sessionID          string
+	sessionRecord      kranzruntime.SessionRecord
+	sessionConfigPaths []string
+	sessionGeneration  uint64
+	uiStateCache       map[string]runtimeUIState
+	restartRuntime     func(directory string, configPaths []string) error
+
+	switcherRows        []runtimeRow
+	switcherCursor      int
+	switcherLoading     bool
+	switcherErr         string
+	switcherGeneration  uint64
+	switcherRefreshBusy bool
+	lastSwitcherRefresh time.Time
+	switcherConnecting  string
+	switchSeq           uint64
+	exiting             bool
+
+	recoveryReason      string
+	recoveryBusy        bool
+	recoveryErr         string
+	recoveryShowingList bool
+	recoverySeq         uint64
 }
 
 // ModelOptions supplies user-level preferences and their persistence path.
@@ -359,6 +402,21 @@ type ModelOptions struct {
 	// It tells the mouse watchdog that this terminal announces the moment mouse
 	// mode needs restoring, so the frequent poll can stand down.
 	FocusReported func()
+	// SessionRecord is the registry record for the runtime App is attached to.
+	// It seeds the switcher's "current" row and is what Restart runtime uses
+	// after losing the connection. Zero for an App that is not a
+	// runtime.Client (tests, embedders).
+	SessionRecord kranzruntime.SessionRecord
+	// Registry is used to discover other local runtimes for the switcher. Nil
+	// disables the switcher and recovery screen entirely (no-op), which is
+	// what every test using a fake App wants; production passes
+	// runtime.DefaultRegistry().
+	Registry *kranzruntime.Registry
+	// RestartRuntime spawns a new background supervisor for the project at
+	// directory using configPaths, the same way the executable's normal
+	// bare-launch path does — argv only, never a shell string. Nil disables
+	// "Restart runtime" in the recovery screen (tests, embedders).
+	RestartRuntime func(directory string, configPaths []string) error
 }
 
 // NewModel creates a model with default user settings and terminal detection.
@@ -369,6 +427,9 @@ func NewModel(cfg *config.Config, version string) *Model {
 // NewModelWithOptions creates a model with resolved project/user appearance.
 func NewModelWithOptions(cfg *config.Config, version string, options ModelOptions) *Model {
 	workingDirectory, _ := os.Getwd()
+	if options.SessionRecord.Directory != "" {
+		workingDirectory = options.SessionRecord.Directory
+	}
 	terminalDark := true
 	if options.DarkBackground != nil {
 		terminalDark = *options.DarkBackground
@@ -384,6 +445,7 @@ func NewModelWithOptions(cfg *config.Config, version string, options ModelOption
 	}
 	services := application.Services()
 	project := application.Project()
+	rpcClient, _ := application.(*kranzruntime.Client)
 
 	model := &Model{
 		cfg:                 application.Config(),
@@ -431,6 +493,13 @@ func NewModelWithOptions(cfg *config.Config, version string, options ModelOption
 		notifications:       make([]config.Notification, 0),
 		conflictPorts:       make(map[int]*config.PortInfo),
 		configPaths:         append([]string(nil), options.ConfigPaths...),
+		rpcClient:           rpcClient,
+		registry:            options.Registry,
+		sessionID:           project.SessionID,
+		sessionRecord:       options.SessionRecord,
+		sessionConfigPaths:  append([]string(nil), project.ConfigPaths...),
+		uiStateCache:        make(map[string]runtimeUIState),
+		restartRuntime:      options.RestartRuntime,
 	}
 	if len(model.configPaths) == 0 {
 		model.configPaths = append([]string(nil), cfg.Paths...)
@@ -466,7 +535,8 @@ func (m *Model) Init() tea.Cmd {
 	}
 	// The tick is only the backstop; read the appearance once straight away so
 	// startup does not wait a whole interval for the first answer.
-	return tea.Batch(m.pollServices(), m.scanFocusedPorts(true), m.pollSystemAppearance(), m.probeSystemAppearance())
+	return tea.Batch(m.pollServices(), m.scanFocusedPorts(true), m.pollSystemAppearance(), m.probeSystemAppearance(),
+		m.watchCurrentClientDone())
 }
 
 func (m *Model) pollServices() tea.Cmd {
@@ -511,10 +581,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseMsg:
 		return m.handleMouseMsg(msg)
 	case operationResultMsg:
+		if msg.sessionGen != m.sessionGeneration {
+			return m, nil
+		}
 		return m.handleOperationResult(msg)
 	case actionResultMsg:
+		if msg.sessionGen != m.sessionGeneration {
+			return m, nil
+		}
 		return m.handleActionResult(msg)
 	case releasePortResultMsg:
+		if msg.sessionGen != m.sessionGeneration {
+			return m, nil
+		}
 		if msg.err != nil {
 			m.addNotification("port", msg.err.Error(), config.LogError)
 			return m, nil
@@ -572,7 +651,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.systemDark = msg.dark
 		return m, tea.Batch(poll, m.applyDetectedBackground(msg.dark, "System"))
 	case portDetailsMsg:
-		if msg.id != m.portScanID {
+		if msg.id != m.portScanID || msg.sessionGen != m.sessionGeneration {
 			return m, nil
 		}
 		m.portScanBusy = false
@@ -584,8 +663,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tickMsg:
-		m.refreshServices()
 		m.expireToast()
+		if m.mode == ModeRuntimeLost {
+			// The current connection is dead: do not poll it, but keep the
+			// tick chain alive and keep the switcher list fresh if the user
+			// opened "Choose running runtime" from recovery.
+			return m, tea.Batch(m.pollServices(), m.refreshRuntimeListIfVisible())
+		}
+		m.refreshServices()
 		if requested, _ := m.app.ProjectExitRequested(); requested && !m.projectExitHandled {
 			m.projectExitHandled = true
 			return m.beginShutdown()
@@ -594,6 +679,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pollServices(),
 			m.scanFocusedPorts(false),
 			m.reloadConfig(false),
+			m.refreshRuntimeListIfVisible(),
 		)
 	case searchNudgeMsg:
 		// Ignore a chain left over from an earlier click.
@@ -606,7 +692,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.scheduleSearchNudge(m.searchNudge)
 	case configReloadMsg:
+		if msg.sessionGen != m.sessionGeneration {
+			return m, nil
+		}
 		return m.handleConfigReload(msg)
+	case runtimeListMsg:
+		return m.handleRuntimeListMsg(msg)
+	case switchTargetMsg:
+		return m.handleSwitchTargetMsg(msg)
+	case currentRuntimeLostMsg:
+		return m.handleCurrentRuntimeLostMsg(msg)
+	case restartRuntimeMsg:
+		return m.handleRestartRuntimeMsg(msg)
 	default:
 		// textinput emits private follow-up messages for clipboard paste and
 		// cursor blinking. Feed them back to the component while the editor is

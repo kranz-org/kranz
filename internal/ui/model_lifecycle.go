@@ -158,8 +158,9 @@ func (m *Model) startSelectedService() (tea.Model, tea.Cmd) {
 		return m.beginServiceStartConfirmation([]string{svc.Name}, svc.Name, false)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	application := m.app
 	return m.beginCancelableOperation(operationStart, svc.Name, "Starting "+svc.Name, cancel, func() error {
-		return m.app.StartServicesContext(ctx, []string{svc.Name})
+		return application.StartServicesContext(ctx, []string{svc.Name})
 	})
 }
 
@@ -249,8 +250,9 @@ func (m *Model) toggleSelectedServices() (tea.Model, tea.Cmd) {
 		if m.requiresStopConfirmation(names) {
 			return m.beginServiceStopConfirmation(names, target, false)
 		}
+		application := m.app
 		return m.beginOperation(operationStopSet, target, "Stopping "+target, func() error {
-			return m.app.StopServices(names)
+			return application.StopServices(names)
 		})
 	}
 	for _, name := range names {
@@ -264,8 +266,9 @@ func (m *Model) toggleSelectedServices() (tea.Model, tea.Cmd) {
 		return m.beginServiceStartConfirmation(names, target, false)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	application := m.app
 	return m.beginCancelableOperation(operationStartSet, target, "Starting "+target, cancel, func() error {
-		return m.app.StartServicesContext(ctx, names)
+		return application.StartServicesContext(ctx, names)
 	})
 }
 
@@ -298,8 +301,9 @@ func (m *Model) forceToggleSelectedServices() (tea.Model, tea.Cmd) {
 		if m.requiresStopConfirmation(names) {
 			return m.beginServiceStopConfirmation(names, target, true)
 		}
+		application := m.app
 		return m.beginOperation(operationForceStop, target, "Force stopping "+target, func() error {
-			return m.app.ForceStopServices(names)
+			return application.ForceStopServices(names)
 		})
 	}
 	for _, name := range names {
@@ -312,8 +316,9 @@ func (m *Model) forceToggleSelectedServices() (tea.Model, tea.Cmd) {
 	if m.requiresStartConfirmation(names, false) {
 		return m.beginServiceStartConfirmation(names, target, true)
 	}
+	application := m.app
 	return m.beginOperation(operationForceStart, target, "Force starting "+target, func() error {
-		return m.app.ForceStartServices(names)
+		return application.ForceStartServices(names)
 	})
 }
 
@@ -335,13 +340,15 @@ func (m *Model) confirmServiceStart() (tea.Model, tea.Cmd) {
 	force := m.pendingStartForce
 	m.cancelServiceStartConfirmation()
 	if force {
+		application := m.app
 		return m.beginOperation(operationForceStart, target, "Force starting "+target, func() error {
-			return m.app.ForceStartServices(names)
+			return application.ForceStartServices(names)
 		})
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	application := m.app
 	return m.beginCancelableOperation(operationStartSet, target, "Starting "+target, cancel, func() error {
-		return m.app.StartServicesContext(ctx, names)
+		return application.StartServicesContext(ctx, names)
 	})
 }
 
@@ -404,12 +411,14 @@ func (m *Model) confirmServiceStop() (tea.Model, tea.Cmd) {
 		return m.beginOperation(operationStopAll, target, "Stopping all services", m.app.StopAll)
 	}
 	if force {
+		application := m.app
 		return m.beginOperation(operationForceStop, target, "Force stopping "+target, func() error {
-			return m.app.ForceStopServices(names)
+			return application.ForceStopServices(names)
 		})
 	}
+	application := m.app
 	return m.beginOperation(operationStopSet, target, "Stopping "+target, func() error {
-		return m.app.StopServices(names)
+		return application.StopServices(names)
 	})
 }
 
@@ -433,8 +442,9 @@ func (m *Model) handleConfirmServiceStopKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd
 
 func (m *Model) beginRestart(name string) (tea.Model, tea.Cmd) {
 	m.mode = ModeNormal
+	application := m.app
 	return m.beginOperation(operationRestart, name, "Restarting "+name, func() error {
-		return m.app.RestartService(name)
+		return application.RestartService(name)
 	})
 }
 
@@ -454,9 +464,11 @@ func (m *Model) beginCancelableOperation(kind operationKind, target, label strin
 	m.operationKind = kind
 	m.operationCancel = cancel
 	m.operationID++
-	operationID := m.operationID
+	operationID, sessionGen := m.operationID, m.sessionGeneration
+	release := retainRuntimeApplication(m.app)
 	return m, func() tea.Msg {
-		return operationResultMsg{id: operationID, kind: kind, target: target, err: operation()}
+		defer release()
+		return operationResultMsg{id: operationID, kind: kind, target: target, err: operation(), sessionGen: sessionGen}
 	}
 }
 
@@ -545,6 +557,11 @@ func (m *Model) beginExit(operation string) (tea.Model, tea.Cmd) {
 		m.operation = operation
 	}
 	m.mode = ModeNormal
+	// Freeze m.app from this point on: Shutdown() reads it on the goroutine
+	// this command spawns, and a switch installing a new session afterward
+	// would otherwise race that read and could shut down the wrong runtime.
+	// Every switch entry point checks m.exiting before touching m.app.
+	m.exiting = true
 	return m, func() tea.Msg { return shutdownResultMsg{err: m.Shutdown()} }
 }
 

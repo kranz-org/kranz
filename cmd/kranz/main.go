@@ -404,7 +404,12 @@ func runTUI(options kranzcli.GlobalOptions) (runErr error) {
 	if len(cfgPaths) == 0 {
 		cfgPaths, err = config.DiscoverFiles(".")
 		if err != nil {
-			return &kranzcli.Error{Code: "config_not_found", Message: "discover configuration", ExitCode: kranzcli.ExitConfig, Cause: err}
+			// Automatic discovery, not an explicitly named path, found
+			// nothing here: this is the one case where an already-running
+			// local runtime is worth offering instead of failing outright
+			// (PRD 3.1, Scenario C). An invalid configuration that WAS
+			// found is a different error, returned below unchanged.
+			return runBareWithoutConfig(options)
 		}
 	}
 	cfg, err := config.LoadFiles(cfgPaths)
@@ -430,7 +435,23 @@ func runTUI(options kranzcli.GlobalOptions) (runErr error) {
 	if activeConfig == nil {
 		return errors.New("runtime returned no effective configuration")
 	}
-	return runAttachedTUI(client, activeConfig)
+	return runAttachedTUI(client, activeConfig, record, options)
+}
+
+// makeRestartRuntime builds the "Restart runtime" callback for the recovery
+// screen: the exact background-launch mechanism the ordinary bare-launch
+// path already uses, aimed at a specific project directory and config paths
+// instead of the current working directory. It never builds a shell string;
+// spawnBackground always execs the Kranz binary with an explicit argv.
+func makeRestartRuntime(base kranzcli.GlobalOptions) func(directory string, configPaths []string) error {
+	return func(directory string, configPaths []string) error {
+		options := base
+		options.Directory = directory
+		options.ConfigPaths = configPaths
+		options.Project = ""
+		options.Output = kranzcli.OutputText
+		return spawnBackground(options, nil, true, io.Discard)
+	}
 }
 
 func resolveOrStartDashboardRuntime(options kranzcli.GlobalOptions, cfgPaths []string, runtimeName, directory string) (kranzruntime.SessionRecord, error) {

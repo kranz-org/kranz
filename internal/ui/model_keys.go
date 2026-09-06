@@ -11,6 +11,11 @@ import (
 
 func (m *Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+c" {
+		if m.mode == ModeRuntimeLost {
+			m.recoverySeq++
+			m.cancelPendingRuntimeSwitch()
+			return m.beginDetach()
+		}
 		return m.beginShutdown()
 	}
 	if key.Matches(msg, m.keys.Shell) {
@@ -53,6 +58,10 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleRunExportKeys(msg)
 	case ModeConfirmDeleteRun:
 		return m.handleConfirmDeleteRunKeys(msg)
+	case ModeRuntimeSwitcher:
+		return m.handleRuntimeSwitcherKeys(msg)
+	case ModeRuntimeLost:
+		return m.handleRuntimeLostKeys(msg)
 	default:
 		if msg.String() == "esc" || msg.String() == "q" {
 			m.mode = ModeNormal
@@ -64,6 +73,9 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) handleNormalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if key.Matches(msg, m.keys.Reload) {
 		return m, tea.Batch(m.reloadConfig(true), m.probeTerminalBackground(true))
+	}
+	if key.Matches(msg, m.keys.Runtimes) {
+		return m, m.openRuntimeSwitcher()
 	}
 	if key.Matches(msg, m.keys.Open) && m.panelFocus == panelServices {
 		if m.listMode == listTags {
@@ -99,11 +111,8 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if key.Matches(msg, m.keys.Quit) {
-		if m.app.HasRunningServices() || m.operation != "" {
-			m.mode = ModeConfirmQuit
-			return m, nil
-		}
-		return m.beginShutdown()
+		m.mode = ModeConfirmQuit
+		return m, nil
 	}
 	return m, nil
 }
@@ -302,11 +311,8 @@ func (m *Model) triggerAction(action string) (tea.Model, tea.Cmd) {
 		m.toggleAllSelection()
 		return m, nil
 	case "quit":
-		if m.app.HasRunningServices() || m.operation != "" {
-			m.mode = ModeConfirmQuit
-			return m, nil
-		}
-		return m.beginShutdown()
+		m.mode = ModeConfirmQuit
+		return m, nil
 	default:
 		return m, nil
 	}

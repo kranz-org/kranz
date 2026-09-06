@@ -94,6 +94,7 @@ func helpSections() []helpSection {
 		{title: "APPLICATION", entries: []helpEntry{
 			{"Ctrl+L", "Reload configuration and detect terminal appearance"},
 			{"Ctrl+O", "Open command shell; Ctrl+O returns to Kranz"},
+			{"p", "Switch to another local Kranz runtime"},
 			{"?", "Show this help"},
 			{"q", "Quit"},
 		}},

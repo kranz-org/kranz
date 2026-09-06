@@ -28,17 +28,20 @@ func (m *Model) reloadConfig(force bool) tea.Cmd {
 	}
 	m.lastConfigCheck = now
 	before := m.configGeneration
+	application, sessionGen := m.app, m.sessionGeneration
+	release := retainRuntimeApplication(application)
 	return func() tea.Msg {
+		defer release()
 		defer m.configReloadBusy.Store(false)
-		result, err := m.app.Reload(force)
+		result, err := application.Reload(force)
 		if err != nil {
-			return configReloadMsg{err: err}
+			return configReloadMsg{err: err, sessionGen: sessionGen}
 		}
-		project := m.app.Project()
+		project := application.Project()
 		if !force && project.Generation == before {
 			return nil
 		}
-		return configReloadMsg{result: result, generation: project.Generation, changed: project.Generation != before}
+		return configReloadMsg{result: result, generation: project.Generation, changed: project.Generation != before, sessionGen: sessionGen}
 	}
 }
 

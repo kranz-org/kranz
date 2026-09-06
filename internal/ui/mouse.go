@@ -331,6 +331,25 @@ func (m *Model) handleOverlayMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m.closeOverlayOnClick(rendered, msg)
 	case ModeThemes:
 		return m.handleThemeMouseClick(rendered, msg)
+	case ModeRuntimeSwitcher:
+		return m.handleRuntimeRowClick(rendered, msg, m.closeRuntimeSwitcher)
+	case ModeRuntimeLost:
+		if m.recoveryShowingList {
+			return m.handleRuntimeRowClick(rendered, msg, func() {
+				m.cancelPendingRuntimeSwitch()
+				m.recoveryShowingList = false
+			})
+		}
+		if renderedTextHit(rendered, msg.X, msg.Y, "[r/Enter] Restart runtime") {
+			return m, m.beginRuntimeRestart()
+		}
+		if renderedTextHit(rendered, msg.X, msg.Y, "[c] Choose running runtime") {
+			return m.handleRuntimeLostKeys(keyMessage("c"))
+		}
+		if renderedTextHit(rendered, msg.X, msg.Y, "[q] Quit TUI") {
+			return m.handleRuntimeLostKeys(keyMessage("q"))
+		}
+		return m, nil
 	case ModeSearch:
 		model, command, handled := m.handleMouseKeyBindingsHandled(rendered, msg, []mouseKeyBinding{
 			{label: "[Tab]", key: "tab"},
@@ -447,6 +466,16 @@ func (m *Model) handleOverlayWheel(msg tea.MouseMsg) (tea.Model, tea.Cmd, bool) 
 			return m, nil, true
 		}
 	}
+	if m.mode == ModeRuntimeSwitcher || (m.mode == ModeRuntimeLost && m.recoveryShowingList) {
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			m.moveSwitcherCursor(-1)
+			return m, nil, true
+		case tea.MouseButtonWheelDown:
+			m.moveSwitcherCursor(1)
+			return m, nil, true
+		}
+	}
 	return m, nil, false
 }
 
@@ -502,6 +531,39 @@ func (m *Model) handleThemeMouseClick(rendered string, msg tea.MouseMsg) (tea.Mo
 		mouseKeyBinding{label: "[Esc] Cancel", key: "esc"},
 	)
 	return m.handleMouseKeyBindings(rendered, msg, bindings, m.handleThemeKeys)
+}
+
+// handleRuntimeRowClick gives the runtime switcher (and the recovery
+// screen's embedded copy of it) the same click/double-click behavior as
+// every other Kranz list: a single click moves the cursor, and a second
+// click on the same row within doubleClickInterval activates it, matching
+// openListOwnerOnDoubleClick's dashboard behavior (PRD 3.2).
+func (m *Model) handleRuntimeRowClick(rendered string, msg tea.MouseMsg, onClose func()) (tea.Model, tea.Cmd) {
+	for index, row := range m.switcherRows {
+		name := runtimeRowHitLabel(row)
+		if !renderedTextRegionHit(rendered, msg.X, msg.Y, name, 2, m.width) {
+			continue
+		}
+		m.switcherCursor = index
+		owner := "runtime:" + row.Record.ID
+		now := time.Now()
+		isDoubleClick := owner == m.lastListClickOwner &&
+			m.lastListClickSeq+1 == m.mousePressSequence &&
+			!m.lastListClickAt.IsZero() &&
+			now.Sub(m.lastListClickAt) >= 0 && now.Sub(m.lastListClickAt) <= doubleClickInterval
+		if isDoubleClick {
+			m.lastListClickOwner, m.lastListClickSeq, m.lastListClickAt = "", 0, time.Time{}
+			return m.connectToSwitcherSelection()
+		}
+		m.lastListClickOwner = owner
+		m.lastListClickSeq = m.mousePressSequence
+		m.lastListClickAt = now
+		return m, nil
+	}
+	if renderedTextHit(rendered, msg.X, msg.Y, "[Esc]") {
+		onClose()
+	}
+	return m, nil
 }
 
 func (m *Model) closeOverlayOnClick(rendered string, msg tea.MouseMsg) (tea.Model, tea.Cmd) {

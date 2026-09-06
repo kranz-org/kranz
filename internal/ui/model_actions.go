@@ -192,6 +192,7 @@ func (m *Model) runInteractiveAction(id config.ActionID) tea.Cmd {
 		m.addNotification("action", id.Name+": "+err.Error(), config.LogError)
 		return nil
 	}
+	application, sessionGen := m.app, m.sessionGeneration
 	command := app.BuildInteractiveCommand(action)
 	m.addNotification("action", "Handing the terminal to "+id.Name, config.LogInfo)
 	return tea.ExecProcess(command, func(execErr error) tea.Msg {
@@ -205,11 +206,11 @@ func (m *Model) runInteractiveAction(id config.ActionID) tea.Cmd {
 				pid = command.Process.Pid
 			}
 		}
-		result, completeErr := m.app.CompleteInteractiveAction(id, lease, execErr, exitCode, pid)
+		result, completeErr := application.CompleteInteractiveAction(id, lease, execErr, exitCode, pid)
 		if execErr == nil {
 			execErr = completeErr
 		}
-		return actionResultMsg{id: id, result: result, err: execErr}
+		return actionResultMsg{id: id, result: result, err: execErr, sessionGen: sessionGen}
 	})
 }
 
@@ -225,9 +226,12 @@ func (m *Model) runAction(id config.ActionID, action config.Action) tea.Cmd {
 		return m.runInteractiveAction(id)
 	}
 	m.addNotification("action", "Running "+id.Name, config.LogInfo)
+	application, sessionGen := m.app, m.sessionGeneration
+	release := retainRuntimeApplication(application)
 	return func() tea.Msg {
-		result, err := m.app.RunAction(context.Background(), id)
-		return actionResultMsg{id: id, result: result, err: err}
+		defer release()
+		result, err := application.RunAction(context.Background(), id)
+		return actionResultMsg{id: id, result: result, err: err, sessionGen: sessionGen}
 	}
 }
 
