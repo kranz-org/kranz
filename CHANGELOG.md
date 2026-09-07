@@ -4,6 +4,16 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### Fixed
+
+- A running runtime can no longer be stranded by the loss of its registry
+  descriptor. Losing that one file used to make the project invisible to
+  `kranz`, `kranz status`, and `kranz down` while a fresh start was still
+  refused as already active, with nothing able to recover it. Each runtime
+  now records its descriptor in the lock file it already holds, and
+  discovery restores a missing descriptor from there whenever the lock is
+  still held and the runtime still answers.
+
 ## [0.13.0] - 2026-09-06
 
 ### Added

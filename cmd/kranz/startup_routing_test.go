@@ -237,3 +237,58 @@ func startPickerTestRuntime(t *testing.T, registry *kranzruntime.Registry, name 
 		_ = local.Shutdown()
 	}}
 }
+
+// TestBareLaunchReattachesAfterTheDashboardDiesAbruptly is the contract a
+// user relies on when an editor takes its terminals down with it: the
+// supervisor is a detached background process, never the TUI, so running
+// `kranz` again in the same directory must reattach to the runtime that
+// is still there instead of starting a second one or refusing outright.
+// It covers the way that promise was broken in practice — a runtime left
+// holding its name with its descriptor gone, which made discovery report
+// an empty project while a fresh start was refused as already active.
+func TestBareLaunchReattachesAfterTheDashboardDiesAbruptly(t *testing.T) {
+	useHelperBackgroundRuntimes(t)
+	directory := t.TempDir()
+	name := fmt.Sprintf("reattach-test-%d", os.Getpid())
+	document := "project: " + name + "\nruntime:\n  name: " + name + "\nservices:\n  api:\n    command: sleep 60\n"
+	if err := os.WriteFile(filepath.Join(directory, "kranz.yaml"), []byte(document), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = runDown(kranzcli.GlobalOptions{Project: name, Output: kranzcli.OutputText}, nil, io.Discard)
+	})
+
+	previousDashboard := runDashboardProgram
+	runDashboardProgram = func(*tea.Program) (tea.Model, error) { return nil, nil }
+	defer func() { runDashboardProgram = previousDashboard }()
+
+	options := kranzcli.GlobalOptions{Directory: directory, Output: kranzcli.OutputText}
+	if err := runTUI(options); err != nil {
+		t.Fatalf("first bare launch failed: %v", err)
+	}
+	registry, err := kranzruntime.DefaultRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	started, err := registry.Resolve(context.Background(), name, version)
+	if err != nil {
+		t.Fatalf("runtime never published: %v", err)
+	}
+
+	// The dashboard is gone and took its descriptor with it; the runtime
+	// itself is untouched and still owns the name.
+	if err := os.Remove(filepath.Join(os.TempDir(), fmt.Sprintf("kranz-%d", os.Getuid()), name+".json")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := runTUI(options); err != nil {
+		t.Fatalf("relaunching in the same directory failed: %v", err)
+	}
+	reattached, err := registry.Resolve(context.Background(), name, version)
+	if err != nil {
+		t.Fatalf("runtime unresolvable after relaunch: %v", err)
+	}
+	if reattached.ID != started.ID {
+		t.Fatalf("relaunch replaced the runtime: %s -> %s", started.ID, reattached.ID)
+	}
+}

@@ -23,6 +23,10 @@ import (
 
 const metadataVersion = 1
 
+// registryRepairDialTimeout bounds the liveness probe that decides whether
+// a descriptor found in a lock body still belongs to a running runtime.
+const registryRepairDialTimeout = 150 * time.Millisecond
+
 type SessionState string
 
 const (
@@ -179,6 +183,11 @@ func (r *Registry) acquire(name string, afterOpen func()) (*SessionHandle, error
 				matched, statErr := sameOpenFile(file, lockPath)
 				_ = file.Close()
 				if statErr == nil && matched {
+					// The name is genuinely taken, but the owner may be
+					// the stranded kind. Restore its descriptor so the
+					// advice this error carries — inspect it, stop it —
+					// can be followed instead of meeting an empty project.
+					r.repairLostDescriptors()
 					return nil, &SessionConflictError{Name: name}
 				}
 				continue
@@ -205,6 +214,53 @@ func (r *Registry) acquire(name string, afterOpen func()) (*SessionHandle, error
 		_ = file.Close()
 	}
 	return nil, fmt.Errorf("runtime lock %q kept changing", name)
+}
+
+// repairLostDescriptors republishes the descriptor of any runtime that is
+// still alive and still owns its name but whose <name>.json has gone
+// missing. Without this the runtime is stranded: discovery finds nothing,
+// so status, attach and down all report an empty project, while the lock
+// it still holds refuses a fresh start under the same name. Nothing else
+// recreates the file — a live session rewrites its ownership snapshot but
+// publishes its descriptor exactly once, at startup.
+//
+// A descriptor is only trusted when the lock is currently held and the
+// socket still answers, so neither a leftover body nor a runtime that
+// exited can be brought back.
+func (r *Registry) repairLostDescriptors() {
+	locks, err := filepath.Glob(filepath.Join(r.root, "*.lock"))
+	if err != nil {
+		return
+	}
+	for _, lockPath := range locks {
+		name := strings.TrimSuffix(filepath.Base(lockPath), ".lock")
+		if _, err := os.Stat(r.metadataPath(name)); err == nil {
+			continue
+		}
+		// An empty body is the common case: every lock left by a closed
+		// session, and every lock written before descriptors were
+		// recorded here at all.
+		if info, err := os.Stat(lockPath); err != nil || info.Size() == 0 {
+			continue
+		}
+		data, err := os.ReadFile(lockPath)
+		if err != nil {
+			continue
+		}
+		var metadata SessionMetadata
+		if json.Unmarshal(data, &metadata) != nil || metadata.MetadataVersion != metadataVersion || metadata.Name != name || metadata.Socket == "" {
+			continue
+		}
+		if locked, err := r.isLocked(name); err != nil || !locked {
+			continue
+		}
+		conn, err := net.DialTimeout("unix", metadata.Socket, registryRepairDialTimeout)
+		if err != nil {
+			continue
+		}
+		_ = conn.Close()
+		_ = atomicJSON(r.metadataPath(name), metadata)
+	}
 }
 
 func (r *Registry) existingSessionLive(name string) (bool, string) {
@@ -266,7 +322,29 @@ func (h *SessionHandle) Publish() error {
 	if err := atomicJSON(h.registry.metadataPath(h.meta.Name), h.meta); err != nil {
 		return err
 	}
+	if err := h.recordLockDescriptor(); err != nil {
+		return err
+	}
 	return h.UpdateOwnership(nil)
+}
+
+// recordLockDescriptor copies the metadata into the lock file this session
+// already holds, so the answer to "who owns this name" and the answer to
+// "what is it" live in one place. Losing the descriptor file alone then
+// costs nothing: the lock body outlives it and listing restores it. The
+// body is only ever written by the owner, which holds the lock exclusively.
+func (h *SessionHandle) recordLockDescriptor() error {
+	encoded, err := json.Marshal(h.meta)
+	if err != nil {
+		return err
+	}
+	if err := h.lock.Truncate(int64(len(encoded))); err != nil {
+		return err
+	}
+	if _, err := h.lock.WriteAt(encoded, 0); err != nil {
+		return err
+	}
+	return h.lock.Sync()
 }
 
 // UpdateOwnership replaces the recovery snapshot without recording commands,
@@ -316,6 +394,9 @@ func (h *SessionHandle) Close() error {
 		_ = os.Remove(h.registry.metadataPath(h.meta.Name))
 		_ = os.Remove(h.registry.ownershipPath(h.meta.Name))
 	}
+	// Lock files outlive the sessions that used them, so a shutdown must
+	// leave no descriptor behind for recovery to find.
+	_ = h.lock.Truncate(0)
 	err := syscall.Flock(int(h.lock.Fd()), syscall.LOCK_UN)
 	return errors.Join(err, h.lock.Close())
 }
@@ -378,6 +459,7 @@ func (r *Registry) ListForSwitcher(ctx context.Context, clientVersion, selfSurfa
 }
 
 func (r *Registry) list(ctx context.Context, clientVersion string, includeStale bool, excludeSurface string, excludePID int) ([]SessionRecord, error) {
+	r.repairLostDescriptors()
 	paths, err := filepath.Glob(filepath.Join(r.root, "*.json"))
 	if err != nil {
 		return nil, err

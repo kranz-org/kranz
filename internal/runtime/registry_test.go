@@ -383,3 +383,135 @@ func TestAcquireDoesNotReplaceLiveSessionAfterLockPathReplacement(t *testing.T) 
 		t.Fatal(err)
 	}
 }
+
+// TestListRecoversDescriptorLostUnderALiveRuntime covers the failure that
+// leaves a healthy runtime unreachable: its descriptor is gone, but the
+// process still holds the lock. Discovery then reports nothing running
+// while a fresh start under the same name is refused as already active,
+// and nothing recreates the descriptor because only ownership snapshots
+// are rewritten while a runtime lives. Listing must repair it instead.
+func TestListRecoversDescriptorLostUnderALiveRuntime(t *testing.T) {
+	registry, err := NewRegistry(filepath.Join(t.TempDir(), "registry"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	handle, err := registry.Acquire("shop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata, err := handle.Prepare("Shop", "dev", "background", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{Project: "Shop", Services: map[string]config.Service{"web": {Command: "true"}}}
+	supervisor := NewSupervisor(app.NewLocal(cfg, nil, app.Options{}))
+	if err := supervisor.Listen(metadata.Socket); err != nil {
+		t.Fatal(err)
+	}
+	if err := handle.Publish(); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- supervisor.Serve() }()
+	defer func() { _ = supervisor.Close(); <-done; _ = handle.Close() }()
+
+	if err := os.Remove(registry.metadataPath("shop")); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	records, err := registry.List(ctx, "dev")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 1 || records[0].State != SessionRunning || records[0].ID != metadata.ID {
+		t.Fatalf("List = %+v, want the live runtime recovered", records)
+	}
+	if _, err := os.Stat(registry.metadataPath("shop")); err != nil {
+		t.Fatalf("descriptor was not restored on disk: %v", err)
+	}
+	assertMode(t, registry.metadataPath("shop"), 0o600)
+}
+
+// TestListDoesNotResurrectAClosedRuntimeFromItsLock is the other half of
+// the contract: lock files outlive the runtimes that used them, so a
+// descriptor left in a lock body must never bring a dead runtime back.
+func TestListDoesNotResurrectAClosedRuntimeFromItsLock(t *testing.T) {
+	registry, err := NewRegistry(filepath.Join(t.TempDir(), "registry"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	handle, err := registry.Acquire("gone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata, err := handle.Prepare("Gone", "dev", "background", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := listenUnix(metadata.Socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := handle.Publish(); err != nil {
+		t.Fatal(err)
+	}
+	if err := listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := handle.Close(); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	records, err := registry.List(ctx, "dev")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 0 {
+		t.Fatalf("List = %+v, want nothing after a clean shutdown", records)
+	}
+	if _, err := os.Stat(registry.metadataPath("gone")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a closed runtime was republished: %v", err)
+	}
+}
+
+// TestAcquireConflictRestoresTheStrandedOwnersDescriptor pins the promise
+// the conflict error makes: it tells the caller to inspect or stop the
+// runtime that holds the name, so that runtime must be discoverable by
+// the time the error is returned.
+func TestAcquireConflictRestoresTheStrandedOwnersDescriptor(t *testing.T) {
+	registry, err := NewRegistry(filepath.Join(t.TempDir(), "registry"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, err := registry.Acquire("shop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata, err := owner.Prepare("Shop", "dev", "background", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := listenUnix(metadata.Socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = listener.Close() }()
+	if err := owner.Publish(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = owner.Close() }()
+	if err := os.Remove(registry.metadataPath("shop")); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = registry.Acquire("shop")
+	var conflict *SessionConflictError
+	if !errors.As(err, &conflict) {
+		t.Fatalf("Acquire = %T %v, want conflict", err, err)
+	}
+	if _, err := os.Stat(registry.metadataPath("shop")); err != nil {
+		t.Fatalf("conflict left the owner undiscoverable: %v", err)
+	}
+}
