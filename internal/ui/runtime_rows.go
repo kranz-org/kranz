@@ -3,7 +3,6 @@ package ui
 import (
 	"context"
 	"fmt"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -43,10 +42,11 @@ type runtimeListMsg struct {
 
 // discoverRuntimeRows lists every locally registered runtime and classifies
 // each one for display. currentSessionID marks (and always sorts first) the
-// runtime the caller is already attached to; this process's own PID excludes
-// its dashboard connection from that runtime's reported client surfaces.
+// runtime the caller is already attached to. All user-facing connections,
+// including this dashboard's TUI connection, remain visible in the client
+// surfaces so the current row describes every way the runtime is being used.
 func discoverRuntimeRows(ctx context.Context, registry *kranzruntime.Registry, clientVersion, currentSessionID string) ([]runtimeRow, error) {
-	records, err := registry.ListForSwitcher(ctx, clientVersion, "tui", os.Getpid())
+	records, err := registry.List(ctx, clientVersion)
 	if err != nil {
 		return nil, err
 	}

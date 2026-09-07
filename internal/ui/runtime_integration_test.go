@@ -394,13 +394,18 @@ func TestRuntimeLossRecoveryRestartSameProject(t *testing.T) {
 	}
 }
 
-// TestClientSurfacesExcludeProbeAndSelf is the protocol-level check PRD 9
-// asks for: the switcher's client-surface list never counts the transient
-// discovery probe, and never counts the viewer's own connection to the
-// runtime it is currently attached to.
-func TestClientSurfacesExcludeProbeAndSelf(t *testing.T) {
+// TestClientSurfacesIncludeCurrentTUIAndOtherClients checks that the current
+// runtime describes every user-facing connection while keeping the transient
+// discovery probe out of the modal.
+func TestClientSurfacesIncludeCurrentTUIAndOtherClients(t *testing.T) {
 	registry := testRegistry(t)
 	alpha := startTestRuntime(t, registry, "surfaces-alpha", emptyProjectConfig("Alpha"), t.TempDir())
+	mcpClient, err := kranzruntime.DialWithIdentity(alpha.record.Socket, "test",
+		kranzruntime.ClientIdentity{Surface: "mcp", Label: "test-agent"})
+	if err != nil {
+		t.Fatalf("dial MCP client: %v", err)
+	}
+	defer func() { _ = mcpClient.Close() }()
 
 	model := newSwitchableTestModel(t, registry, alpha, ModelOptions{})
 	fireOnce(model, model.openRuntimeSwitcher())
@@ -423,9 +428,7 @@ func TestClientSurfacesExcludeProbeAndSelf(t *testing.T) {
 			t.Fatalf("client surfaces leaked the discovery probe: %v", row.Record.ClientSurfaces)
 		}
 	}
-	// The model's own dashboard connection to its current runtime must not
-	// inflate that runtime's own surface list (PRD 3.2).
-	if len(row.Record.ClientSurfaces) != 0 {
-		t.Fatalf("current runtime's own connection was counted as a client surface: %v", row.Record.ClientSurfaces)
+	if got := runtimeRowSurfaceLabel(row); got != "MCP · TUI" {
+		t.Fatalf("current runtime client surfaces = %q, want %q", got, "MCP · TUI")
 	}
 }

@@ -444,21 +444,10 @@ const backgroundOwnerSurface = "background"
 const registryProbeConcurrency = 8
 
 func (r *Registry) List(ctx context.Context, clientVersion string) ([]SessionRecord, error) {
-	return r.list(ctx, clientVersion, false, "", 0)
+	return r.list(ctx, clientVersion, false)
 }
 
-// ListForSwitcher lists sessions the same way List does, additionally
-// excluding one caller connection identified by (selfSurface, selfPID) from
-// the computed client surfaces of whichever session it happens to be
-// connected to. A TUI passes its own surface and PID so its own dashboard
-// connection to the current runtime does not inflate that runtime's own row;
-// the exclusion is a no-op for every other session, since a caller can only
-// ever be connected, under its own PID, to the one runtime it is attached to.
-func (r *Registry) ListForSwitcher(ctx context.Context, clientVersion, selfSurface string, selfPID int) ([]SessionRecord, error) {
-	return r.list(ctx, clientVersion, false, selfSurface, selfPID)
-}
-
-func (r *Registry) list(ctx context.Context, clientVersion string, includeStale bool, excludeSurface string, excludePID int) ([]SessionRecord, error) {
+func (r *Registry) list(ctx context.Context, clientVersion string, includeStale bool) ([]SessionRecord, error) {
 	r.repairLostDescriptors()
 	paths, err := filepath.Glob(filepath.Join(r.root, "*.json"))
 	if err != nil {
@@ -486,7 +475,7 @@ func (r *Registry) list(ctx context.Context, clientVersion string, includeStale 
 			defer probes.Done()
 			probeSlots <- struct{}{}
 			defer func() { <-probeSlots }()
-			record, keep := r.probeRecord(ctx, path, metadata, locked, clientVersion, includeStale, excludeSurface, excludePID)
+			record, keep := r.probeRecord(ctx, path, metadata, locked, clientVersion, includeStale)
 			if !keep {
 				return
 			}
@@ -500,7 +489,7 @@ func (r *Registry) list(ctx context.Context, clientVersion string, includeStale 
 	return records, nil
 }
 
-func (r *Registry) probeRecord(ctx context.Context, path string, metadata SessionMetadata, locked bool, clientVersion string, includeStale bool, excludeSurface string, excludePID int) (SessionRecord, bool) {
+func (r *Registry) probeRecord(ctx context.Context, path string, metadata SessionMetadata, locked bool, clientVersion string, includeStale bool) (SessionRecord, bool) {
 	record := SessionRecord{SessionMetadata: metadata, State: SessionUnreachable}
 	client, dialErr := DialContextWithIdentity(ctx, metadata.Socket, clientVersion,
 		ClientIdentity{Surface: registryProbeSurface, Label: "Kranz runtime discovery"})
@@ -533,9 +522,6 @@ func (r *Registry) probeRecord(ctx context.Context, path string, metadata Sessio
 			surfaces := make([]string, 0, len(connected))
 			for _, info := range connected {
 				if info.Surface == registryProbeSurface || info.Surface == backgroundOwnerSurface {
-					continue
-				}
-				if excludeSurface != "" && info.Surface == excludeSurface && info.PID == excludePID {
 					continue
 				}
 				others++
@@ -581,7 +567,7 @@ func (r *Registry) Resolve(ctx context.Context, reference, clientVersion string)
 // fallback for that launch instead of silently converting stale evidence into
 // "not found" and racing an unproven supervisor.
 func (r *Registry) ResolveForAttach(ctx context.Context, reference, clientVersion string) (SessionRecord, error) {
-	records, err := r.list(ctx, clientVersion, true, "", 0)
+	records, err := r.list(ctx, clientVersion, true)
 	if err != nil {
 		return SessionRecord{}, err
 	}
