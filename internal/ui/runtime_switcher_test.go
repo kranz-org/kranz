@@ -104,12 +104,12 @@ func TestRuntimeRowStatusLabelsMatchPRDStates(t *testing.T) {
 		t.Fatalf("no-other-clients row label = %q, want started", label)
 	}
 	withClients := started
-	withClients.Record.ClientSurfaces = []string{"mcp", "tui"}
+	withClients.Record.ClientSurfaces = []string{"mcp", "tui", "cli"}
 	if label := runtimeRowStatusLabel(withClients); label != "started" {
 		t.Fatalf("client row status = %q, want started", label)
 	}
-	if label := runtimeRowSurfaceLabel(withClients); label != "MCP · TUI" {
-		t.Fatalf("client-surface label = %q, want %q", label, "MCP · TUI")
+	if label := runtimeRowSurfaceLabel(withClients); label != "MCP TUI CLI" {
+		t.Fatalf("client-surface label = %q, want %q", label, "MCP TUI CLI")
 	}
 	incompatible := rowFor("i", "incompatible", now, false, kranzruntime.SessionIncompatible)
 	if label := runtimeRowStatusLabel(incompatible); label != "incompatible" {
@@ -123,7 +123,7 @@ func TestRuntimeRowStatusLabelsMatchPRDStates(t *testing.T) {
 
 func TestRuntimeTableSeparatesStatusClientsAndServices(t *testing.T) {
 	row := rowFor("s", "shop", time.Now(), false, kranzruntime.SessionRunning)
-	row.Record.ClientSurfaces = []string{"mcp", "tui"}
+	row.Record.ClientSurfaces = []string{"mcp", "tui", "cli"}
 	services, running := 5, 3
 	row.Record.Services, row.Record.Running = &services, &running
 
@@ -134,7 +134,7 @@ func TestRuntimeTableSeparatesStatusClientsAndServices(t *testing.T) {
 			t.Fatalf("runtime table header is missing %q: %q", column, header)
 		}
 	}
-	for _, value := range []string{"shop", "started", "MCP · TUI", "3/5"} {
+	for _, value := range []string{"shop", "started", "MCP TUI CLI", "3/5"} {
 		if !strings.Contains(line, value) {
 			t.Fatalf("runtime row is missing %q: %q", value, line)
 		}
@@ -155,7 +155,7 @@ func TestRuntimeSwitcherFitsNarrowTerminalWithoutLosingCoreControls(t *testing.T
 	model.width, model.height, model.ready = 62, 18, true
 	model.mode = ModeRuntimeSwitcher
 	row := rowFor("s", "shop", time.Now(), false, kranzruntime.SessionRunning)
-	row.Record.ClientSurfaces = []string{"mcp", "tui"}
+	row.Record.ClientSurfaces = []string{"mcp", "tui", "cli"}
 	services, running := 5, 3
 	row.Record.Services, row.Record.Running = &services, &running
 	model.switcherRows = []runtimeRow{row}

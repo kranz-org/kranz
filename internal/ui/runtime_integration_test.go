@@ -428,7 +428,7 @@ func TestClientSurfacesIncludeCurrentTUIAndOtherClients(t *testing.T) {
 			t.Fatalf("client surfaces leaked the discovery probe: %v", row.Record.ClientSurfaces)
 		}
 	}
-	if got := runtimeRowSurfaceLabel(row); got != "MCP · TUI" {
-		t.Fatalf("current runtime client surfaces = %q, want %q", got, "MCP · TUI")
+	if got := runtimeRowSurfaceLabel(row); got != "MCP TUI" {
+		t.Fatalf("current runtime client surfaces = %q, want %q", got, "MCP TUI")
 	}
 }

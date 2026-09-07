@@ -112,7 +112,7 @@ func runtimeRowUptime(record kranzruntime.SessionRecord) string {
 }
 
 // runtimeRowSurfaceLabel joins the deduplicated client surfaces a row is
-// reporting into the compact form the modal shows, for example "TUI · MCP".
+// reporting into the compact form the modal shows, for example "TUI MCP CLI".
 // It never repeats a surface and never shows a count.
 func runtimeRowSurfaceLabel(row runtimeRow) string {
 	if row.Record.State != kranzruntime.SessionRunning || len(row.Record.ClientSurfaces) == 0 {
@@ -122,7 +122,7 @@ func runtimeRowSurfaceLabel(row runtimeRow) string {
 	for i, surface := range row.Record.ClientSurfaces {
 		labels[i] = strings.ToUpper(surface)
 	}
-	return strings.Join(labels, " · ")
+	return strings.Join(labels, " ")
 }
 
 // runtimeRowStatusLabel is the row's status word on its own, never merged
@@ -170,7 +170,7 @@ type runtimeTableLayout struct {
 
 func newRuntimeTableLayout(width int) runtimeTableLayout {
 	layout := runtimeTableLayout{
-		nameWidth: runtimeRowNameWidth, statusWidth: 12, clientsWidth: 16,
+		nameWidth: runtimeRowNameWidth, statusWidth: 12, clientsWidth: 11,
 		servicesWidth: 8, uptimeWidth: 8, showClients: true, showUptime: true,
 	}
 	coreWidth := func() int {
