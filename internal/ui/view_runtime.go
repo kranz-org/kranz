@@ -12,7 +12,7 @@ import (
 // runtime, current first, live-refreshing while open (PRD 3.2).
 func (m *Model) renderRuntimeSwitcherView() string {
 	contentWidth := flushModalContentWidth(m.width, 110)
-	shortcutGroups := []string{"[↑/↓ · j/k] Select", "[Enter] Connect", "[Esc] Cancel"}
+	shortcutGroups := []string{"[↑/↓] [j/k] Select", "[Enter] Connect", "[Esc] Cancel"}
 	if m.switcherConnecting != "" {
 		shortcutGroups = append(shortcutGroups, "Connecting…")
 	}

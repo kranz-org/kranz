@@ -123,12 +123,44 @@ func TestRunListIncludesRetentionAndProvenanceFields(t *testing.T) {
 	model.width, model.height, model.ready = 140, 30, true
 	finishTestServiceRun(t, model, "api", 7, "failed output")
 	model.refreshServices()
-	model.openRunList()
+	if !model.handleLogKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}}) {
+		t.Fatal("v was not handled")
+	}
 	plain := ansi.Strip(model.renderRunListView())
-	for _, expected := range []string{"RUN", "STATUS", "START", "DURATION", "EXIT", "REASON", "INITIATOR", "OUTPUT", "#1", "7", "runtime", "complete", "Run history · api"} {
+	for _, expected := range []string{"RUN", "STATUS", "START", "DURATION", "EXIT", "REASON", "INITIATOR", "OUTPUT", "#1", "7", "runtime", "complete", "Run history · api", "[↑/↓] [j/k] Select"} {
 		if !strings.Contains(plain, expected) {
 			t.Fatalf("run list missing %q:\n%s", expected, plain)
 		}
+	}
+}
+
+func TestRunListShowsDismissibleAlertWhenTargetHasNoRuns(t *testing.T) {
+	model := newTestModel()
+	defer model.Shutdown()
+	model.width, model.height, model.ready = 100, 24, true
+
+	if !model.handleLogKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}}) {
+		t.Fatal("v was not handled")
+	}
+	if model.mode != ModeRunList {
+		t.Fatalf("opening empty run list left mode = %v, want ModeRunList", model.mode)
+	}
+	plain := ansi.Strip(model.renderRunListView())
+	for _, expected := range []string{"No runs", "There are no runs for the selected target yet.", "[Enter / Esc] Close"} {
+		if !strings.Contains(plain, expected) {
+			t.Fatalf("empty run alert is missing %q:\n%s", expected, plain)
+		}
+	}
+
+	_, _ = model.handleRunListKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	if model.mode != ModeNormal {
+		t.Fatalf("Enter left empty run alert mode = %v, want ModeNormal", model.mode)
+	}
+
+	model.openRunList()
+	_, _ = model.handleRunListKeys(tea.KeyMsg{Type: tea.KeyEsc})
+	if model.mode != ModeNormal {
+		t.Fatalf("Esc left empty run alert mode = %v, want ModeNormal", model.mode)
 	}
 }
 

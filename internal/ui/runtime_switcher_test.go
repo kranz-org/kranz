@@ -141,6 +141,14 @@ func TestRuntimeTableSeparatesStatusClientsAndServices(t *testing.T) {
 	}
 }
 
+func TestRuntimeTableKeepsJustNowComplete(t *testing.T) {
+	row := rowFor("s", "shop", time.Now(), false, kranzruntime.SessionRunning)
+	line := runtimeRowLine(row, 100)
+	if !strings.Contains(line, "just now") || strings.Contains(line, "just n…") {
+		t.Fatalf("runtime uptime was truncated: %q", line)
+	}
+}
+
 func TestRuntimeSwitcherFitsNarrowTerminalWithoutLosingCoreControls(t *testing.T) {
 	model := newTestModel()
 	defer model.Shutdown()
@@ -154,7 +162,7 @@ func TestRuntimeSwitcherFitsNarrowTerminalWithoutLosingCoreControls(t *testing.T
 
 	rendered := model.renderRuntimeSwitcherView()
 	plain := ansi.Strip(rendered)
-	for _, expected := range []string{"RUNTIME", "STATUS", "CLIENTS", "SERVICES", "shop", "started", "MCP", "3/5", "[Enter] Connect", "[Esc] Cancel"} {
+	for _, expected := range []string{"RUNTIME", "STATUS", "CLIENTS", "SERVICES", "shop", "started", "MCP", "3/5", "[↑/↓] [j/k] Select", "[Enter] Connect", "[Esc] Cancel"} {
 		if !strings.Contains(plain, expected) {
 			t.Fatalf("narrow runtime modal lost %q:\n%s", expected, plain)
 		}

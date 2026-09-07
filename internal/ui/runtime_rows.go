@@ -171,7 +171,7 @@ type runtimeTableLayout struct {
 func newRuntimeTableLayout(width int) runtimeTableLayout {
 	layout := runtimeTableLayout{
 		nameWidth: runtimeRowNameWidth, statusWidth: 12, clientsWidth: 16,
-		servicesWidth: 8, uptimeWidth: 7, showClients: true, showUptime: true,
+		servicesWidth: 8, uptimeWidth: 8, showClients: true, showUptime: true,
 	}
 	coreWidth := func() int {
 		widths := []int{layout.nameWidth, layout.statusWidth, layout.servicesWidth}

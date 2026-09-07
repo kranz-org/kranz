@@ -326,6 +326,7 @@ func (m *Model) renderPinnedActionRunPanel(target app.RunTarget, width, height i
 
 func (m *Model) openRunList() {
 	if !m.syncRunTarget() || len(m.runsForTarget(m.runTarget)) == 0 {
+		m.mode = ModeRunList
 		return
 	}
 	m.normalizeRunStatusFilter()
@@ -413,6 +414,12 @@ func (m *Model) normalizeRunStatusFilter() {
 }
 
 func (m *Model) handleRunListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if len(m.runsForTarget(m.runTarget)) == 0 {
+		if msg.String() == "enter" || msg.String() == "esc" {
+			m.mode = ModeNormal
+		}
+		return m, nil
+	}
 	runs := m.filteredRunList()
 	switch {
 	case key.Matches(msg, m.keys.Up):
@@ -533,11 +540,18 @@ func renderRunListColumns(layout []runListColumn, values map[string]string) stri
 }
 
 func (m *Model) renderRunListView() string {
+	if len(m.runsForTarget(m.runTarget)) == 0 {
+		return m.placeOverlay(renderConfirmationModal(
+			"No runs",
+			[]string{"There are no runs for the selected target yet."},
+			"[Enter / Esc] Close",
+		))
+	}
 	runs := m.filteredRunList()
 	contentWidth := flushModalContentWidth(m.width, 104)
 	rowWidth := max(3, contentWidth-2)
 	layout := newRunListLayout(rowWidth)
-	shortcutGroups := []string{"[↑/↓] Select", "[Enter] Open run", "[d] Delete"}
+	shortcutGroups := []string{"[↑/↓] [j/k] Select", "[Enter] Open run", "[d] Delete"}
 	if filters := m.runStatusFilters(); len(filters) > 1 {
 		filter := m.runStatusFilter
 		if filter == "" {
