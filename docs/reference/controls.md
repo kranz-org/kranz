@@ -127,7 +127,10 @@ appears or disappears without reopening the modal.
 The table has separate `RUNTIME`, `STATUS`, `CLIENTS`, `SERVICES`, `UPTIME`,
 and `DIRECTORY` columns. `STATUS` is `current` for the runtime already open
 and `started` for another available runtime. `CLIENTS` lists the unique client
-surfaces connected to it (for example `TUI · MCP`) without counts, while
+surfaces connected to it (for example `CLI MCP TUI`) without counts. The
+current row includes the dashboard's own `TUI` connection, so another `MCP` or
+`CLI` client remains visible beside it. The compact labels fit three standard
+surfaces in the 11-cell column, while
 `SERVICES` shows running/total in the same `3/5` form as `kranz ps`. A runtime
 running an incompatible protocol version, or one the switcher cannot currently
 reach, is shown greyed out and cannot be selected; selecting it spells the

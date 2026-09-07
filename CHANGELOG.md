@@ -4,6 +4,8 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-09-07
+
 ### Fixed
 
 - A running runtime can no longer be stranded by the loss of its registry
@@ -13,6 +15,15 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
   now records its descriptor in the lock file it already holds, and
   discovery restores a missing descriptor from there whenever the lock is
   still held and the runtime still answers.
+- Modal dialogs remain visually distinct from the dashboard on black and
+  near-black terminal backgrounds.
+- Opening Run history for a service or action with no runs now shows a
+  dismissible explanation instead of appearing to do nothing. The Run history
+  footer also advertises both arrow-key and `j`/`k` navigation.
+- The runtime switcher now includes the current dashboard's `TUI` connection
+  in `CLIENTS`, so concurrent `MCP` and `CLI` use stays visible on the current
+  row. Client surfaces use a compact space-separated form such as
+  `CLI MCP TUI` that fits in the 11-cell column.
 
 ## [0.13.0] - 2026-09-06
 
@@ -728,7 +739,8 @@ artifacts.
 - Explicit global-user and project-config save destinations in the live theme picker.
 - Native compatibility for common Process Compose configurations.
 
-[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.13.1...HEAD
+[0.13.1]: https://github.com/kranz-org/kranz/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/kranz-org/kranz/compare/v0.12.1...v0.13.0
 [0.12.1]: https://github.com/kranz-org/kranz/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/kranz-org/kranz/compare/v0.11.1...v0.12.0

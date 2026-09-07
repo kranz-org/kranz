@@ -88,6 +88,8 @@ In the TUI, `v` opens the run history for the focused service or action. `x`
 switches between all runs and a single run, `[` and `]` step through history,
 `Shift+F` jumps to the previous failed run, and `l` returns to the latest.
 `Shift+3` pins a run so it stays frozen while the live panel keeps moving.
+If the target has never run, `v` opens a dismissible explanation instead of an
+empty table.
 See [Controls](../reference/controls) for the complete list.
 
 Retention is per session. A run summary and its output can also be dropped
