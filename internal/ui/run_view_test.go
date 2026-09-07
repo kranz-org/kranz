@@ -164,6 +164,33 @@ func TestRunListShowsDismissibleAlertWhenTargetHasNoRuns(t *testing.T) {
 	}
 }
 
+func TestNeverRunActionShowsDismissibleRunAlertFromV(t *testing.T) {
+	model := NewModel(&config.Config{Project: "Actions", ActionGroups: map[string]config.ActionGroup{
+		"tools": {Actions: map[string]config.Action{
+			"check": {Command: "true"},
+		}},
+	}}, "test")
+	defer model.Shutdown()
+	model.width, model.height, model.ready = 100, 24, true
+
+	if command, handled := model.openFocusedListItem(); !handled || command != nil {
+		t.Fatalf("expanding action group = handled %v, command %v", handled, command)
+	}
+	model.moveServiceListCursor(1)
+	if model.focusedAction == nil {
+		t.Fatal("action was not focused")
+	}
+
+	_, _ = model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
+	if model.mode != ModeRunList {
+		t.Fatalf("v on never-run action left mode = %v, want ModeRunList", model.mode)
+	}
+	plain := ansi.Strip(model.View())
+	if !strings.Contains(plain, "No runs") || !strings.Contains(plain, "[Enter / Esc] Close") {
+		t.Fatalf("never-run action did not show the empty run alert:\n%s", plain)
+	}
+}
+
 func TestRunListFiltersAndSelectsByKeyboardAndMouse(t *testing.T) {
 	model := newTestModel()
 	defer model.Shutdown()
