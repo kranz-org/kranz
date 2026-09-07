@@ -488,7 +488,7 @@ func TestThemeSaveConfirmationCanCancelWithoutWriting(t *testing.T) {
 	}
 }
 
-func TestBackdropBlendsForegroundAndBackgroundWithBlack(t *testing.T) {
+func TestBackdropBlendsForegroundAndBackgroundWithTint(t *testing.T) {
 	previousProfile := lipgloss.ColorProfile()
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	defer lipgloss.SetColorProfile(previousProfile)
@@ -497,7 +497,7 @@ func TestBackdropBlendsForegroundAndBackgroundWithBlack(t *testing.T) {
 		Foreground(lipgloss.Color("#C0392B")).
 		Background(lipgloss.Color("#FDF6E3")).
 		Render("colour")
-	darkened := darkenANSIColors(painted, 0.18)
+	darkened := blendANSIColors(painted, "#000000", 0.18)
 	if ansi.Strip(darkened) != "colour" {
 		t.Fatalf("colour blending changed text: %q", ansi.Strip(darkened))
 	}
@@ -506,6 +506,29 @@ func TestBackdropBlendsForegroundAndBackgroundWithBlack(t *testing.T) {
 	}
 	if !strings.Contains(darkened, "48;2;207;202;186") {
 		t.Fatalf("background was not blended with black: %q", darkened)
+	}
+}
+
+func TestBlackCanvasBackdropUsesVisibleGreyTint(t *testing.T) {
+	restoreDefaultTheme(t)
+	if _, err := ApplyTheme("high-contrast", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	if got, want := string(ColorOverlay), "#1E232A"; got != want {
+		t.Fatalf("black canvas overlay = %s, want visible grey %s", got, want)
+	}
+	if modalOverlayTint == "#000000" {
+		t.Fatal("black canvas overlay still uses an invisible black tint")
+	}
+
+	previousProfile := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	defer lipgloss.SetColorProfile(previousProfile)
+	backdrop := lipgloss.NewStyle().Background(ColorOverlay).Render(" ")
+	black := lipgloss.NewStyle().Background(lipgloss.Color("#000000")).Render(" ")
+	if backdrop == black {
+		t.Fatal("black canvas overlay collapses to black in the 256-colour profile")
 	}
 }
 

@@ -1049,11 +1049,11 @@ func (m *Model) placeOverlay(content string) string {
 	}
 	top := max(0, (m.height-len(contentLines))/2)
 	left := max(0, (m.width-contentWidth)/2)
-	// Emulate a translucent black layer by mixing every ANSI colour with black.
+	// Emulate a translucent layer by mixing every ANSI colour with its tint.
 	// The explicit background applies the same blend to otherwise empty cells.
 	dim := lipgloss.NewStyle().Background(ColorOverlay)
 	dimBackground := func(fragment string) string {
-		fragment = darkenANSIColors(fragment, modalOverlayOpacity)
+		fragment = blendANSIColors(fragment, modalOverlayTint, modalOverlayOpacity)
 		return dim.Render(preserveStyleAfterReset(fragment, dim))
 	}
 
@@ -1073,9 +1073,13 @@ func (m *Model) placeOverlay(content string) string {
 	return strings.Join(result, "\n")
 }
 
-// darkenANSIColors emulates a translucent black overlay for true-colour SGR
-// foregrounds, backgrounds, and underline colours without changing their hue.
-func darkenANSIColors(value string, opacity float64) string {
+// blendANSIColors emulates a translucent overlay for true-colour SGR
+// foregrounds, backgrounds, and underline colours.
+func blendANSIColors(value, tint string, opacity float64) string {
+	tintColor, ok := parseHex(tint)
+	if !ok {
+		return value
+	}
 	var result strings.Builder
 	for len(value) > 0 {
 		start := strings.Index(value, "\x1b[")
@@ -1103,8 +1107,8 @@ func darkenANSIColors(value string, opacity float64) string {
 						kept = append(kept, params[component])
 						continue
 					}
-					darkened := int(math.Round(float64(componentValue) * (1 - opacity)))
-					kept = append(kept, strconv.Itoa(max(0, min(255, darkened))))
+					blended := float64(componentValue) + (tintColor[component-index-2]-float64(componentValue))*opacity
+					kept = append(kept, strconv.Itoa(max(0, min(255, int(math.Round(blended))))))
 				}
 				index += 4
 				continue

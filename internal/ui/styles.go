@@ -18,6 +18,7 @@ var (
 	ColorDarkBg         lipgloss.Color
 	ColorSurfaceAlt     lipgloss.Color
 	ColorOverlay        lipgloss.Color
+	modalOverlayTint    string
 	modalOverlayOpacity float64
 	ColorBorder         lipgloss.Color
 	ColorDim            lipgloss.Color
@@ -84,11 +85,21 @@ func applyPalette(theme Theme) {
 	ColorBackground = lipgloss.Color(theme.Background)
 	ColorDarkBg = lipgloss.Color(theme.Surface)
 	ColorSurfaceAlt = lipgloss.Color(theme.SurfaceAlt)
+	modalOverlayTint = "#000000"
 	modalOverlayOpacity = 0.42
-	if background, ok := parseHex(theme.Background); ok && relativeLuminance(background) > 0.45 {
-		modalOverlayOpacity = 0.18
+	if background, ok := parseHex(theme.Background); ok {
+		switch luminance := relativeLuminance(background); {
+		case luminance < 0.015:
+			// A black scrim is invisible on a black terminal canvas. Lift nearly
+			// black canvases toward a neutral grey so the inactive dashboard still
+			// reads as a distinct layer behind the modal.
+			modalOverlayTint = "#64748B"
+			modalOverlayOpacity = 0.30
+		case luminance > 0.45:
+			modalOverlayOpacity = 0.18
+		}
 	}
-	ColorOverlay = lipgloss.Color(mixHex(theme.Background, "#000000", modalOverlayOpacity))
+	ColorOverlay = lipgloss.Color(mixHex(theme.Background, modalOverlayTint, modalOverlayOpacity))
 	ColorBorder = lipgloss.Color(theme.Border)
 	ColorDim = lipgloss.Color(theme.Muted)
 	stopped := "#94A3B8"
