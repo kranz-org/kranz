@@ -109,8 +109,9 @@ reporting success.
 
 ### Inspecting a project
 
-These read the configuration only. They work before the first `up` and never
-disturb a running runtime.
+These inspect configuration and, where useful, current runtime state. They
+never mutate a running runtime; configuration-only forms work before the first
+`up`.
 
 ```bash
 kranz config                        # same as config show
@@ -121,6 +122,7 @@ kranz doctor                        # preflight checks
 kranz list [services|actions|tags]
 kranz info [SERVICE]
 kranz plan [SELECTOR ...]           # the waves a start would use
+kranz plan --operation stop api     # services a stop would affect
 kranz graph [--format text|json|dot]
 kranz ports [SELECTOR ...]
 kranz port inspect PORT
@@ -157,6 +159,10 @@ Wave 3:
 Wave 4:
   gateway  (after billing-api, catalog-api)
 ```
+
+Bare `plan` and `--operation start` work from configuration alone. Stop and
+restart previews require a running runtime because they report only the
+currently running dependents that the real operation would affect.
 
 `doctor` reports every finding rather than stopping at the first, and exits `3`
 when any check fails.

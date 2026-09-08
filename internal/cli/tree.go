@@ -140,7 +140,9 @@ func DefaultTree() *Command {
 				{Flags: "--confirm", Summary: "confirm permanent removal of the run and its retained output"},
 			}},
 		}},
-		{Name: "plan", Summary: "show the resolved start plan", Usage: "kranz plan [SELECTOR ...]"},
+		{Name: "plan", Summary: "show a resolved lifecycle plan", Usage: "kranz plan [SELECTOR ...] [--operation start|stop|restart]", Options: []Option{
+			{Flags: "--operation OPERATION", Summary: "operation to preview; defaults to start", Values: []string{"start", "stop", "restart"}},
+		}},
 		{Name: "graph", Summary: "print the dependency graph", Usage: "kranz graph [--format text|json|dot]", Options: []Option{
 			{Flags: "--format FORMAT", Summary: "text, json, or dot; defaults to text", Values: []string{"text", "json", "dot"}},
 		}},

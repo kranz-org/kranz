@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -123,6 +125,37 @@ func TestPlanGroupsWavesAndIncludesDependencies(t *testing.T) {
 		if !strings.Contains(selected, name) {
 			t.Errorf("plan api omits its dependency %q: %q", name, selected)
 		}
+	}
+}
+
+func TestPlanPreviewsStopAndRestartImpact(t *testing.T) {
+	options, name := writeMCPProjectWithService(t, "db")
+	document := fmt.Sprintf("project: %s\nservices:\n  db:\n    command: sleep 60\n  migrate:\n    command: sleep 60\n    depends_on: [db]\n  api:\n    command: sleep 60\n    depends_on: [migrate]\n", name)
+	if err := os.WriteFile(filepath.Join(options.Directory, "kranz.yaml"), []byte(document), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	startTestRuntime(t, options, name)
+	if err := runLifecycle(options, "start", []string{"api"}, io.Discard); err != nil {
+		t.Fatalf("start dependency chain: %v", err)
+	}
+	for _, operation := range []string{"stop", "restart"} {
+		output := runInspection(t, options.Directory, "plan", "db", "--operation", operation)
+		for _, service := range []string{"db", "migrate", "api"} {
+			if !strings.Contains(output, service) {
+				t.Errorf("%s plan omits affected service %q: %q", operation, service, output)
+			}
+		}
+	}
+	var stdout, stderr bytes.Buffer
+	if code := execute([]string{"-C", t.TempDir(), "-p", name, "plan", "db", "--operation", "stop"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("runtime-addressed plan outside project exit=%d stderr=%q", code, stderr.String())
+	}
+}
+
+func TestPlanRejectsUnknownOperation(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := execute([]string{"-C", inspectionDirectory(t), "plan", "--operation", "deploy"}, &stdout, &stderr); code != kranzcli.ExitUsage {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr.String())
 	}
 }
 

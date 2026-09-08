@@ -10,6 +10,8 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
   including a `table ` prefix for aligned output with headers.
 - `status`, `ports`, `doctor`, `config explain`, `action list`, and the
   `list services/actions/tags` views support the same row formatter.
+- `kranz plan --operation start|stop|restart` previews every service a
+  lifecycle operation would affect; bare `plan` remains a start preview.
 
 ### Changed
 

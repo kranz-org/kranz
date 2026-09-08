@@ -419,16 +419,34 @@ func directDependents(cfg *config.Config, name string) []string {
 	return dependents
 }
 
-// runPlan shows the waves a start would use: everything in one wave depends
-// only on earlier waves, which is exactly how the runtime gates readiness.
+// runPlan shows the exact service set a lifecycle operation would affect.
+// Starts can be planned from configuration; stops and restarts consult the
+// live runtime because stopped dependents are not affected by those operations.
 func runPlan(options kranzcli.GlobalOptions, args []string, stdout io.Writer) error {
-	cfg, _, err := loadProject(options)
+	operation, selectors, err := parsePlanOptions(args)
 	if err != nil {
 		return err
 	}
-	local := app.NewLocal(cfg, nil, app.Options{})
-	defer func() { _ = local.Shutdown() }()
-	plan, err := local.Plan(app.PlanRequest{Operation: "start", Selectors: args, IncludeDependencies: true})
+	var planner app.API
+	var cfg *config.Config
+	if operation == "start" {
+		loaded, _, loadErr := loadProject(options)
+		if loadErr != nil {
+			return loadErr
+		}
+		cfg = loaded
+		local := app.NewLocal(cfg, nil, app.Options{})
+		defer func() { _ = local.Shutdown() }()
+		planner = local
+	} else {
+		client, closeClient, dialErr := dialProjectRuntime(options)
+		if dialErr != nil {
+			return dialErr
+		}
+		defer closeClient()
+		planner = client
+	}
+	plan, err := planner.Plan(app.PlanRequest{Operation: operation, Selectors: selectors, IncludeDependencies: operation == "start"})
 	if err != nil {
 		return classifyLogQueryError(err)
 	}
@@ -442,7 +460,20 @@ func runPlan(options kranzcli.GlobalOptions, args []string, stdout io.Writer) er
 		for _, plannedWave := range plan.Waves {
 			entries = append(entries, wave{plannedWave.Wave, plannedWave.Services})
 		}
+		if operation != "start" && len(plan.Targets) > 0 {
+			entries = append(entries, wave{Wave: 1, Services: plan.Targets})
+		}
 		return kranzcli.WriteJSON(stdout, entries)
+	}
+	if operation != "start" {
+		_, _ = fmt.Fprintf(stdout, "%s targets:\n", strings.ToUpper(operation[:1])+operation[1:])
+		for _, name := range plan.Targets {
+			_, _ = fmt.Fprintf(stdout, "  %s\n", name)
+		}
+		if plan.RequiresConfirmation {
+			_, _ = fmt.Fprintln(stdout, "\nRequires confirmation.")
+		}
+		return nil
 	}
 	for _, plannedWave := range plan.Waves {
 		names := plannedWave.Services
@@ -460,6 +491,38 @@ func runPlan(options kranzcli.GlobalOptions, args []string, stdout io.Writer) er
 		}
 	}
 	return nil
+}
+
+func parsePlanOptions(args []string) (string, []string, error) {
+	operation := "start"
+	operationSet := false
+	selectors := make([]string, 0, len(args))
+	for index := 0; index < len(args); index++ {
+		switch {
+		case args[index] == "--operation":
+			if operationSet {
+				return "", nil, &kranzcli.Error{Code: "invalid_arguments", Message: "--operation may be specified only once", ExitCode: kranzcli.ExitUsage}
+			}
+			if index+1 >= len(args) {
+				return "", nil, &kranzcli.Error{Code: "missing_option_value", Message: "--operation requires start, stop, or restart", ExitCode: kranzcli.ExitUsage}
+			}
+			index++
+			operation, operationSet = args[index], true
+		case strings.HasPrefix(args[index], "--operation="):
+			if operationSet {
+				return "", nil, &kranzcli.Error{Code: "invalid_arguments", Message: "--operation may be specified only once", ExitCode: kranzcli.ExitUsage}
+			}
+			operation, operationSet = strings.TrimPrefix(args[index], "--operation="), true
+		case strings.HasPrefix(args[index], "-"):
+			return "", nil, &kranzcli.Error{Code: "unknown_option", Message: fmt.Sprintf("unknown plan option %q", args[index]), Hint: "Use --operation start, stop, or restart.", ExitCode: kranzcli.ExitUsage}
+		default:
+			selectors = append(selectors, args[index])
+		}
+	}
+	if operation != "start" && operation != "stop" && operation != "restart" {
+		return "", nil, &kranzcli.Error{Code: "invalid_arguments", Message: fmt.Sprintf("unknown plan operation %q", operation), Hint: "Use start, stop, or restart.", ExitCode: kranzcli.ExitUsage}
+	}
+	return operation, selectors, nil
 }
 
 func runGraph(options kranzcli.GlobalOptions, args []string, stdout io.Writer) error {
