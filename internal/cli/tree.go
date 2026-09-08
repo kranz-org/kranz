@@ -118,8 +118,12 @@ func DefaultTree() *Command {
 			}},
 		}},
 		{Name: "doctor", Summary: "run project preflight checks"},
-		{Name: "ps", Summary: "list active project runtimes"},
-		{Name: "clients", Summary: "list clients attached to project runtimes"},
+		{Name: "ps", Summary: "list active project runtimes", Usage: "kranz ps [--format TEMPLATE]", Options: []Option{
+			{Flags: "--format TEMPLATE", Summary: "render each runtime with a Go template; prefix with 'table ' for headers"},
+		}},
+		{Name: "clients", Summary: "list clients attached to project runtimes", Usage: "kranz clients [--format TEMPLATE]", Options: []Option{
+			{Flags: "--format TEMPLATE", Summary: "render each client with a Go template; prefix with 'table ' for headers"},
+		}},
 		{Name: "list", Summary: "list services, actions, or tags", Usage: "kranz list [services|actions|tags]"},
 		{Name: "info", Summary: "show project or service details", Usage: "kranz info [SERVICE]"},
 		{Name: "status", Summary: "show runtime status", Usage: "kranz status [SELECTOR ...]"},

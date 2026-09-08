@@ -4,6 +4,19 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### Added
+
+- `kranz ps` and `kranz clients` accept Docker-style `--format` Go templates,
+  including a `table ` prefix for aligned output with headers.
+
+### Changed
+
+- `kranz clients` now presents each connection in one compact `CLIENT` column,
+  such as `TUI`, `CLI: foreground`, or `MCP: codex`. It no longer reports the
+  runtime's background ownership connection as a client, matching `kranz ps`
+  and the TUI Runtimes window. `kranz ps` now shows the owning supervisor's PID
+  directly.
+
 ## [0.13.1] - 2026-09-07
 
 ### Fixed

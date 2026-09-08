@@ -202,16 +202,10 @@ func execute(args []string, stdout, stderr io.Writer) int {
 	}
 
 	if invocation.Command() == "ps" {
-		if len(invocation.Args) != 0 {
-			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, &kranzcli.Error{Code: "invalid_arguments", Message: "ps does not accept arguments", ExitCode: kranzcli.ExitUsage})
-		}
-		return runPS(invocation.Globals, stdout, stderr)
+		return runPS(invocation.Globals, invocation.Args, stdout, stderr)
 	}
 	if invocation.Command() == "clients" {
-		if len(invocation.Args) != 0 {
-			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, &kranzcli.Error{Code: "invalid_arguments", Message: "clients does not accept arguments", ExitCode: kranzcli.ExitUsage})
-		}
-		return runClients(invocation.Globals, stdout, stderr)
+		return runClients(invocation.Globals, invocation.Args, stdout, stderr)
 	}
 	if invocation.Command() == "up" {
 		if err := runUp(invocation.Globals, invocation.Args, stdout); err != nil {
@@ -292,7 +286,11 @@ func containsMCPCommand(args []string) bool {
 	return false
 }
 
-func runPS(options kranzcli.GlobalOptions, stdout, stderr io.Writer) int {
+func runPS(options kranzcli.GlobalOptions, args []string, stdout, stderr io.Writer) int {
+	formatter, err := parseRowFormat("ps", options.Output, args)
+	if err != nil {
+		return kranzcli.WriteError(stdout, stderr, options.Output, err)
+	}
 	registry, err := kranzruntime.DefaultRegistry()
 	if err != nil {
 		return kranzcli.WriteError(stdout, stderr, options.Output, err)
@@ -318,11 +316,21 @@ func runPS(options kranzcli.GlobalOptions, stdout, stderr io.Writer) int {
 		}
 		return 0
 	}
+	if formatter != nil {
+		rows := make([]map[string]any, 0, len(records))
+		for _, record := range records {
+			rows = append(rows, psFormatRow(record))
+		}
+		if err := formatter.write(stdout, psFormatHeaders(), rows); err != nil {
+			return kranzcli.WriteError(stdout, stderr, options.Output, err)
+		}
+		return 0
+	}
 	w := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
 	// MODE is gone: with the MCP adapter no longer a registry entry, the only
 	// values left describe how a runtime was launched, not what it is. CLIENTS
 	// answers the question the row could not: who is working in this project.
-	_, _ = fmt.Fprintln(w, "ID\tNAME\tPROJECT\tSERVICES\tCLIENTS\tSTATE\tUPTIME")
+	_, _ = fmt.Fprintln(w, "ID\tPID\tNAME\tPROJECT\tSERVICES\tCLIENTS\tSTATE\tUPTIME")
 	for _, record := range records {
 		// A bare total says nothing about whether the project is actually up.
 		// An unreachable runtime reports "-" rather than a count it cannot know.
@@ -338,12 +346,39 @@ func runPS(options kranzcli.GlobalOptions, stdout, stderr io.Writer) int {
 		if len(id) > 8 {
 			id = id[:8]
 		}
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", id, record.Name, record.Project, services, clients, record.State, shortDuration(time.Since(record.StartedAt)))
+		_, _ = fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\n", id, record.PID, record.Name, record.Project, services, clients, record.State, shortDuration(time.Since(record.StartedAt)))
 	}
 	if err := w.Flush(); err != nil {
 		return kranzcli.WriteError(stdout, stderr, options.Output, err)
 	}
 	return 0
+}
+
+func psFormatHeaders() map[string]any {
+	return map[string]any{
+		"ID": "ID", "FullID": "FULL ID", "PID": "PID", "Name": "NAME", "Project": "PROJECT",
+		"Services": "SERVICES", "Clients": "CLIENTS", "State": "STATE",
+		"Uptime": "UPTIME", "Directory": "DIRECTORY", "Mode": "MODE",
+		"Version": "VERSION", "StartedAt": "STARTED AT",
+	}
+}
+
+func psFormatRow(record kranzruntime.SessionRecord) map[string]any {
+	services := "-"
+	if record.Services != nil && record.Running != nil {
+		services = fmt.Sprintf("%d/%d", *record.Running, *record.Services)
+	}
+	clients := "-"
+	if record.Clients != nil {
+		clients = strconv.Itoa(*record.Clients)
+	}
+	return map[string]any{
+		"ID": shortID(record.ID), "FullID": record.ID, "PID": record.PID, "Name": record.Name,
+		"Project": record.Project, "Services": services, "Clients": clients,
+		"State": string(record.State), "Uptime": shortDuration(time.Since(record.StartedAt)),
+		"Directory": record.Directory, "Mode": record.Mode, "Version": record.KranzVersion,
+		"StartedAt": record.StartedAt.Format(time.RFC3339),
+	}
 }
 
 // shortDuration renders an age the way a person reads one: the largest unit

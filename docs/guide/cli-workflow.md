@@ -46,9 +46,9 @@ supervisor.
 
 ```console
 $ kranz ps
-ID        NAME      PROJECT  SERVICES  CLIENTS  STATE    UPTIME
-7fa21c8d  shop-dev  Shop     4/4       1        running  18m
-91bc430a  billing   Billing  3/3       2        running  6m
+ID        PID    NAME      PROJECT  SERVICES  CLIENTS  STATE    UPTIME
+7fa21c8d  18400  shop-dev  Shop     4/4       1        running  18m
+91bc430a  18022  billing   Billing  3/3       2        running  6m
 ```
 
 `clients` answers the other half: who is attached to those runtimes, whether

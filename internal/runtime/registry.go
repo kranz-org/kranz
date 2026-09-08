@@ -60,8 +60,8 @@ type SessionRecord struct {
 	// caller can tell "no services" from "state unknown".
 	Services *int `json:"services"`
 	Running  *int `json:"running"`
-	// Clients counts the connections the runtime is serving, nil when it could
-	// not be reached. The listing probe is itself one of them and is excluded.
+	// Clients counts user-facing connections, nil when the runtime could not be
+	// reached. The listing probe and background owner are excluded.
 	Clients *int `json:"clients"`
 	// ClientSurfaces lists the unique delivery-surface labels (for example
 	// "tui", "mcp") currently connected, excluding the listing probe itself

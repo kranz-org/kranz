@@ -187,42 +187,59 @@ Every runtime has an independent background supervisor. Leaving a TUI through
 its detach action does not stop it; confirming shutdown or running an external
 `down` stops the runtime and closes attached clients cleanly.
 
-`ps` lists runtimes; `clients` lists each runtime's owner together with the CLI,
-TUI, and MCP connections working in it, including surface, label, PID, and
-connection age. They are two commands because they answer two questions: what
-is running, and who is using it. Narrow either one to a single runtime with
-`-p NAME|ID`.
+`ps` lists runtimes; `clients` lists the CLI, TUI, and MCP connections working
+in them, including client identity, PID, and connection age. They are two
+commands because they answer two questions: what is running, and who is using
+it. Narrow either one to a single runtime with `-p NAME|ID`.
 
 ```console
 $ kranz ps
-ID        NAME       PROJECT    SERVICES  CLIENTS  STATE    UPTIME
-7fa21c8d  shop-dev   Shop       4/4       3        running  18m
-91bc430a  billing    Billing    3/3       1        running  6m
-3de94a71  analytics  Analytics  2/2       2        running  2m
+ID        PID    NAME       PROJECT    SERVICES  CLIENTS  STATE    UPTIME
+7fa21c8d  18400  shop-dev   Shop       4/4       2        running  18m
+91bc430a  18022  billing    Billing    3/3       0        running  6m
+3de94a71  19001  analytics  Analytics  2/2       1        running  2m
 
 $ kranz clients
-RUNTIME    SURFACE     CLIENT            PID    CONNECTED
-shop-dev   background  Kranz background  18400  18m
-shop-dev   tui         Kranz dashboard   18421  18m
-shop-dev   mcp         Kranz MCP         18472  4m
-billing    background  Kranz background  18022  6m
-analytics  background  Kranz background  19001  2m
-analytics  cli         Kranz CLI         19108  <1s
+RUNTIME    PID    CLIENT  CONNECTED
+shop-dev   18421  TUI     18m
+shop-dev   18472  MCP     4m
+analytics  19108  CLI     <1s
 ```
 
-The `shop-dev` clients share one runtime row. Every running runtime has a
-background owner connection; TUI, foreground log streaming, CLI, and MCP
-connections come and go without taking ownership. The short-lived command on
-`analytics` appears only while it is connected. `kranz clients` never counts
-itself.
+The `shop-dev` clients share one runtime row. TUI, foreground log streaming,
+CLI, and MCP connections come and go without taking ownership. The short-lived
+command on `analytics` appears only while it is connected. The runtime's
+background owner is infrastructure rather than a client, so `kranz clients`
+does not show it and never shows its own discovery connection. A runtime with
+no clients remains visible in `kranz ps` and the TUI Runtimes window, where its
+`CLIENTS` value is `-`.
 
-These are the built-in client labels. The TUI reports `Kranz dashboard` (or
-`Kranz attach` when opened with `kranz attach`), the runtime owner reports
-`Kranz background`, a foreground `kranz up` client reports `Kranz foreground`,
-MCP reports `Kranz MCP`, and ordinary commands report `Kranz CLI`. An MCP launcher can set
-`KRANZ_MCP_CLIENT=codex` to replace the default MCP label with `MCP: codex` when
-several agent clients need to be distinguished. The label changes only what
-`kranz clients` displays; it does not select or rename a runtime.
+Built-in clients are displayed compactly as `TUI`, `CLI`, and `MCP`.
+Meaningful variants retain their identity, such as `TUI: attach`,
+`CLI: foreground`, or `MCP: codex`. An MCP launcher can set
+`KRANZ_MCP_CLIENT=codex` to produce the latter when several agent clients need
+to be distinguished. The label changes only what `kranz clients` displays; it
+does not select or rename a runtime.
+
+Both runtime listings accept Docker-style Go templates. Without the `table`
+prefix, the template renders once per row with no header:
+
+```console
+$ kranz ps --format '{{.PID}}\t{{.Name}}\t{{.State}}'
+18400   shop-dev   running
+
+$ kranz clients --format 'table {{.PID}}\t{{.Runtime}}\t{{.Client}}'
+PID     RUNTIME    CLIENT
+18421   shop-dev   TUI
+18472   shop-dev   MCP: codex
+```
+
+`ps` exposes `.ID`, `.FullID`, `.PID`, `.Name`, `.Project`, `.Services`,
+`.Clients`, `.State`, `.Uptime`, `.Directory`, `.Mode`, `.Version`, and
+`.StartedAt`. `clients` exposes `.Runtime`, `.ID`, `.FullID`, `.Project`,
+`.PID`, `.Client`, `.Surface`, `.Label`, `.Version`, `.Connected`, and
+`.ConnectedAt`. The `json`, `lower`, `upper`, `split`, and `join` template
+functions are available. `--format` and `--output=json` cannot be combined.
 
 Every `ps` row is an independently owned lifecycle runtime. A TUI, foreground
 log stream, CLI command, and MCP server are clients of that session — they
