@@ -130,7 +130,10 @@ func runList(options kranzcli.GlobalOptions, args []string, stdout io.Writer) er
 	case "services":
 		return listServices(cfg, options, stdout)
 	case "actions":
-		return listActions(cfg, options, stdout)
+		// Keep the legacy `list actions` spelling as an exact alias of the
+		// canonical action command instead of maintaining two subtly different
+		// action tables and JSON contracts.
+		return runActionList(options, nil, stdout)
 	case "tags":
 		return listTags(cfg, options, stdout)
 	default:
@@ -168,35 +171,6 @@ func listServices(cfg *config.Config, options kranzcli.GlobalOptions, stdout io.
 			name += " (disabled)"
 		}
 		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", name, joinOrDash(item.Tags), joinOrDash(item.DependsOn), joinPortsOrDash(item.Ports), orDash(item.Description))
-	}
-	return w.Flush()
-}
-
-func listActions(cfg *config.Config, options kranzcli.GlobalOptions, stdout io.Writer) error {
-	type entry struct {
-		ID          string `json:"id"`
-		Owner       string `json:"owner"`
-		OwnerKind   string `json:"owner_kind"`
-		Name        string `json:"name"`
-		Description string `json:"description"`
-		Interactive bool   `json:"interactive"`
-	}
-	ids := cfg.ActionIDs()
-	entries := make([]entry, 0, len(ids))
-	for _, id := range ids {
-		action, ok := cfg.ResolveAction(id)
-		if !ok {
-			continue
-		}
-		entries = append(entries, entry{actionIDString(id), id.Owner, string(id.OwnerKind), id.Name, action.Description, action.Interactive != nil && *action.Interactive})
-	}
-	if options.Output == kranzcli.OutputJSON {
-		return kranzcli.WriteJSON(stdout, entries)
-	}
-	w := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "ACTION\tOWNER\tINTERACTIVE\tDESCRIPTION")
-	for _, item := range entries {
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%t\t%s\n", item.ID, item.Owner, item.Interactive, orDash(item.Description))
 	}
 	return w.Flush()
 }

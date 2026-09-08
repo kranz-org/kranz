@@ -18,6 +18,7 @@ services:
       seed:
         description: Load fixtures.
         command: echo seeded
+        confirm: true
       migrate:
         command: echo migrated
         interactive: true
@@ -45,6 +46,9 @@ func TestActionListAndFilterByOwner(t *testing.T) {
 		if !strings.Contains(all, id) {
 			t.Errorf("action list omits %q: %q", id, all)
 		}
+	}
+	if !strings.Contains(all, "CONFIRM") || !strings.Contains(all, "true") {
+		t.Errorf("action list omits confirmation requirements: %q", all)
 	}
 
 	owned := runInspection(t, directory, "action", "list", "toolbox")

@@ -73,9 +73,9 @@ func runActionList(options kranzcli.GlobalOptions, args []string, stdout io.Writ
 		return nil
 	}
 	w := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "ACTION\tOWNER\tKIND\tINTERACTIVE\tDESCRIPTION")
+	_, _ = fmt.Fprintln(w, "ACTION\tOWNER\tKIND\tINTERACTIVE\tCONFIRM\tDESCRIPTION")
 	for _, item := range entries {
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%t\t%s\n", item.ID, item.Owner, item.OwnerKind, item.Interactive, orDash(item.Description))
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%t\t%t\t%s\n", item.ID, item.Owner, item.OwnerKind, item.Interactive, item.Confirm, orDash(item.Description))
 	}
 	return w.Flush()
 }

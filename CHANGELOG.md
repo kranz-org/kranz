@@ -16,6 +16,8 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
   runtime's background ownership connection as a client, matching `kranz ps`
   and the TUI Runtimes window. `kranz ps` now shows the owning supervisor's PID
   directly.
+- `list actions` is now an exact compatibility alias of `action list`; the
+  canonical action table also shows whether each action requires confirmation.
 
 ## [0.13.1] - 2026-09-07
 
