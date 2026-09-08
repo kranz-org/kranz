@@ -24,6 +24,19 @@ import (
 
 var mcpProjectCounter atomic.Int64
 
+func TestMCPAttachOnlyWarnsWithoutWritingProtocolOutput(t *testing.T) {
+	var stderr bytes.Buffer
+	warnDeprecatedMCPOptions(true, &stderr)
+	if !strings.Contains(stderr.String(), "--attach-only is deprecated") {
+		t.Fatalf("warning = %q", stderr.String())
+	}
+	stderr.Reset()
+	warnDeprecatedMCPOptions(false, &stderr)
+	if stderr.Len() != 0 {
+		t.Fatalf("unexpected warning = %q", stderr.String())
+	}
+}
+
 func TestMCPHelperProcess(t *testing.T) {
 	if os.Getenv("KRANZ_TEST_MCP_HELPER") != "1" {
 		return

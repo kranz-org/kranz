@@ -25,7 +25,7 @@ func Help(tree *Command, path []string) (string, error) {
 	var output strings.Builder
 	fmt.Fprintf(&output, "%s — %s.\n", name, command.Summary)
 	if command.IsPlanned() {
-		output.WriteString("\nThis command is planned for v0.8.0 and this build does not implement it yet.\n")
+		output.WriteString("\nThis command is planned for a future release and this build does not implement it yet.\n")
 	}
 	fmt.Fprintf(&output, "\nUsage:\n  %s\n", usage)
 
@@ -40,7 +40,7 @@ func Help(tree *Command, path []string) (string, error) {
 		available = append(available, child)
 	}
 	writeSection(&output, "Commands", available)
-	writeSection(&output, "Planned for v0.8.0 (not implemented yet)", planned)
+	writeSection(&output, "Planned for a future release (not implemented yet)", planned)
 	writeOptions(&output, "Options", command.Options)
 	writeOptions(&output, "Global options", GlobalFlags())
 	return output.String(), nil

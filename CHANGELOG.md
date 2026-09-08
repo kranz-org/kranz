@@ -21,6 +21,10 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ### Changed
 
+- The obsolete MCP `--attach-only` compatibility flag now emits a deprecation
+  warning instead of being silently ignored. It remains accepted until the
+  next major release. Version-specific future-command wording in CLI help is
+  now release-neutral.
 - `kranz init --name NAME` is now the unambiguous project-name option.
   `-p/--project` remains accepted by `init` as a compatibility alias, and
   combining both forms is an explicit usage error.

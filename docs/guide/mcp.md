@@ -208,8 +208,9 @@ with `runtime_pinned` — useful when a client should be unable to reach beyond
 one checkout. Existing registrations that pass these flags keep working
 unchanged; they are now a choice rather than a requirement.
 
-`--attach-only` is accepted and ignored. It disabled an owner fallback that no
-longer exists.
+`--attach-only` is deprecated and ignored. It disabled an owner fallback that
+no longer exists, now emits a warning, and will be removed in the next major
+release.
 
 ## Starting a project the agent was asked to start
 

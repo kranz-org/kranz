@@ -87,17 +87,15 @@ type Command struct {
 	Default string
 
 	// Planned marks a command whose grammar is reserved but whose execution a
-	// later feature stream still has to attach. Help lists planned commands
+	// future change still has to attach. Help lists planned commands
 	// apart from working ones and the dispatcher refuses them, so the tree
 	// stays the single place that decides which surface actually exists.
 	Planned bool
 }
 
-// DefaultTree returns the complete v0.8 command vocabulary. Feature streams
-// attach execution to these nodes incrementally; reserving the grammar here
-// keeps unknown-command handling, help, and future completions deterministic.
-// A stream that implements a command clears its Planned flag in the same
-// change, which is what moves the command into the working help section.
+// DefaultTree returns the command vocabulary implemented by this build.
+// Reserving future grammar here is optional; a command marked Planned stays
+// out of completions and is clearly separated in help until implemented.
 func DefaultTree() *Command {
 	return &Command{Name: "kranz", Summary: "a local service orchestrator", Children: []*Command{
 		{Name: "init", Summary: "create a Kranz configuration", Usage: "kranz init [--from PATH] [--name NAME] [--service NAME] [--command COMMAND] [-o PATH] [-y|--yes]", Options: []Option{
@@ -185,7 +183,7 @@ func DefaultTree() *Command {
 		}},
 		{Name: "attach", Summary: "open the TUI for an active runtime"},
 		{Name: "mcp", Summary: "serve project runtimes over MCP stdio; global -C/-p pin it to one", Usage: "kranz mcp", Options: []Option{
-			{Flags: "--attach-only", Summary: "accepted and ignored; MCP no longer creates a runtime on connect"},
+			{Flags: "--attach-only", Summary: "deprecated compatibility flag; ignored and removed in the next major release"},
 		}},
 		{Name: "logs", Summary: "show and clear logs", Default: "show", Children: []*Command{
 			{Name: "show", Summary: "show service and action logs", Usage: "kranz logs [SELECTOR ...] [--tail N | --all] [--since D]\n  [--run N | --runs N] [--source S] [--with-actions]\n  [--plain | --no-timestamps | --no-labels] [--follow]", Options: []Option{

@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-// plannedTree mirrors the shape the real tree had while v0.8 was being built:
-// some commands runnable, some grammar reserved ahead of its implementation.
+// plannedTree covers a possible future tree: some commands runnable, some
+// grammar reserved ahead of its implementation.
 // The mechanism is tested here rather than against DefaultTree so it keeps
 // working for the next release that reserves a command before writing it.
 func plannedTree() *Command {
@@ -33,7 +33,7 @@ func TestHelpSeparatesPlannedCommands(t *testing.T) {
 		t.Fatalf("Help returned an error: %v", err)
 	}
 
-	commands, planned, found := strings.Cut(output, "Planned for v0.8.0 (not implemented yet):")
+	commands, planned, found := strings.Cut(output, "Planned for a future release (not implemented yet):")
 	if !found {
 		t.Fatalf("help does not list planned commands separately:\n%s", output)
 	}
@@ -78,8 +78,8 @@ func TestHelpForPlannedCommandSaysSo(t *testing.T) {
 	}
 }
 
-// Every command v0.8.0 promises is now implemented. A planned command
-// reappearing here means a release is about to ship grammar it cannot run.
+// Every command in the release tree is implemented. A planned command
+// appearing here means a release is about to ship grammar it cannot run.
 func TestReleaseSurfaceHasNoPlannedCommands(t *testing.T) {
 	var planned []string
 	var walk func(command *Command, path []string)

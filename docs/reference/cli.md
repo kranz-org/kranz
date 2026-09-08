@@ -296,7 +296,8 @@ entry, supervises nothing, and picks the runtime per call: the tool's `runtime`
 argument, then the `-C`/`-p` pin, then the directory it was started in, then an
 error carrying the runtimes that would have worked. `-C`, `-f`, and `-p` pin the
 connection to one project and make every other address an error.
-`--attach-only` is accepted and ignored. See the [MCP reference](./mcp.md).
+`--attach-only` is deprecated and ignored. It emits a warning and will be
+removed in the next major release. See the [MCP reference](./mcp.md).
 
 ### Logs
 

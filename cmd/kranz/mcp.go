@@ -24,9 +24,16 @@ func runMCP(options kranzcli.GlobalOptions, attachOnly bool, stdout, stderr io.W
 	if options.Output != kranzcli.OutputText {
 		return errors.New("--output is not valid for MCP stdio; stdout is reserved for JSON-RPC framing")
 	}
+	warnDeprecatedMCPOptions(attachOnly, stderr)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	return runMCPContextOptions(ctx, options, attachOnly, mcpStdin, stdout, stderr)
+}
+
+func warnDeprecatedMCPOptions(attachOnly bool, stderr io.Writer) {
+	if attachOnly {
+		_, _ = io.WriteString(stderr, "Kranz MCP: warning: --attach-only is deprecated, has no effect, and will be removed in a future major release\n")
+	}
 }
 
 func runMCPContext(ctx context.Context, options kranzcli.GlobalOptions, stdin io.Reader, stdout, stderr io.Writer) error {
@@ -38,7 +45,8 @@ func runMCPContext(ctx context.Context, options kranzcli.GlobalOptions, stdin io
 // of runtimes, and which runtime answers is decided per call.
 func runMCPContextOptions(ctx context.Context, options kranzcli.GlobalOptions, attachOnly bool, stdin io.Reader, stdout, stderr io.Writer) error {
 	// --attach-only described the old owner fallback, which no longer exists.
-	// Accepting it silently keeps existing registrations working.
+	// runMCP warns interactive callers while this lower testable seam preserves
+	// old registrations until the next major release.
 	_ = attachOnly
 	resolver, err := newMCPResolver(options)
 	if err != nil {
