@@ -313,8 +313,12 @@ kranz logs analytics/stats --run -1       # the latest run
 kranz logs analytics/stats --run -2       # the run before it
 kranz logs analytics/stats --runs 3       # the last three runs
 kranz logs api --run -1                   # only the newest start of a service
-kranz runs                                # bounded catalog and retention limits
+kranz runs                                # bounded run catalog
 kranz runs api analytics/stats            # narrow catalog by target
+kranz runs --status failed --since 2h     # filter by status and start time
+kranz runs --limit 10                     # newest ten matching runs
+kranz runs --format 'table {{.Run}}\t{{.Status}}\t{{.Duration}}'
+kranz runs retention                      # per-target retention limits
 kranz runs delete api#4 --confirm         # delete one completed run and retained output
 ```
 

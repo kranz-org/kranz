@@ -52,8 +52,10 @@ target's. Think of the catalog as the index of executions and the log buffer as
 the retained evidence for what those executions printed.
 
 ```bash
-kranz runs                          # every retained run, with retention budgets
+kranz runs                          # every retained run
 kranz runs api analytics/stats      # narrow to one or more targets
+kranz runs --status failed --since 2h --limit 10
+kranz runs retention                # per-target catalog and output budgets
 kranz logs api --run 4              # only run #4
 kranz logs api --run -1             # the newest run
 kranz logs api --runs 3             # the last three runs

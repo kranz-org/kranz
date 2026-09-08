@@ -135,7 +135,15 @@ func DefaultTree() *Command {
 			{Flags: "--format TEMPLATE", Summary: "render each service with a Go template; prefix with 'table ' for headers"},
 		}},
 		{Name: "runs", Summary: "inspect and delete retained runs", Default: "list", Children: []*Command{
-			{Name: "list", Summary: "list retained service and action runs", Usage: "kranz runs [TARGET ...]"},
+			{Name: "list", Summary: "list retained service and action runs", Usage: "kranz runs [TARGET ...] [--limit N] [--since D] [--status STATUS] [--format TEMPLATE]", Options: []Option{
+				{Flags: "--limit N", Summary: "keep only the newest N matching runs"},
+				{Flags: "--since D", Summary: "keep runs started within a duration such as 30m or 2h"},
+				{Flags: "--status STATUS", Summary: "keep comma-separated statuses; repeatable"},
+				{Flags: "--format TEMPLATE", Summary: "render each run with a Go template; prefix with 'table ' for headers"},
+			}},
+			{Name: "retention", Summary: "show per-target run retention", Usage: "kranz runs retention [TARGET ...] [--format TEMPLATE]", Options: []Option{
+				{Flags: "--format TEMPLATE", Summary: "render each retention boundary with a Go template; prefix with 'table ' for headers"},
+			}},
 			{Name: "delete", Summary: "delete one completed run", Usage: "kranz runs delete TARGET#N --confirm", Options: []Option{
 				{Flags: "--confirm", Summary: "confirm permanent removal of the run and its retained output"},
 			}},

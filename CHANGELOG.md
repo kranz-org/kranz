@@ -12,6 +12,9 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
   `list services/actions/tags` views support the same row formatter.
 - `kranz plan --operation start|stop|restart` previews every service a
   lifecycle operation would affect; bare `plan` remains a start preview.
+- `kranz runs` supports target, status, time-window, and newest-count filters,
+  plus Docker-style row templates. `kranz runs retention` now owns the
+  separate per-target retention table and its formatter fields.
 
 ### Changed
 
