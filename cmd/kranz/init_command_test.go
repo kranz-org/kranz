@@ -35,7 +35,7 @@ func TestInitWritesAValidConfigurationFromFlags(t *testing.T) {
 	withoutTerminal(t)
 	directory := t.TempDir()
 
-	output := runInspection(t, directory, "init", "--project", "Demo", "--service", "api", "--command", "sleep 60", "--yes")
+	output := runInspection(t, directory, "init", "--name", "Demo", "--service", "api", "--command", "sleep 60", "--yes")
 	if !strings.Contains(output, "Wrote kranz.yaml") {
 		t.Fatalf("init output = %q", output)
 	}
@@ -58,7 +58,7 @@ func TestInitJSONWritesOneUsefulEnvelopeWithoutHumanPreview(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	if code := execute([]string{
 		"-C", directory, "--output=json", "init",
-		"--project", "Demo", "--service", "api", "--command", "sleep 60", "--yes",
+		"--name", "Demo", "--service", "api", "--command", "sleep 60", "--yes",
 	}, &stdout, &stderr); code != 0 {
 		t.Fatalf("exit = %d, stderr = %q", code, stderr.String())
 	}
@@ -88,10 +88,9 @@ func TestInitJSONWritesOneUsefulEnvelopeWithoutHumanPreview(t *testing.T) {
 	}
 }
 
-// --project is consumed by the global runtime selector before init sees it, so
-// init has to read the project name from there or silently ignore the flag its
-// own reference documents.
-func TestInitReadsProjectNameFromTheGlobalFlag(t *testing.T) {
+// -p/--project was the original spelling and is still accepted for scripts,
+// while --name is the unambiguous init-local option shown in help.
+func TestInitPreservesGlobalProjectNameCompatibility(t *testing.T) {
 	withoutTerminal(t)
 	directory := t.TempDir()
 	var stdout, stderr bytes.Buffer
@@ -104,6 +103,15 @@ func TestInitReadsProjectNameFromTheGlobalFlag(t *testing.T) {
 	}
 	if cfg.Project != "Named" {
 		t.Errorf("project = %q, want Named", cfg.Project)
+	}
+}
+
+func TestInitRejectsAmbiguousProjectNames(t *testing.T) {
+	withoutTerminal(t)
+	var stdout, stderr bytes.Buffer
+	code := execute([]string{"-C", t.TempDir(), "-p", "Legacy", "init", "--name", "Current", "--service", "api", "--command", "sleep 60", "--yes"}, &stdout, &stderr)
+	if code != kranzcli.ExitUsage || !strings.Contains(stderr.String(), "both --name and -p/--project") {
+		t.Fatalf("exit=%d stdout/stderr=%q/%q", code, stdout.String(), stderr.String())
 	}
 }
 

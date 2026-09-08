@@ -38,6 +38,7 @@ type initOptions struct {
 	from       string
 	fromSet    bool
 	project    string
+	projectSet bool
 	service    string
 	command    string
 	outputPath string
@@ -75,14 +76,21 @@ func parseInitOptions(args []string) (initOptions, error) {
 			options.from, options.fromSet = source, true
 		case strings.HasPrefix(arg, "--from="):
 			options.from, options.fromSet = strings.TrimPrefix(arg, "--from="), true
-		case arg == "--project":
-			project, err := value(&index, "--project")
+		case arg == "--name" || arg == "--project":
+			if options.projectSet {
+				return initOptions{}, &kranzcli.Error{Code: "invalid_arguments", Message: "the project name may be specified only once", Hint: "Use the canonical `--name NAME` option.", ExitCode: kranzcli.ExitUsage}
+			}
+			project, err := value(&index, arg)
 			if err != nil {
 				return initOptions{}, err
 			}
-			options.project = project
-		case strings.HasPrefix(arg, "--project="):
-			options.project = strings.TrimPrefix(arg, "--project=")
+			options.project, options.projectSet = project, true
+		case strings.HasPrefix(arg, "--name=") || strings.HasPrefix(arg, "--project="):
+			if options.projectSet {
+				return initOptions{}, &kranzcli.Error{Code: "invalid_arguments", Message: "the project name may be specified only once", Hint: "Use the canonical `--name NAME` option.", ExitCode: kranzcli.ExitUsage}
+			}
+			_, project, _ := strings.Cut(arg, "=")
+			options.project, options.projectSet = project, true
 		case arg == "--service":
 			service, err := value(&index, "--service")
 			if err != nil {
@@ -119,6 +127,9 @@ func parseInitOptions(args []string) (initOptions, error) {
 	if options.fromSet && options.from == "" {
 		return initOptions{}, &kranzcli.Error{Code: "missing_option_value", Message: "--from requires a path", ExitCode: kranzcli.ExitUsage}
 	}
+	if options.projectSet && options.project == "" {
+		return initOptions{}, &kranzcli.Error{Code: "missing_option_value", Message: "--name requires a project name", ExitCode: kranzcli.ExitUsage}
+	}
 	return options, nil
 }
 
@@ -127,9 +138,11 @@ func runInit(globals kranzcli.GlobalOptions, args []string, stdout io.Writer) er
 	if err != nil {
 		return err
 	}
-	// `--project NAME` is parsed as the global runtime selector before init
-	// ever sees it. init addresses no runtime, so the global value is the
-	// project name here, which is also the spelling the CLI reference documents.
+	if options.projectSet && globals.Project != "" {
+		return &kranzcli.Error{Code: "invalid_arguments", Message: "init project name was specified with both --name and -p/--project", Hint: "Use `kranz init --name NAME`; -p/--project remains a compatibility alias.", ExitCode: kranzcli.ExitUsage}
+	}
+	// Older invocations used the global runtime selector as init's project
+	// name. Preserve that behavior while keeping new commands unambiguous.
 	if options.project == "" {
 		options.project = globals.Project
 	}

@@ -21,6 +21,9 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ### Changed
 
+- `kranz init --name NAME` is now the unambiguous project-name option.
+  `-p/--project` remains accepted by `init` as a compatibility alias, and
+  combining both forms is an explicit usage error.
 - Conflicting `graph --format` and `--output=json` selections now fail instead
   of silently choosing JSON. Help and shell-completion generation explicitly
   reject JSON output because their products are text artifacts.

@@ -100,9 +100,9 @@ type Command struct {
 // change, which is what moves the command into the working help section.
 func DefaultTree() *Command {
 	return &Command{Name: "kranz", Summary: "a local service orchestrator", Children: []*Command{
-		{Name: "init", Summary: "create a Kranz configuration", Usage: "kranz init [--from PATH] [--project NAME] [--service NAME] [--command COMMAND] [-o PATH] [-y|--yes]", Options: []Option{
+		{Name: "init", Summary: "create a Kranz configuration", Usage: "kranz init [--from PATH] [--name NAME] [--service NAME] [--command COMMAND] [-o PATH] [-y|--yes]", Options: []Option{
 			{Flags: "--from PATH", Summary: "convert an existing Procfile or compose file"},
-			{Flags: "--project NAME", Summary: "project name to write"},
+			{Flags: "--name NAME", Summary: "project name to write; -p/--project remains a compatibility alias"},
 			{Flags: "--service NAME", Summary: "name of the first service"},
 			{Flags: "--command COMMAND", Summary: "command that first service runs"},
 			{Flags: "-o, --output-file PATH", Summary: "file to write; defaults to kranz.yaml"},

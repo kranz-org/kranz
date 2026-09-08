@@ -97,6 +97,7 @@ prefix.
 kranz init                                   # wizard, or flags when there is no terminal
 kranz init --from Procfile                   # convert an existing source
 kranz init --from process-compose.yaml
+kranz init --name Shop --service api --command "npm run dev" --yes
 kranz init --service api --command "npm run dev" --yes
 kranz init -o kranz.local.yaml
 ```
@@ -106,6 +107,11 @@ convert it, reads `package.json` scripts and offers them as actions without
 running them, previews the file it is about to write, and refuses to replace an
 existing file without `--yes` or a confirmation. It reloads what it wrote before
 reporting success.
+
+`--name` sets the project written into the new file. Older scripts may keep
+using `-p/--project` with `init`, but new invocations should prefer `--name` so
+the value cannot be confused with the global runtime selector. Supplying both
+forms is an error.
 
 ### Inspecting a project
 
