@@ -105,7 +105,7 @@ func execute(args []string, stdout, stderr io.Writer) int {
 		}
 		return 0
 	case "doctor":
-		if err := runDoctor(invocation.Globals, stdout); err != nil {
+		if err := runDoctor(invocation.Globals, invocation.Args, stdout); err != nil {
 			var requested requestedExitError
 			if errors.As(err, &requested) {
 				return requested.code

@@ -72,6 +72,13 @@ func TestConfigShowRejectsUnknownOptions(t *testing.T) {
 	}
 }
 
+func TestConfigExplainFormatBypassesSingleLayerSummary(t *testing.T) {
+	output := runInspection(t, secretsDirectory(t), "config", "explain", "--format", "{{.Field}}")
+	if !strings.Contains(output, "services.zulu.command") || strings.Contains(output, "one configuration layer") {
+		t.Fatalf("formatted config explanation = %q", output)
+	}
+}
+
 // Provenance is a question about the files, so a field set by a later layer has
 // to be attributed to that layer rather than to the base.
 func TestConfigExplainAttributesFieldsToTheLayerThatSetThem(t *testing.T) {

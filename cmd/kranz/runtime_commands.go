@@ -591,6 +591,10 @@ func runtimeNameFromDirectory(options kranzcli.GlobalOptions) (string, error) {
 }
 
 func runStatus(options kranzcli.GlobalOptions, args []string, stdout io.Writer) error {
+	formatter, args, err := extractRowFormat("status", options.Output, args)
+	if err != nil {
+		return err
+	}
 	record, err := resolveSession(options)
 	if err != nil {
 		return err
@@ -645,6 +649,20 @@ func runStatus(options kranzcli.GlobalOptions, args []string, stdout io.Writer) 
 			Session  kranzruntime.SessionMetadata `json:"session"`
 			Services []statusService              `json:"services"`
 		}{record.SessionMetadata, safe})
+	}
+	if formatter != nil {
+		rows := make([]map[string]any, 0, len(services))
+		for _, service := range services {
+			rows = append(rows, map[string]any{
+				"Name": service.Name, "State": service.State.Status.String(), "Health": healthLabel(service),
+				"Uptime": serviceUptime(service), "PID": pidLabel(service.State.PID),
+				"Ports": joinPortsOrDash(service.DetectedPorts), "Error": service.State.ExitError,
+			})
+		}
+		return formatter.write(stdout, map[string]any{
+			"Name": "NAME", "State": "STATE", "Health": "HEALTH", "Uptime": "UPTIME",
+			"PID": "PID", "Ports": "PORTS", "Error": "ERROR",
+		}, rows)
 	}
 	w := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(w, "NAME\tSTATE\tHEALTH\tUPTIME\tPID\tPORTS")

@@ -221,8 +221,8 @@ Meaningful variants retain their identity, such as `TUI: attach`,
 to be distinguished. The label changes only what `kranz clients` displays; it
 does not select or rename a runtime.
 
-Both runtime listings accept Docker-style Go templates. Without the `table`
-prefix, the template renders once per row with no header:
+Row-oriented inspection commands accept Docker-style Go templates. Without
+the `table` prefix, the template renders once per row with no header:
 
 ```console
 $ kranz ps --format '{{.PID}}\t{{.Name}}\t{{.State}}'
@@ -240,6 +240,10 @@ PID     RUNTIME    CLIENT
 `.PID`, `.Client`, `.Surface`, `.Label`, `.Version`, `.Connected`, and
 `.ConnectedAt`. The `json`, `lower`, `upper`, `split`, and `join` template
 functions are available. `--format` and `--output=json` cannot be combined.
+The same formatter is available for `status`, `ports`, `doctor`,
+`config explain`, `action list`, and `list services/actions/tags`. Run a
+command with `--format '{{json .}}'` to discover its stable fields and current
+values; `table ` may be prefixed once the desired columns are selected.
 
 Every `ps` row is an independently owned lifecycle runtime. A TUI, foreground
 log stream, CLI command, and MCP server are clients of that session — they

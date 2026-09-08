@@ -57,6 +57,13 @@ func TestActionListAndFilterByOwner(t *testing.T) {
 	}
 }
 
+func TestActionListFormat(t *testing.T) {
+	output := runInspection(t, actionDirectory(t), "action", "list", "api", "--format", "{{.Action}}:{{.Confirm}}")
+	if !strings.Contains(output, "api/seed:true") || strings.Contains(output, "toolbox/seed") {
+		t.Fatalf("formatted action list = %q", output)
+	}
+}
+
 func TestActionListRejectsAnUnknownOwner(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	if code := execute([]string{"-C", actionDirectory(t), "action", "list", "nope"}, &stdout, &stderr); code != kranzcli.ExitNotFound {

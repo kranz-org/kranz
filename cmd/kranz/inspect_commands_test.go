@@ -76,6 +76,25 @@ func TestListReportsServicesActionsAndTags(t *testing.T) {
 	}
 }
 
+func TestRowOrientedInspectionCommandsAcceptFormat(t *testing.T) {
+	directory := inspectionDirectory(t)
+	for _, test := range []struct {
+		args []string
+		want string
+	}{
+		{args: []string{"list", "services", "--format", "{{.Name}}"}, want: "api"},
+		{args: []string{"list", "actions", "--format", "{{.Action}}"}, want: "api/seed"},
+		{args: []string{"list", "tags", "--format", "{{.Tag}}"}, want: "backend"},
+		{args: []string{"ports", "db", "--format", "{{.Service}}:{{.Port}}"}, want: "db:65123"},
+		{args: []string{"doctor", "--format", "{{.Check}}:{{.Status}}"}, want: ":"},
+	} {
+		output := runInspection(t, directory, test.args...)
+		if !strings.Contains(output, test.want) {
+			t.Errorf("%v output = %q, want %q", test.args, output, test.want)
+		}
+	}
+}
+
 func TestListRejectsAnUnknownKind(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	if code := execute([]string{"-C", inspectionDirectory(t), "list", "widgets"}, &stdout, &stderr); code != kranzcli.ExitUsage {

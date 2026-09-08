@@ -206,6 +206,10 @@ func recordSources(node *yaml.Node, path []string, file string, sources map[stri
 }
 
 func runConfigExplain(options kranzcli.GlobalOptions, args []string, stdout io.Writer) error {
+	formatter, args, err := extractRowFormat("config explain", options.Output, args)
+	if err != nil {
+		return err
+	}
 	all := false
 	positional := make([]string, 0, len(args))
 	for _, arg := range args {
@@ -259,6 +263,13 @@ func runConfigExplain(options kranzcli.GlobalOptions, args []string, stdout io.W
 
 	if options.Output == kranzcli.OutputJSON {
 		return kranzcli.WriteJSON(stdout, entries)
+	}
+	if formatter != nil {
+		rows := make([]map[string]any, 0, len(entries))
+		for _, item := range entries {
+			rows = append(rows, map[string]any{"Field": item.Field, "Source": item.Source})
+		}
+		return formatter.write(stdout, map[string]any{"Field": "FIELD", "Source": "SET BY"}, rows)
 	}
 	if len(entries) == 0 {
 		_, _ = fmt.Fprintln(stdout, "No layered fields to explain.")

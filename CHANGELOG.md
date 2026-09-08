@@ -8,6 +8,8 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 - `kranz ps` and `kranz clients` accept Docker-style `--format` Go templates,
   including a `table ` prefix for aligned output with headers.
+- `status`, `ports`, `doctor`, `config explain`, `action list`, and the
+  `list services/actions/tags` views support the same row formatter.
 
 ### Changed
 

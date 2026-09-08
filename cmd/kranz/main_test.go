@@ -167,6 +167,14 @@ func TestBackgroundRuntimeReadinessConflictAndDown(t *testing.T) {
 	}
 	stdout.Reset()
 	stderr.Reset()
+	if code := execute([]string{"-p", name, "status", "--format", "{{.Name}}:{{.PID}}"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("formatted status exit=%d stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "sleeper:-") {
+		t.Fatalf("formatted status = %q", stdout.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
 	if code := execute([]string{"-p", name, "--output=json", "start", "workers"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("start tag exit=%d stderr=%s", code, stderr.String())
 	}

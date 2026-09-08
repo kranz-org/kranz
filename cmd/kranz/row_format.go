@@ -21,38 +21,52 @@ type rowTemplate struct {
 }
 
 func parseRowFormat(command string, output kranzcli.OutputFormat, args []string) (*rowTemplate, error) {
+	formatter, remaining, err := extractRowFormat(command, output, args)
+	if err != nil {
+		return nil, err
+	}
+	if len(remaining) > 0 {
+		return nil, rowFormatUsageError(command, fmt.Sprintf("unknown %s argument %q", command, remaining[0]))
+	}
+	return formatter, nil
+}
+
+// extractRowFormat removes one --format option and leaves positional arguments
+// for commands such as status and ports that also accept selectors.
+func extractRowFormat(command string, output kranzcli.OutputFormat, args []string) (*rowTemplate, []string, error) {
 	format := ""
 	formatSet := false
+	remaining := make([]string, 0, len(args))
 	for index := 0; index < len(args); index++ {
 		switch {
 		case args[index] == "--format":
 			if formatSet {
-				return nil, rowFormatUsageError(command, "--format may be specified only once")
+				return nil, nil, rowFormatUsageError(command, "--format may be specified only once")
 			}
 			if index+1 >= len(args) {
-				return nil, rowFormatUsageError(command, "--format requires a template")
+				return nil, nil, rowFormatUsageError(command, "--format requires a template")
 			}
 			index++
 			format = args[index]
 			formatSet = true
 		case strings.HasPrefix(args[index], "--format="):
 			if formatSet {
-				return nil, rowFormatUsageError(command, "--format may be specified only once")
+				return nil, nil, rowFormatUsageError(command, "--format may be specified only once")
 			}
 			format = strings.TrimPrefix(args[index], "--format=")
 			formatSet = true
 			if format == "" {
-				return nil, rowFormatUsageError(command, "--format requires a template")
+				return nil, nil, rowFormatUsageError(command, "--format requires a template")
 			}
 		default:
-			return nil, rowFormatUsageError(command, fmt.Sprintf("unknown %s argument %q", command, args[index]))
+			remaining = append(remaining, args[index])
 		}
 	}
 	if !formatSet {
-		return nil, nil
+		return nil, remaining, nil
 	}
 	if output == kranzcli.OutputJSON {
-		return nil, rowFormatUsageError(command, "--format cannot be combined with --output=json")
+		return nil, nil, rowFormatUsageError(command, "--format cannot be combined with --output=json")
 	}
 
 	formatter := &rowTemplate{}
@@ -61,7 +75,7 @@ func parseRowFormat(command string, output kranzcli.OutputFormat, args []string)
 		format = strings.TrimPrefix(format, "table ")
 	}
 	if format == "" {
-		return nil, rowFormatUsageError(command, "--format requires a template after table")
+		return nil, nil, rowFormatUsageError(command, "--format requires a template after table")
 	}
 	// Docker accepts visible escape spellings in a quoted shell argument.
 	format = strings.NewReplacer(`\t`, "\t", `\n`, "\n").Replace(format)
@@ -76,10 +90,10 @@ func parseRowFormat(command string, output kranzcli.OutputFormat, args []string)
 		"join":  strings.Join,
 	}).Parse(format)
 	if err != nil {
-		return nil, rowFormatUsageError(command, "invalid format template: "+err.Error())
+		return nil, nil, rowFormatUsageError(command, "invalid format template: "+err.Error())
 	}
 	formatter.template = parsed
-	return formatter, nil
+	return formatter, remaining, nil
 }
 
 func rowFormatUsageError(command, message string) error {
