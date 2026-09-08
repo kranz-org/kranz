@@ -292,44 +292,54 @@ func containsMCPCommand(args []string) bool {
 }
 
 func runPS(options kranzcli.GlobalOptions, args []string, stdout, stderr io.Writer) int {
-	formatter, err := parseRowFormat("ps", options.Output, args)
+	query, err := parseWatchQuery("ps", options.Output, args, "name", "project", "state", "client")
 	if err != nil {
 		return kranzcli.WriteError(stdout, stderr, options.Output, err)
+	}
+	if len(query.args) > 0 {
+		return kranzcli.WriteError(stdout, stderr, options.Output, watchUsageError("ps", fmt.Sprintf("unexpected argument %q", query.args[0])))
 	}
 	registry, err := kranzruntime.DefaultRegistry()
 	if err != nil {
 		return kranzcli.WriteError(stdout, stderr, options.Output, err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	records, err := registry.List(ctx, version)
+	err = runWatch(query, stdout, func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		records, listErr := registry.List(ctx, version)
+		if listErr != nil {
+			return listErr
+		}
+		filtered := records[:0]
+		for _, record := range records {
+			if options.Project != "" && !matchesRuntimeReference(record, options.Project) {
+				continue
+			}
+			if !matchesWatchFilters(query.filters, map[string][]string{
+				"name": {record.Name}, "project": {record.Project}, "state": {string(record.State)}, "client": record.ClientSurfaces,
+			}) {
+				continue
+			}
+			filtered = append(filtered, record)
+		}
+		return writePS(options.Output, query.formatter, filtered, stdout)
+	})
 	if err != nil {
 		return kranzcli.WriteError(stdout, stderr, options.Output, err)
 	}
-	if options.Project != "" {
-		filtered := records[:0]
-		for _, record := range records {
-			if record.Name == options.Project || record.ID == options.Project || strings.HasPrefix(record.ID, options.Project) {
-				filtered = append(filtered, record)
-			}
-		}
-		records = filtered
-	}
-	if options.Output == kranzcli.OutputJSON {
-		if err := kranzcli.WriteJSON(stdout, records); err != nil {
-			return kranzcli.WriteError(stdout, stderr, options.Output, err)
-		}
-		return 0
+	return 0
+}
+
+func writePS(output kranzcli.OutputFormat, formatter *rowTemplate, records []kranzruntime.SessionRecord, stdout io.Writer) error {
+	if output == kranzcli.OutputJSON {
+		return kranzcli.WriteJSON(stdout, records)
 	}
 	if formatter != nil {
 		rows := make([]map[string]any, 0, len(records))
 		for _, record := range records {
 			rows = append(rows, psFormatRow(record))
 		}
-		if err := formatter.write(stdout, psFormatHeaders(), rows); err != nil {
-			return kranzcli.WriteError(stdout, stderr, options.Output, err)
-		}
-		return 0
+		return formatter.write(stdout, psFormatHeaders(), rows)
 	}
 	w := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
 	// MODE is gone: with the MCP adapter no longer a registry entry, the only
@@ -354,9 +364,9 @@ func runPS(options kranzcli.GlobalOptions, args []string, stdout, stderr io.Writ
 		_, _ = fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\n", id, record.PID, record.Name, record.Project, services, clients, record.State, shortDuration(time.Since(record.StartedAt)))
 	}
 	if err := w.Flush(); err != nil {
-		return kranzcli.WriteError(stdout, stderr, options.Output, err)
+		return err
 	}
-	return 0
+	return nil
 }
 
 func psFormatHeaders() map[string]any {

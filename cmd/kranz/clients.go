@@ -29,80 +29,86 @@ type clientRow struct {
 }
 
 func runClients(options kranzcli.GlobalOptions, args []string, stdout, stderr io.Writer) int {
-	formatter, err := parseRowFormat("clients", options.Output, args)
+	query, err := parseWatchQuery("clients", options.Output, args, "runtime", "project", "client", "surface", "label")
 	if err != nil {
 		return kranzcli.WriteError(stdout, stderr, options.Output, err)
+	}
+	if len(query.args) > 0 {
+		return kranzcli.WriteError(stdout, stderr, options.Output, watchUsageError("clients", fmt.Sprintf("unexpected argument %q", query.args[0])))
 	}
 	registry, err := kranzruntime.DefaultRegistry()
 	if err != nil {
 		return kranzcli.WriteError(stdout, stderr, options.Output, err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	records, err := registry.List(ctx, version)
+	err = runWatch(query, stdout, func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		records, listErr := registry.List(ctx, version)
+		if listErr != nil {
+			return listErr
+		}
+		rows := make([]clientRow, 0)
+		for _, record := range records {
+			if options.Project != "" && !matchesRuntimeReference(record, options.Project) {
+				continue
+			}
+			if record.State != kranzruntime.SessionRunning {
+				continue
+			}
+			client, dialErr := kranzruntime.DialContext(ctx, record.Socket, version)
+			if dialErr != nil {
+				continue
+			}
+			connected, clientsErr := client.Clients()
+			_ = client.Close()
+			if clientsErr != nil {
+				continue
+			}
+			for _, entry := range connected {
+				// Discovery and the background owner are runtime infrastructure,
+				// not clients using the runtime. Keep this command aligned with
+				// the CLIENTS column in `ps` and the TUI runtime switcher.
+				if !listableClient(entry, ownPID()) || !matchesWatchFilters(query.filters, map[string][]string{
+					"runtime": {record.Name}, "project": {record.Project}, "client": {entry.Surface, clientDisplayLabel(entry.Surface, entry.Label)}, "surface": {entry.Surface}, "label": {entry.Label},
+				}) {
+					continue
+				}
+				rows = append(rows, clientRow{
+					Runtime: record.Name, ID: record.ID, Project: record.Project,
+					Surface: entry.Surface, Label: entry.Label, PID: entry.PID,
+					Version: entry.Version, Since: entry.ConnectedAt,
+				})
+			}
+		}
+		return writeClients(options.Output, query.formatter, rows, stdout)
+	})
 	if err != nil {
 		return kranzcli.WriteError(stdout, stderr, options.Output, err)
 	}
-	rows := make([]clientRow, 0)
-	for _, record := range records {
-		if options.Project != "" && !matchesRuntimeReference(record, options.Project) {
-			continue
-		}
-		if record.State != kranzruntime.SessionRunning {
-			continue
-		}
-		client, dialErr := kranzruntime.DialContext(ctx, record.Socket, version)
-		if dialErr != nil {
-			continue
-		}
-		connected, clientsErr := client.Clients()
-		_ = client.Close()
-		if clientsErr != nil {
-			continue
-		}
-		for _, entry := range connected {
-			// Discovery and the background owner are runtime infrastructure,
-			// not clients using the runtime. Keep this command aligned with
-			// the CLIENTS column in `ps` and the TUI runtime switcher.
-			if !listableClient(entry, ownPID()) {
-				continue
-			}
-			rows = append(rows, clientRow{
-				Runtime: record.Name, ID: record.ID, Project: record.Project,
-				Surface: entry.Surface, Label: entry.Label, PID: entry.PID,
-				Version: entry.Version, Since: entry.ConnectedAt,
-			})
-		}
-	}
-	if options.Output == kranzcli.OutputJSON {
-		if err := kranzcli.WriteJSON(stdout, rows); err != nil {
-			return kranzcli.WriteError(stdout, stderr, options.Output, err)
-		}
-		return 0
+	return 0
+}
+
+func writeClients(output kranzcli.OutputFormat, formatter *rowTemplate, rows []clientRow, stdout io.Writer) error {
+	if output == kranzcli.OutputJSON {
+		return kranzcli.WriteJSON(stdout, rows)
 	}
 	if formatter != nil {
 		formatted := make([]map[string]any, 0, len(rows))
 		for _, row := range rows {
 			formatted = append(formatted, clientFormatRow(row))
 		}
-		if err := formatter.write(stdout, clientFormatHeaders(), formatted); err != nil {
-			return kranzcli.WriteError(stdout, stderr, options.Output, err)
-		}
-		return 0
+		return formatter.write(stdout, clientFormatHeaders(), formatted)
 	}
 	if len(rows) == 0 {
 		_, _ = fmt.Fprintln(stdout, "No client is attached to a Kranz runtime.")
-		return 0
+		return nil
 	}
 	w := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(w, "RUNTIME\tPID\tCLIENT\tCONNECTED")
 	for _, row := range rows {
 		_, _ = fmt.Fprintf(w, "%s\t%d\t%s\t%s\n", row.Runtime, row.PID, clientDisplayLabel(row.Surface, row.Label), shortDuration(time.Since(row.Since)))
 	}
-	if err := w.Flush(); err != nil {
-		return kranzcli.WriteError(stdout, stderr, options.Output, err)
-	}
-	return 0
+	return w.Flush()
 }
 
 func clientFormatHeaders() map[string]any {

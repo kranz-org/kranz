@@ -591,25 +591,33 @@ func runtimeNameFromDirectory(options kranzcli.GlobalOptions) (string, error) {
 }
 
 func runStatus(options kranzcli.GlobalOptions, args []string, stdout io.Writer) error {
-	formatter, args, err := extractRowFormat("status", options.Output, args)
+	query, err := parseWatchQuery("status", options.Output, args, "name", "state", "health")
 	if err != nil {
 		return err
 	}
+	return runWatch(query, stdout, func() error {
+		return refreshStatus(options, query, stdout)
+	})
+}
+
+func refreshStatus(options kranzcli.GlobalOptions, query watchQuery, stdout io.Writer) error {
 	record, err := resolveSession(options)
 	if err != nil {
 		return err
 	}
-	client, err := kranzruntime.DialContext(context.Background(), record.Socket, version)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	client, err := kranzruntime.DialContext(ctx, record.Socket, version)
 	if err != nil {
 		return classifyRuntimeError(err)
 	}
 	defer func() { _ = client.Close() }()
 	services := client.Services()
-	if len(args) > 0 {
+	if len(query.args) > 0 {
 		// status answers questions about the same words the lifecycle commands
 		// act on. Resolving them differently would make `kranz status web` and
 		// `kranz restart web` disagree about what "web" means.
-		names, err := resolveServiceSelectors(client.Config(), args)
+		names, err := resolveServiceSelectors(client.Config(), query.args)
 		if err != nil {
 			return err
 		}
@@ -623,15 +631,28 @@ func runStatus(options kranzcli.GlobalOptions, args []string, stdout io.Writer) 
 		}
 		services = selected
 	}
-	if options.Output == kranzcli.OutputJSON {
-		type statusService struct {
-			Name          string `json:"name"`
-			State         string `json:"state"`
-			PID           int    `json:"pid"`
-			Ready         *bool  `json:"ready"`
-			Alive         *bool  `json:"alive"`
-			DetectedPorts []int  `json:"detected_ports"`
+	filtered := services[:0]
+	for _, service := range services {
+		if matchesWatchFilters(query.filters, map[string][]string{
+			"name": {service.Name}, "state": {service.State.Status.String()}, "health": {healthLabel(service)},
+		}) {
+			filtered = append(filtered, service)
 		}
+	}
+	return writeStatus(options.Output, query.formatter, record, filtered, stdout)
+}
+
+type statusService struct {
+	Name          string `json:"name"`
+	State         string `json:"state"`
+	PID           int    `json:"pid"`
+	Ready         *bool  `json:"ready"`
+	Alive         *bool  `json:"alive"`
+	DetectedPorts []int  `json:"detected_ports"`
+}
+
+func writeStatus(output kranzcli.OutputFormat, formatter *rowTemplate, record kranzruntime.SessionRecord, services []*app.ServiceSnapshot, stdout io.Writer) error {
+	if output == kranzcli.OutputJSON {
 		safe := make([]statusService, 0, len(services))
 		for _, service := range services {
 			var ready, alive *bool

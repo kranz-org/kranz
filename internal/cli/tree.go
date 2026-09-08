@@ -121,17 +121,29 @@ func DefaultTree() *Command {
 		{Name: "doctor", Summary: "run project preflight checks", Usage: "kranz doctor [--format TEMPLATE]", Options: []Option{
 			{Flags: "--format TEMPLATE", Summary: "render each finding with a Go template; prefix with 'table ' for headers"},
 		}},
-		{Name: "ps", Summary: "list active project runtimes", Usage: "kranz ps [--format TEMPLATE]", Options: []Option{
+		{Name: "ps", Summary: "list active project runtimes", Usage: "kranz ps [--filter KEY=VALUE] [--watch] [--interval D] [--count N] [--format TEMPLATE]", Options: []Option{
+			{Flags: "--filter KEY=VALUE", Summary: "filter by name, project, state, or client; repeatable"},
+			{Flags: "--watch", Summary: "refresh until interrupted"},
+			{Flags: "--interval D", Summary: "watch refresh interval; defaults to 1s"},
+			{Flags: "--count N", Summary: "stop watch after N snapshots"},
 			{Flags: "--format TEMPLATE", Summary: "render each runtime with a Go template; prefix with 'table ' for headers"},
 		}},
-		{Name: "clients", Summary: "list clients attached to project runtimes", Usage: "kranz clients [--format TEMPLATE]", Options: []Option{
+		{Name: "clients", Summary: "list clients attached to project runtimes", Usage: "kranz clients [--filter KEY=VALUE] [--watch] [--interval D] [--count N] [--format TEMPLATE]", Options: []Option{
+			{Flags: "--filter KEY=VALUE", Summary: "filter by runtime, project, client, surface, or label; repeatable"},
+			{Flags: "--watch", Summary: "refresh until interrupted"},
+			{Flags: "--interval D", Summary: "watch refresh interval; defaults to 1s"},
+			{Flags: "--count N", Summary: "stop watch after N snapshots"},
 			{Flags: "--format TEMPLATE", Summary: "render each client with a Go template; prefix with 'table ' for headers"},
 		}},
 		{Name: "list", Summary: "list services, actions, or tags", Usage: "kranz list [services|actions|tags] [--format TEMPLATE]", Options: []Option{
 			{Flags: "--format TEMPLATE", Summary: "render each item with a Go template; prefix with 'table ' for headers"},
 		}},
 		{Name: "info", Summary: "show project or service details", Usage: "kranz info [SERVICE]"},
-		{Name: "status", Summary: "show runtime status", Usage: "kranz status [SELECTOR ...] [--format TEMPLATE]", Options: []Option{
+		{Name: "status", Summary: "show runtime status", Usage: "kranz status [SELECTOR ...] [--filter KEY=VALUE] [--watch] [--interval D] [--count N] [--format TEMPLATE]", Options: []Option{
+			{Flags: "--filter KEY=VALUE", Summary: "filter selected services by name, state, or health; repeatable"},
+			{Flags: "--watch", Summary: "refresh until interrupted"},
+			{Flags: "--interval D", Summary: "watch refresh interval; defaults to 1s"},
+			{Flags: "--count N", Summary: "stop watch after N snapshots"},
 			{Flags: "--format TEMPLATE", Summary: "render each service with a Go template; prefix with 'table ' for headers"},
 		}},
 		{Name: "runs", Summary: "inspect and delete retained runs", Default: "list", Children: []*Command{

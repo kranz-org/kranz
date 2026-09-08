@@ -68,6 +68,15 @@ worker   running  -       18m     26085  -
 not turn the internal assumption that a missing probe permits startup into a
 false claim that a probe passed.
 
+Use exact filters to narrow live tables, and `--watch` to follow changes. A
+bounded watch is convenient in automation:
+
+```bash
+kranz ps --filter client=mcp
+kranz clients --filter client=tui,mcp --watch --count 3
+kranz status api --filter state=running,unhealthy --watch --interval 2s
+```
+
 ## Act on services
 
 ```bash

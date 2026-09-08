@@ -15,6 +15,9 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 - `kranz runs` supports target, status, time-window, and newest-count filters,
   plus Docker-style row templates. `kranz runs retention` now owns the
   separate per-target retention table and its formatter fields.
+- `ps`, `clients`, and `status` accept exact, repeatable `--filter` values and
+  interruptible `--watch` refreshes. `--interval` controls refresh frequency,
+  and `--count` bounds snapshots for automation.
 
 ### Changed
 

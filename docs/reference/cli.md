@@ -251,6 +251,22 @@ The same formatter is available for `status`, `ports`, `doctor`,
 command with `--format '{{json .}}'` to discover its stable fields and current
 values; `table ` may be prefixed once the desired columns are selected.
 
+The three live listings can filter exact, case-insensitive values and refresh
+until interrupted. Comma-separated values are alternatives for one key;
+different keys must all match. `--count` makes a watch bounded for automation,
+while `--interval` changes the one-second default:
+
+```bash
+kranz ps --filter state=running --filter client=mcp
+kranz clients --filter client=mcp,tui --watch --count 5
+kranz status --filter state=running,unhealthy --watch --interval 2s
+```
+
+`ps` filters `name`, `project`, `state`, or `client`; `clients` filters
+`runtime`, `project`, `client`, `surface`, or `label`; and `status` filters
+`name`, `state`, or `health` after resolving selectors. Watch mode accepts text
+or template output because concatenated JSON documents would not be valid.
+
 Every `ps` row is an independently owned lifecycle runtime. A TUI, foreground
 log stream, CLI command, and MCP server are clients of that session — they
 appear in `clients`, never as a second `ps` row. The same project can have
