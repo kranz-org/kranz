@@ -527,18 +527,33 @@ func parsePlanOptions(args []string) (string, []string, error) {
 
 func runGraph(options kranzcli.GlobalOptions, args []string, stdout io.Writer) error {
 	format := "text"
+	formatSet := false
 	for index := 0; index < len(args); index++ {
 		switch {
-		case args[index] == "--format" && index+1 < len(args):
+		case args[index] == "--format":
+			if formatSet {
+				return graphFormatError("--format may be specified only once")
+			}
+			if index+1 >= len(args) {
+				return graphFormatError("--format requires text, json, or dot")
+			}
 			format = args[index+1]
+			formatSet = true
 			index++
 		case strings.HasPrefix(args[index], "--format="):
+			if formatSet {
+				return graphFormatError("--format may be specified only once")
+			}
 			format = strings.TrimPrefix(args[index], "--format=")
+			formatSet = true
 		default:
-			return &kranzcli.Error{Code: "invalid_arguments", Message: fmt.Sprintf("unknown graph argument %q", args[index]), Hint: "Use `kranz graph [--format text|json|dot]`.", ExitCode: kranzcli.ExitUsage}
+			return graphFormatError(fmt.Sprintf("unknown graph argument %q", args[index]))
 		}
 	}
 	if options.Output == kranzcli.OutputJSON {
+		if formatSet && format != "json" {
+			return graphFormatError(fmt.Sprintf("--format=%s conflicts with --output=json", format))
+		}
 		format = "json"
 	}
 	cfg, _, err := loadProject(options)
@@ -570,8 +585,12 @@ func runGraph(options kranzcli.GlobalOptions, args []string, stdout io.Writer) e
 		}
 		return kranzcli.WriteJSON(stdout, nodes)
 	default:
-		return &kranzcli.Error{Code: "invalid_arguments", Message: fmt.Sprintf("unknown graph format %q", format), Hint: "Use text, json, or dot.", ExitCode: kranzcli.ExitUsage}
+		return graphFormatError(fmt.Sprintf("unknown graph format %q", format))
 	}
+}
+
+func graphFormatError(message string) error {
+	return &kranzcli.Error{Code: "invalid_graph_format", Message: message, Hint: "Use `kranz graph --format text|json|dot`; --output=json is compatible only with --format=json.", ExitCode: kranzcli.ExitUsage}
 }
 
 func runPorts(options kranzcli.GlobalOptions, args []string, stdout io.Writer) error {

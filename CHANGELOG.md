@@ -21,6 +21,10 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ### Changed
 
+- Conflicting `graph --format` and `--output=json` selections now fail instead
+  of silently choosing JSON. Help and shell-completion generation explicitly
+  reject JSON output because their products are text artifacts.
+
 - `kranz clients` now presents each connection in one compact `CLIENT` column,
   such as `TUI`, `CLI: foreground`, or `MCP: codex`. It no longer reports the
   runtime's background ownership connection as a client, matching `kranz ps`

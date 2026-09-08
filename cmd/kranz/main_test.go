@@ -630,6 +630,26 @@ func TestHelpUsesCommandTree(t *testing.T) {
 	}
 }
 
+func TestTextArtifactsRejectJSONOutputCleanly(t *testing.T) {
+	for _, args := range [][]string{{"--output=json", "--help"}, {"completion", "bash", "--output=json"}} {
+		var stdout, stderr bytes.Buffer
+		if code := execute(args, &stdout, &stderr); code != kranzcli.ExitUsage {
+			t.Fatalf("execute(%q) exit = %d", args, code)
+		}
+		if stderr.Len() != 0 || !json.Valid(stdout.Bytes()) {
+			t.Fatalf("execute(%q) stdout/stderr = %q/%q", args, stdout.String(), stderr.String())
+		}
+		var envelope struct {
+			Error struct {
+				Code string `json:"code"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal(stdout.Bytes(), &envelope); err != nil || envelope.Error.Code != "unsupported_output" {
+			t.Fatalf("execute(%q) envelope = %#v, err=%v", args, envelope, err)
+		}
+	}
+}
+
 func TestMCPHelpAcceptsGlobalOptionsBeforeAndAfterCommand(t *testing.T) {
 	for _, args := range [][]string{
 		{"-C", "/tmp/project", "mcp", "--help"},

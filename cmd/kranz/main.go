@@ -37,6 +37,9 @@ func execute(args []string, stdout, stderr io.Writer) int {
 	}
 
 	if invocation.Help {
+		if invocation.Globals.Output == kranzcli.OutputJSON {
+			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, textOnlyOutputError("help"))
+		}
 		output, helpErr := kranzcli.Help(tree, invocation.CommandPath)
 		if helpErr != nil {
 			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, helpErr)
@@ -164,6 +167,9 @@ func execute(args []string, stdout, stderr io.Writer) int {
 		}
 		return 0
 	case "completion":
+		if invocation.Globals.Output == kranzcli.OutputJSON {
+			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, textOnlyOutputError("completion"))
+		}
 		if len(invocation.Args) != 1 {
 			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, &kranzcli.Error{
 				Code:     "invalid_arguments",
@@ -280,6 +286,15 @@ func execute(args []string, stdout, stderr io.Writer) int {
 		return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
 	}
 	return 0
+}
+
+func textOnlyOutputError(command string) error {
+	return &kranzcli.Error{
+		Code:     "unsupported_output",
+		Message:  fmt.Sprintf("%s produces text and does not support --output=json", command),
+		Hint:     fmt.Sprintf("Run `kranz %s` without --output=json.", command),
+		ExitCode: kranzcli.ExitUsage,
+	}
 }
 
 func containsMCPCommand(args []string) bool {

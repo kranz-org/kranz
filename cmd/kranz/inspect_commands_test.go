@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -235,6 +236,17 @@ func TestGraphRendersTextDotAndJSON(t *testing.T) {
 	}
 	if len(nodes) != 3 {
 		t.Errorf("json graph has %d nodes", len(nodes))
+	}
+}
+
+func TestGraphRejectsConflictingOutputFormats(t *testing.T) {
+	err := runGraph(kranzcli.GlobalOptions{Output: kranzcli.OutputJSON}, []string{"--format=dot"}, &bytes.Buffer{})
+	var commandErr *kranzcli.Error
+	if !errors.As(err, &commandErr) || commandErr.Code != "invalid_graph_format" {
+		t.Fatalf("runGraph error = %#v", err)
+	}
+	if err := runGraph(kranzcli.GlobalOptions{}, []string{"--format", "dot", "--format", "text"}, &bytes.Buffer{}); err == nil {
+		t.Fatal("duplicate graph format unexpectedly succeeded")
 	}
 }
 
