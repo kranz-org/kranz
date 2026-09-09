@@ -12,6 +12,12 @@ In this guide, a *runtime* means one active Kranz session for a project. It owns
 the service state and logs; TUI, CLI, and MCP commands connect to it as clients.
 See [Core concepts](./core-concepts#runtime) if those names are new to you.
 
+<div class="demo-frame">
+
+![Narrowing live status with a filter and a row template, previewing which services a restart touches, running it, then inspecting the numbered runs and the newest run's retained logs](../assets/cli-workflow.gif)
+
+</div>
+
 When a shell or coding agent runs several commands from elsewhere, set a
 one-shot coordinate instead of repeating a flag:
 
