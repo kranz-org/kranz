@@ -269,10 +269,10 @@ Row-oriented inspection commands accept Docker-style Go templates. Without
 the `table` prefix, the template renders once per row with no header:
 
 ```console
-$ kranz ps --format '{{.PID}}\t{{.Name}}\t{{.State}}'
+$ kranz ps --format '&lbrace;&lbrace;.PID}}\t&lbrace;&lbrace;.Name}}\t&lbrace;&lbrace;.State}}'
 18400   shop-dev   running
 
-$ kranz clients --format 'table {{.PID}}\t{{.Runtime}}\t{{.Client}}'
+$ kranz clients --format 'table &lbrace;&lbrace;.PID}}\t&lbrace;&lbrace;.Runtime}}\t&lbrace;&lbrace;.Client}}'
 PID     RUNTIME    CLIENT
 18421   shop-dev   TUI
 18472   shop-dev   MCP: codex
@@ -286,7 +286,7 @@ PID     RUNTIME    CLIENT
 functions are available. `--format` and `--output=json` cannot be combined.
 The same formatter is available for `status`, `ports`, `doctor`,
 `config explain`, `services`, `actions`, and `tags`. Run a
-command with `--format '{{json .}}'` to discover its stable fields and current
+command with `--format '&lbrace;&lbrace;json .}}'` to discover its stable fields and current
 values; `table ` may be prefixed once the desired columns are selected.
 
 The three live listings can filter exact, case-insensitive values and refresh
@@ -371,7 +371,7 @@ kranz runs                                # bounded run catalog
 kranz runs api analytics/stats            # narrow catalog by target
 kranz runs --status failed --since 2h     # filter by status and start time
 kranz runs --limit 10                     # newest ten matching runs
-kranz runs --format 'table {{.Run}}\t{{.Status}}\t{{.Duration}}'
+kranz runs --format 'table &lbrace;&lbrace;.Run}}\t&lbrace;&lbrace;.Status}}\t&lbrace;&lbrace;.Duration}}'
 kranz runs retention                      # per-target retention limits
 kranz runs delete api#4 --confirm         # delete one completed run and retained output
 ```
