@@ -183,7 +183,7 @@ func (p *RuntimePicker) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		p.lastClickID, p.lastClickAt = row.Record.ID, now
 		return p, nil
 	}
-	if renderedTextHit(rendered, msg.X, msg.Y, "[q] Quit") {
+	if renderedTextHit(rendered, msg.X, msg.Y, "[Esc/q] Quit") {
 		return p, tea.Quit
 	}
 	return p, nil
@@ -194,10 +194,10 @@ func (p *RuntimePicker) View() string {
 		return ""
 	}
 	contentWidth := flushModalContentWidth(p.width, 110)
-	shortcutRows := renderModalShortcutRows([]string{"[↑/↓ · j/k] Select", "[Enter] Connect", "[q] Quit"}, contentWidth, lipgloss.NewStyle().Foreground(ColorDim))
+	shortcutRows := renderModalShortcutRows([]string{"[↑/↓ · j/k] Select", "[Enter] Connect", "[Esc/q] Quit"}, contentWidth, lipgloss.NewStyle().Foreground(ColorDim))
 	lines := []string{ModalTitleStyle.Render(" Kranz "), ""}
 	lines = append(lines, modalTextRows("No Kranz configuration was found in this directory.", contentWidth)...)
-	lines = append(lines, modalTextRows("Choose a local runtime to attach to, or press q to quit.", contentWidth)...)
+	lines = append(lines, modalTextRows("Choose a local runtime to attach to, or press Esc or q to quit.", contentWidth)...)
 	lines = append(lines, "")
 	if p.errText != "" {
 		for _, line := range modalTextRows(p.errText, contentWidth) {
@@ -223,5 +223,8 @@ func (p *RuntimePicker) View() string {
 	// switcher uses, so the two screens are recognisably the same modal.
 	modal := renderFlushModal(strings.Join(lines, "\n"))
 	centred := lipgloss.Place(p.width, p.height, lipgloss.Center, lipgloss.Center, modal)
+	if !TerminalCanvas {
+		centred = preserveCanvasBackground(centred, ColorBackground)
+	}
 	return frameToTerminal(centred, p.width, p.height)
 }
