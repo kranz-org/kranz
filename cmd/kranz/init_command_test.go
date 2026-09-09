@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,14 +13,20 @@ import (
 	"github.com/kranz-org/kranz/internal/config"
 )
 
-// withWizardInput drives the interactive path deterministically, without a
-// terminal, by replacing the two seams init reads the user through.
-func withWizardInput(t *testing.T, answers string) {
+// withWizardResult exercises command integration without asking Bubble Tea to
+// take over the test process terminal. The wizard model has focused state and
+// rendering tests of its own.
+func withWizardResult(t *testing.T, draft initDraft, approved bool) {
 	t.Helper()
-	previousStdin, previousTerminal := stdin, isTerminal
-	stdin = strings.NewReader(answers)
+	previousStdin, previousTerminal, previousWizard := stdin, isTerminal, interactiveInitWizard
+	stdin = strings.NewReader("")
 	isTerminal = func() bool { return true }
-	t.Cleanup(func() { stdin, isTerminal = previousStdin, previousTerminal })
+	interactiveInitWizard = func(_ string, _ string, _ initOptions, _ io.Reader, _ io.Writer) (initDraft, bool, error) {
+		return draft, approved, nil
+	}
+	t.Cleanup(func() {
+		stdin, isTerminal, interactiveInitWizard = previousStdin, previousTerminal, previousWizard
+	})
 }
 
 // withoutTerminal forces the non-interactive path.
@@ -49,6 +56,30 @@ func TestInitWritesAValidConfigurationFromFlags(t *testing.T) {
 	}
 	if cfg.Services["api"].Command != "sleep 60" {
 		t.Errorf("api command = %q", cfg.Services["api"].Command)
+	}
+}
+
+func TestInitCreatesPositionalProjectDirectory(t *testing.T) {
+	withoutTerminal(t)
+	base := t.TempDir()
+	output := runInspection(t, base, "init", "shop", "--name", "Demo", "--service", "api", "--command", "sleep 60", "--yes")
+	if !strings.Contains(output, "Wrote kranz.yaml") {
+		t.Fatalf("init output = %q", output)
+	}
+	cfg, err := config.LoadFiles([]string{filepath.Join(base, "shop", "kranz.yaml")})
+	if err != nil {
+		t.Fatalf("configuration in positional directory does not load: %v", err)
+	}
+	if cfg.Project != "Demo" {
+		t.Errorf("project = %q, want Demo", cfg.Project)
+	}
+}
+
+func TestInitRejectsMoreThanOneDirectory(t *testing.T) {
+	withoutTerminal(t)
+	var stdout, stderr bytes.Buffer
+	if code := execute([]string{"-C", t.TempDir(), "init", "one", "two", "--yes"}, &stdout, &stderr); code != kranzcli.ExitUsage {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr.String())
 	}
 }
 
@@ -152,11 +183,50 @@ func TestInitDoesNotOverwriteWithoutConsent(t *testing.T) {
 	}
 }
 
+func TestInitYesDoesNotImplyOverwrite(t *testing.T) {
+	withoutTerminal(t)
+	directory := t.TempDir()
+	existing := filepath.Join(directory, "kranz.yaml")
+	original := "project: Original\nservices:\n  api:\n    command: sleep 1\n"
+	if err := os.WriteFile(existing, []byte(original), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	code := execute([]string{"-C", directory, "init", "--service", "other", "--command", "sleep 2", "--yes"}, &stdout, &stderr)
+	if code != kranzcli.ExitConflict {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr.String())
+	}
+	data, err := os.ReadFile(existing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != original {
+		t.Fatalf("--yes overwrote the existing file:\n%s", data)
+	}
+}
+
+func TestInitForceAllowsNonInteractiveOverwrite(t *testing.T) {
+	withoutTerminal(t)
+	directory := t.TempDir()
+	existing := filepath.Join(directory, "kranz.yaml")
+	if err := os.WriteFile(existing, []byte("project: Original\nservices:\n  api:\n    command: sleep 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runInspection(t, directory, "init", "--name", "Replacement", "--service", "other", "--command", "sleep 2", "--yes", "--force")
+	cfg, err := config.LoadFiles([]string{existing})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Project != "Replacement" {
+		t.Fatalf("project = %q, want Replacement", cfg.Project)
+	}
+}
+
 // The wizard exists so the user approves a file they have read. Declining the
 // write must leave the directory untouched.
 func TestInitWizardDeclineWritesNothing(t *testing.T) {
-	withWizardInput(t, "Interactive\napi\nsleep 60\nn\n")
 	directory := t.TempDir()
+	withWizardResult(t, newInitDraft(directory, initOptions{}), false)
 
 	output := runInspection(t, directory, "init")
 	if !strings.Contains(output, "Nothing was written") {
@@ -168,13 +238,15 @@ func TestInitWizardDeclineWritesNothing(t *testing.T) {
 }
 
 func TestInitWizardAcceptsAnswersAndPreviewsTheFile(t *testing.T) {
-	withWizardInput(t, "Interactive\nweb\nnpm start\ny\n")
 	directory := t.TempDir()
+	draft := newInitDraft(directory, initOptions{})
+	draft.Project = "Interactive"
+	draft.Services = []initServiceDraft{{Name: "web", Dir: ".", Command: "npm start"}}
+	withWizardResult(t, draft, true)
 
 	output := runInspection(t, directory, "init")
-	// The preview has to show the actual content, not a summary of it.
-	if !strings.Contains(output, "project: Interactive") || !strings.Contains(output, "npm start") {
-		t.Errorf("preview does not show the file:\n%s", output)
+	if !strings.Contains(output, "Wrote kranz.yaml") {
+		t.Errorf("output does not report the saved draft:\n%s", output)
 	}
 	cfg, err := config.LoadFiles([]string{filepath.Join(directory, "kranz.yaml")})
 	if err != nil {
@@ -197,7 +269,7 @@ func TestInitImportProducesAPortableLoadableFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	runInspection(t, directory, "init", "--yes")
+	runInspection(t, directory, "init", "--from", "Procfile", "--yes")
 
 	target := filepath.Join(directory, "kranz.yaml")
 	data, err := os.ReadFile(target)
@@ -226,9 +298,9 @@ func TestInitImportRejectsAMissingSource(t *testing.T) {
 	}
 }
 
-// Discovering what a project can do must not have the side effects of doing it,
-// so scripts are read from the manifest and never executed.
-func TestInitOffersPackageScriptsAsActions(t *testing.T) {
+// Discovery is a separate future workflow. Init must not infer authoring intent
+// from what happens to be present in a package registry.
+func TestInitIgnoresPackageScripts(t *testing.T) {
 	withoutTerminal(t)
 	directory := t.TempDir()
 	manifest := `{"name":"web","scripts":{"build":"vite build","test":"vitest"}}`
@@ -242,11 +314,8 @@ func TestInitOffersPackageScriptsAsActions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	actions := cfg.Services["web"].Actions
-	for _, name := range []string{"build", "test"} {
-		if actions[name].Command != "npm run "+name {
-			t.Errorf("action %q = %q", name, actions[name].Command)
-		}
+	if actions := cfg.Services["web"].Actions; len(actions) != 0 {
+		t.Fatalf("init inferred package scripts as actions: %#v", actions)
 	}
 }
 

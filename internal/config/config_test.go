@@ -186,17 +186,19 @@ func TestLoadAllCanonicalExamples(t *testing.T) {
 
 func TestValidateUIBackgroundSource(t *testing.T) {
 	base := &Config{Project: "Appearance", Services: map[string]Service{"app": {Command: "exit 0"}}}
-	for _, source := range []string{"", "terminal", "theme"} {
+	for _, source := range []string{"", "terminal", "theme", "#002B36", "#f5efe3"} {
 		cfg := *base
 		cfg.UI.Background = source
 		if err := Validate(&cfg); err != nil {
 			t.Errorf("background %q was rejected: %v", source, err)
 		}
 	}
-	invalid := *base
-	invalid.UI.Background = "automatic"
-	if err := Validate(&invalid); err == nil || !strings.Contains(err.Error(), "ui.background") {
-		t.Fatalf("invalid background source error = %v", err)
+	for _, source := range []string{"automatic", "#12345", "#12345G"} {
+		invalid := *base
+		invalid.UI.Background = source
+		if err := Validate(&invalid); err == nil || !strings.Contains(err.Error(), "ui.background") {
+			t.Errorf("invalid background %q error = %v", source, err)
+		}
 	}
 }
 

@@ -7,6 +7,8 @@ import (
 	"strings"
 )
 
+var uiHexColorPattern = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
+
 // Validate checks project metadata, commands, actions, dependencies, ports, and probes.
 func Validate(cfg *Config) error {
 	if cfg.Project == "" {
@@ -20,7 +22,9 @@ func Validate(cfg *Config) error {
 	switch cfg.UI.Background {
 	case "", UIBackgroundTerminal, UIBackgroundTheme:
 	default:
-		return fmt.Errorf("ui.background must be terminal or theme, got %q", cfg.UI.Background)
+		if !uiHexColorPattern.MatchString(cfg.UI.Background) {
+			return fmt.Errorf("ui.background must be terminal, theme, or a #RRGGBB color, got %q", cfg.UI.Background)
+		}
 	}
 	switch cfg.UI.ColorMode {
 	case "", UIColorModeAuto, UIColorModeDark, UIColorModeLight:

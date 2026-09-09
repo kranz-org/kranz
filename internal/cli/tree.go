@@ -98,13 +98,14 @@ type Command struct {
 // out of completions and is clearly separated in help until implemented.
 func DefaultTree() *Command {
 	return &Command{Name: "kranz", Summary: "a local service orchestrator", Children: []*Command{
-		{Name: "init", Summary: "create a Kranz configuration", Usage: "kranz init [--from PATH] [--name NAME] [--service NAME] [--command COMMAND] [-o PATH] [-y|--yes]", Options: []Option{
-			{Flags: "--from PATH", Summary: "convert an existing Procfile or compose file"},
+		{Name: "init", Summary: "author a Kranz configuration", Usage: "kranz init [DIRECTORY] [--from PATH] [--name NAME] [--service NAME] [--command COMMAND] [-o PATH] [-y|--yes] [--force]", Options: []Option{
+			{Flags: "--from PATH", Summary: "explicitly convert an existing Procfile or compose file"},
 			{Flags: "--name NAME", Summary: "project name to write; -p/--project remains a compatibility alias"},
 			{Flags: "--service NAME", Summary: "name of the first service"},
 			{Flags: "--command COMMAND", Summary: "command that first service runs"},
 			{Flags: "-o, --output-file PATH", Summary: "file to write; defaults to kranz.yaml"},
-			{Flags: "-y, --yes", Summary: "answer every prompt yes, overwriting any file"},
+			{Flags: "-y, --yes", Summary: "write a fully specified non-interactive configuration"},
+			{Flags: "--force", Summary: "replace an existing file in non-interactive mode"},
 		}},
 		{Name: "config", Summary: "inspect effective configuration", Default: "show", Children: []*Command{
 			{Name: "check", Summary: "load and validate configuration"},

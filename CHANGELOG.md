@@ -21,6 +21,12 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ### Changed
 
+- Interactive `kranz init` is now a draft-based terminal wizard. It supports
+  any number of editable and removable services and actions, independent
+  project appearance controls with a live theme preview, and a final YAML or
+  replacement diff before the only write. Init no longer scans `package.json`
+  or implicitly imports nearby files; conversion requires explicit `--from`.
+
 - The obsolete MCP `--attach-only` compatibility flag now emits a deprecation
   warning instead of being silently ignored. It remains accepted until the
   next major release. Version-specific future-command wording in CLI help is

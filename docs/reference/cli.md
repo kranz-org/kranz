@@ -94,7 +94,8 @@ prefix.
 ### Creating a configuration
 
 ```bash
-kranz init                                   # wizard, or flags when there is no terminal
+kranz init                                   # interactive authoring wizard
+kranz init ./new-project                     # start in another directory
 kranz init --from Procfile                   # convert an existing source
 kranz init --from process-compose.yaml
 kranz init --name Shop --service api --command "npm run dev" --yes
@@ -102,16 +103,34 @@ kranz init --service api --command "npm run dev" --yes
 kranz init -o kranz.local.yaml
 ```
 
-`init` discovers a Kranz, Process Compose, or Procfile source and offers to
-convert it, reads `package.json` scripts and offers them as actions without
-running them, previews the file it is about to write, and refuses to replace an
-existing file without `--yes` or a confirmation. It reloads what it wrote before
-reporting success.
+Interactive `init` builds an in-memory draft. Start with the project name and
+directory, optionally configure the full project appearance with a live theme
+preview, then add any number of services and actions. Draft entries can be
+opened, edited, or deleted before the final YAML review. A service asks for its
+name, directory, command, and optional port. An action asks for its name,
+project-or-service owner, directory, and command.
+
+`init` does not inspect package registries or infer commands. Import is explicit
+through `--from`. An existing native configuration opens a replacement choice
+before the wizard and a line diff before the final save; cancelling at either
+point leaves it byte-for-byte unchanged. The file is written atomically and
+reloaded before success is reported.
+
+Appearance settings are independent. Choosing only a theme writes only
+`ui.theme`; accent, background source or custom colour, and `auto`/`dark`/`light`
+colour mode are emitted only when changed. Choosing inherited appearance omits
+the `ui` block entirely.
 
 `--name` sets the project written into the new file. Older scripts may keep
 using `-p/--project` with `init`, but new invocations should prefer `--name` so
 the value cannot be confused with the global runtime selector. Supplying both
 forms is an error.
+
+Without a terminal, the inputs must be explicit. `--yes` confirms that complete
+flag form; it does not discover commands, classify nearby files, or permit an
+overwrite. Existing automation can continue to use an explicit `--from PATH`
+conversion. Replacing a file without a terminal additionally requires
+`--force`.
 
 ### Inspecting a project
 
