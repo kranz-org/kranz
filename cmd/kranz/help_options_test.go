@@ -163,6 +163,6 @@ func TestCompletionValuesAreAcceptedByTheirCommand(t *testing.T) {
 	// A global option belongs to no command, so it is checked through one that
 	// only reads.
 	for _, option := range kranzcli.GlobalFlags() {
-		check(t, []string{"list"}, option)
+		check(t, []string{"services"}, option)
 	}
 }

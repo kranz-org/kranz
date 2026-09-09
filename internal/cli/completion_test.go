@@ -15,7 +15,7 @@ func TestCompletionOffersOnlyRunnableCommands(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", shell, err)
 		}
-		for _, name := range []string{"ps", "status", "up", "list", "plan", "doctor", "logs", "action", "init"} {
+		for _, name := range []string{"ps", "project", "status", "up", "services", "actions", "tags", "ports", "plan", "doctor", "logs", "init"} {
 			if !strings.Contains(script, name) {
 				t.Errorf("%s completion omits %q", shell, name)
 			}
@@ -72,7 +72,7 @@ func TestCompletionRejectsAnUnknownShell(t *testing.T) {
 	}
 }
 
-// Subcommands have to complete too, or `kranz action <tab>` offers nothing.
+// Subcommands have to complete too, or `kranz actions <tab>` offers nothing.
 func TestCompletionIncludesSubcommands(t *testing.T) {
 	for _, shell := range CompletionShells() {
 		script, err := Completion(DefaultTree(), shell)
@@ -81,6 +81,20 @@ func TestCompletionIncludesSubcommands(t *testing.T) {
 		}
 		if !strings.Contains(script, "run") || !strings.Contains(script, "check") {
 			t.Errorf("%s completion omits subcommands", shell)
+		}
+	}
+}
+
+func TestCompletionOmitsRemovedOptions(t *testing.T) {
+	for _, shell := range CompletionShells() {
+		script, err := Completion(DefaultTree(), shell)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, removed := range []string{"--no-start", "--attach-only"} {
+			if strings.Contains(script, removed) {
+				t.Errorf("%s completion still offers removed option %q", shell, removed)
+			}
 		}
 	}
 }

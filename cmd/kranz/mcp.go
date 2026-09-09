@@ -20,34 +20,19 @@ var mcpStdin io.Reader = os.Stdin
 // runMCP starts the stdio adapter. It needs no project: a Kranz configuration
 // in the working directory becomes the default address for calls that name no
 // runtime, and its absence is not an error.
-func runMCP(options kranzcli.GlobalOptions, attachOnly bool, stdout, stderr io.Writer) error {
+func runMCP(options kranzcli.GlobalOptions, stdout, stderr io.Writer) error {
 	if options.Output != kranzcli.OutputText {
 		return errors.New("--output is not valid for MCP stdio; stdout is reserved for JSON-RPC framing")
 	}
-	warnDeprecatedMCPOptions(attachOnly, stderr)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	return runMCPContextOptions(ctx, options, attachOnly, mcpStdin, stdout, stderr)
-}
-
-func warnDeprecatedMCPOptions(attachOnly bool, stderr io.Writer) {
-	if attachOnly {
-		_, _ = io.WriteString(stderr, "Kranz MCP: warning: --attach-only is deprecated, has no effect, and will be removed in a future major release\n")
-	}
+	return runMCPContext(ctx, options, mcpStdin, stdout, stderr)
 }
 
 func runMCPContext(ctx context.Context, options kranzcli.GlobalOptions, stdin io.Reader, stdout, stderr io.Writer) error {
-	return runMCPContextOptions(ctx, options, false, stdin, stdout, stderr)
-}
-
-// runMCPContextOptions serves MCP over stdio without owning anything. The
-// process writes no registry entry and supervises no project: it is a client
-// of runtimes, and which runtime answers is decided per call.
-func runMCPContextOptions(ctx context.Context, options kranzcli.GlobalOptions, attachOnly bool, stdin io.Reader, stdout, stderr io.Writer) error {
-	// --attach-only described the old owner fallback, which no longer exists.
-	// runMCP warns interactive callers while this lower testable seam preserves
-	// old registrations until the next major release.
-	_ = attachOnly
+	// runMCPContext serves MCP over stdio without owning anything. The
+	// process writes no registry entry and supervises no project: it is a client
+	// of runtimes, and which runtime answers is decided per call.
 	resolver, err := newMCPResolver(options)
 	if err != nil {
 		return err
@@ -122,7 +107,7 @@ func mcpClientLabel() string {
 	return "Kranz MCP"
 }
 
-// launchDetachedRuntime starts a runtime the same way `kranz up -d --no-start`
+// launchDetachedRuntime starts a runtime the same way `kranz up -d`
 // does, in its own process. The MCP process must not host a supervisor: it
 // serves many projects, a hosted runtime would tie it to one directory, and an
 // agent disconnecting would take the project down with it. The bool distinguishes
@@ -143,7 +128,7 @@ func launchDetachedRuntime(ctx context.Context, options kranzcli.GlobalOptions, 
 	if record, resolveErr := registry.Resolve(ctx, name, version); resolveErr == nil && record.State == kranzruntime.SessionRunning {
 		return record, false, nil
 	}
-	if err := spawnBackground(target, nil, true, io.Discard); err != nil {
+	if err := spawnBackground(target, nil, false, io.Discard); err != nil {
 		return kranzruntime.SessionRecord{}, false, err
 	}
 	record, err := registry.Resolve(ctx, name, version)

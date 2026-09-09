@@ -46,7 +46,7 @@ than being appended to a hidden inherited list.
 
 ```bash
 KRANZ_PROJECT=billing kranz status
-KRANZ_DIRECTORY=~/projects/shop kranz list services
+KRANZ_DIRECTORY=~/projects/shop kranz services
 KRANZ_CONFIG=kranz.yaml:kranz.local.yaml kranz config show
 ```
 
@@ -121,10 +121,8 @@ Appearance settings are independent. Choosing only a theme writes only
 colour mode are emitted only when changed. Choosing inherited appearance omits
 the `ui` block entirely.
 
-`--name` sets the project written into the new file. Older scripts may keep
-using `-p/--project` with `init`, but new invocations should prefer `--name` so
-the value cannot be confused with the global runtime selector. Supplying both
-forms is an error.
+`--name` sets the project written into the new file. Global `-p/--project`
+always selects a runtime and is therefore rejected by `init`.
 
 Without a terminal, the inputs must be explicit. `--yes` confirms that complete
 flag form; it does not discover commands, classify nearby files, or permit an
@@ -144,21 +142,25 @@ kranz config check                  # load, merge, and validate
 kranz config show [--provenance]    # effective configuration, secrets redacted
 kranz config explain [SERVICE] [--all]  # which layer set each field
 kranz doctor                        # preflight checks
-kranz list [services|actions|tags]
-kranz info [SERVICE]
+kranz project                       # project details
+kranz services                      # configured services
+kranz services info SERVICE         # one service's configuration and live state
+kranz actions [OWNER]               # configured actions; optionally by owner
+kranz tags                          # configured service tags
 kranz plan [SELECTOR ...]           # the waves a start would use
 kranz plan --operation stop api     # services a stop would affect
 kranz graph [--format text|json|dot]
 kranz ports [SELECTOR ...]
-kranz port inspect PORT
+kranz ports inspect PORT
 ```
 
 `ports` reports both the ports a service declares and the ports a running
 runtime saw it open, labelled by origin, because a service that picks its port
 at runtime is exactly the case where the configuration cannot answer.
 
-`info SERVICE` describes the configuration, and adds what the service is doing
-right now when a runtime is up.
+`services info SERVICE` describes the configuration, and adds what the service
+is doing right now when a runtime is up. `project` describes only the project,
+so the same command never changes entity based on whether an argument is present.
 
 `config show` redacts environment values whose name looks like a credential and
 keeps services, action groups, and actions in the order the configuration
@@ -166,8 +168,8 @@ declares them. `config explain` on a single-layer project says so instead of
 repeating the same filename on every field; `--all` lists them anyway.
 
 A group runs its obvious subcommand when invoked bare: `kranz config` is
-`config show`, `kranz action` is `action list`, and `kranz port 8080` is
-`port inspect 8080`.
+`config show`, `kranz services` is `services list`, `kranz actions` is
+`actions list`, and `kranz ports` is `ports list`.
 
 `plan` prints the dependency waves the supervisor itself gates readiness on, and
 pulls in the dependencies of whatever you selected:
@@ -197,9 +199,12 @@ when any check fails.
 ```bash
 kranz ps                            # every runtime this user has running
 kranz clients                       # who is attached to those runtimes
-kranz up [SELECTOR ...]             # start runtime and stream multiplexed logs
-kranz up -d [SELECTOR ...]          # background runtime, returns the prompt
-kranz up --no-start                 # empty runtime with foreground log client
+kranz up                            # empty runtime; Ctrl+C stops it
+kranz up -d                         # empty background runtime; prompt returns
+kranz up [SELECTOR ...]             # selected services; foreground log stream
+kranz up -d [SELECTOR ...]          # selected services in the background
+kranz up --start                    # every enabled service; foreground stream
+kranz up --start -d                 # every enabled service in the background
 kranz attach                        # open the TUI on a running runtime
 kranz status [SELECTOR ...]
 kranz start SELECTOR ...
@@ -245,6 +250,11 @@ does not show it and never shows its own discovery connection. A runtime with
 no clients remains visible in `kranz ps` and the TUI Runtimes window, where its
 `CLIENTS` value is `-`.
 
+`up` has two independent choices. With no selectors it starts no services;
+selectors start only what they name, and `--start` explicitly starts every
+enabled service. Without `-d`, the terminal owns the runtime lifetime, streams
+logs, and receives project exit codes; `-d` returns after readiness.
+
 Built-in clients are displayed compactly as `TUI`, `CLI`, and `MCP`.
 Meaningful variants retain their identity, such as `TUI: attach`,
 `CLI: foreground`, or `MCP: codex`. An MCP launcher can set
@@ -272,7 +282,7 @@ PID     RUNTIME    CLIENT
 `.ConnectedAt`. The `json`, `lower`, `upper`, `split`, and `join` template
 functions are available. `--format` and `--output=json` cannot be combined.
 The same formatter is available for `status`, `ports`, `doctor`,
-`config explain`, `action list`, and `list services/actions/tags`. Run a
+`config explain`, `services`, `actions`, and `tags`. Run a
 command with `--format '{{json .}}'` to discover its stable fields and current
 values; `table ` may be prefixed once the desired columns are selected.
 
@@ -315,8 +325,7 @@ entry, supervises nothing, and picks the runtime per call: the tool's `runtime`
 argument, then the `-C`/`-p` pin, then the directory it was started in, then an
 error carrying the runtimes that would have worked. `-C`, `-f`, and `-p` pin the
 connection to one project and make every other address an error.
-`--attach-only` is deprecated and ignored. It emits a warning and will be
-removed in the next major release. See the [MCP reference](./mcp.md).
+See the [MCP reference](./mcp.md).
 
 ### Logs
 
@@ -385,9 +394,9 @@ rather than an address and stays silent when it overlaps the start of history.
 ### Actions
 
 ```bash
-kranz action list [OWNER]
-kranz action info OWNER/ACTION
-kranz action run OWNER/ACTION
+kranz actions [OWNER]
+kranz actions info OWNER/ACTION
+kranz actions run OWNER/ACTION
 ```
 
 An action is identified by owner and name together, so a service action and an
@@ -457,7 +466,7 @@ Failures use the same envelope with an `error` object, and stdout stays valid
 JSON so a script never has to parse prose:
 
 ```console
-$ kranz list --output json
+$ kranz services --output json
 {"schema_version":1,"error":{"code":"no_project","message":"no Kranz configuration was found in this directory","hint":"Run from a project directory or pass -f PATH."}}
 ```
 

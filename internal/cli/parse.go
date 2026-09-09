@@ -107,7 +107,7 @@ func Parse(tree *Command, args []string) (Invocation, error) {
 				continue
 			}
 			// The token is not a subcommand. A group with a default takes it as
-			// that subcommand's argument, so `kranz port 8080` works; the
+			// that subcommand's argument, so `kranz ports api` works; the
 			// default then reports what is wrong with the token if anything is.
 			fallback := current.Child(current.Default)
 			if fallback == nil {

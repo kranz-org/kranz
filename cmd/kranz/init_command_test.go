@@ -119,30 +119,18 @@ func TestInitJSONWritesOneUsefulEnvelopeWithoutHumanPreview(t *testing.T) {
 	}
 }
 
-// -p/--project was the original spelling and is still accepted for scripts,
-// while --name is the unambiguous init-local option shown in help.
-func TestInitPreservesGlobalProjectNameCompatibility(t *testing.T) {
+func TestInitRejectsRuntimeProjectSelector(t *testing.T) {
 	withoutTerminal(t)
-	directory := t.TempDir()
-	var stdout, stderr bytes.Buffer
-	if code := execute([]string{"-C", directory, "--project", "Named", "init", "--service", "api", "--command", "sleep 60", "--yes"}, &stdout, &stderr); code != 0 {
-		t.Fatalf("exit = %d, stderr = %q", code, stderr.String())
-	}
-	cfg, err := config.LoadFiles([]string{filepath.Join(directory, "kranz.yaml")})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.Project != "Named" {
-		t.Errorf("project = %q, want Named", cfg.Project)
-	}
-}
-
-func TestInitRejectsAmbiguousProjectNames(t *testing.T) {
-	withoutTerminal(t)
-	var stdout, stderr bytes.Buffer
-	code := execute([]string{"-C", t.TempDir(), "-p", "Legacy", "init", "--name", "Current", "--service", "api", "--command", "sleep 60", "--yes"}, &stdout, &stderr)
-	if code != kranzcli.ExitUsage || !strings.Contains(stderr.String(), "both --name and -p/--project") {
-		t.Fatalf("exit=%d stdout/stderr=%q/%q", code, stdout.String(), stderr.String())
+	for _, args := range [][]string{
+		{"-C", t.TempDir(), "--project", "Named", "init", "--service", "api", "--command", "sleep 60", "--yes"},
+		{"-C", t.TempDir(), "init", "--project", "Named", "--service", "api", "--command", "sleep 60", "--yes"},
+		{"-C", t.TempDir(), "-p", "Named", "init", "--name", "Current", "--service", "api", "--command", "sleep 60", "--yes"},
+	} {
+		var stdout, stderr bytes.Buffer
+		code := execute(args, &stdout, &stderr)
+		if code != kranzcli.ExitUsage || !strings.Contains(stderr.String(), "addresses a runtime") {
+			t.Fatalf("args=%q exit=%d stdout/stderr=%q/%q", args, code, stdout.String(), stderr.String())
+		}
 	}
 }
 

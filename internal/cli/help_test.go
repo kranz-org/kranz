@@ -112,7 +112,7 @@ func TestHelpDocumentsLifecycleOptionsThatChangeCommandMeaning(t *testing.T) {
 	}{
 		{[]string{"init"}, []string{"-y|--yes"}},
 		{[]string{"config", "explain"}, []string{"--all"}},
-		{[]string{"up"}, []string{"-d|--detach", "--no-start"}},
+		{[]string{"up"}, []string{"-d|--detach", "--start"}},
 		{[]string{"down"}, []string{"--force"}},
 	} {
 		output, err := Help(DefaultTree(), test.command)
@@ -122,6 +122,20 @@ func TestHelpDocumentsLifecycleOptionsThatChangeCommandMeaning(t *testing.T) {
 		for _, want := range test.want {
 			if !strings.Contains(output, want) {
 				t.Errorf("help %v omits %q:\n%s", test.command, want, output)
+			}
+		}
+	}
+}
+
+func TestHelpOmitsRemovedOptions(t *testing.T) {
+	for _, path := range [][]string{{"up"}, {"mcp"}} {
+		output, err := Help(DefaultTree(), path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, removed := range []string{"--no-start", "--attach-only"} {
+			if strings.Contains(output, removed) {
+				t.Errorf("help for %q still mentions removed option %q", path, removed)
 			}
 		}
 	}

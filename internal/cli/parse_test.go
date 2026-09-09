@@ -121,9 +121,10 @@ func TestParseRejectsMissingSubcommandAndInvalidOutput(t *testing.T) {
 func TestGroupsRunTheirDefaultSubcommand(t *testing.T) {
 	clearKranzCoordinateEnvironment(t)
 	for group, want := range map[string]string{
-		"config": "config show",
-		"action": "action list",
-		"port":   "port inspect",
+		"config":   "config show",
+		"actions":  "actions list",
+		"services": "services list",
+		"ports":    "ports list",
 	} {
 		invocation, err := Parse(DefaultTree(), []string{group})
 		if err != nil {
@@ -145,12 +146,12 @@ func TestGroupsRunTheirDefaultSubcommand(t *testing.T) {
 	}
 
 	// Arguments reach the default subcommand.
-	invocation, err = Parse(DefaultTree(), []string{"port", "8080"})
+	invocation, err = Parse(DefaultTree(), []string{"ports", "api"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if invocation.Command() != "port inspect" || len(invocation.Args) != 1 || invocation.Args[0] != "8080" {
-		t.Errorf("port 8080 resolved to %q with args %v", invocation.Command(), invocation.Args)
+	if invocation.Command() != "ports list" || len(invocation.Args) != 1 || invocation.Args[0] != "api" {
+		t.Errorf("ports api resolved to %q with args %v", invocation.Command(), invocation.Args)
 	}
 }
 
@@ -159,6 +160,24 @@ func TestUnknownOptionIsNotReportedAsACommand(t *testing.T) {
 	_, err := Parse(DefaultTree(), []string{"--wat"})
 	if commandError := AsError(err); commandError.Code != "unknown_option" {
 		t.Fatalf("error = %#v", commandError)
+	}
+}
+
+func TestRemovedGrammarHasStableUsageErrors(t *testing.T) {
+	clearKranzCoordinateEnvironment(t)
+	for _, test := range []struct {
+		args []string
+		code string
+	}{
+		{[]string{"list"}, "unknown_command"},
+		{[]string{"action", "list"}, "unknown_command"},
+		{[]string{"info", "api"}, "unknown_command"},
+		{[]string{"port", "inspect", "8080"}, "unknown_command"},
+	} {
+		_, err := Parse(DefaultTree(), test.args)
+		if commandErr := AsError(err); commandErr.Code != test.code {
+			t.Errorf("Parse(%q) error = %#v, want code %q", test.args, commandErr, test.code)
+		}
 	}
 }
 

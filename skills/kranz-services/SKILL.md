@@ -64,9 +64,9 @@ Use CLI only as a fallback or for a surface MCP does not expose:
 KRANZ_PROJECT=NAME kranz status --output json
 KRANZ_PROJECT=NAME kranz logs SERVICE --tail 200
 KRANZ_PROJECT=NAME kranz ports --output json
-KRANZ_PROJECT=NAME kranz info SERVICE
-KRANZ_PROJECT=NAME kranz action list --output json
-kranz port inspect 3303 --output json
+KRANZ_PROJECT=NAME kranz services info SERVICE
+KRANZ_PROJECT=NAME kranz actions --output json
+kranz ports inspect 3303 --output json
 KRANZ_PROJECT=NAME kranz clients --output json
 ```
 

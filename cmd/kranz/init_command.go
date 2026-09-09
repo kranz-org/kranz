@@ -143,13 +143,8 @@ func runInit(globals kranzcli.GlobalOptions, args []string, stdout io.Writer) er
 	if err != nil {
 		return err
 	}
-	if options.projectSet && globals.Project != "" {
-		return &kranzcli.Error{Code: "invalid_arguments", Message: "init project name was specified with both --name and -p/--project", Hint: "Use `kranz init --name NAME`; -p/--project remains a compatibility alias.", ExitCode: kranzcli.ExitUsage}
-	}
-	// Older invocations used the global runtime selector as init's project
-	// name. Preserve that behavior while keeping new commands unambiguous.
-	if options.project == "" {
-		options.project = globals.Project
+	if globals.Project != "" {
+		return &kranzcli.Error{Code: "invalid_arguments", Message: "-p/--project addresses a runtime and is not valid for init", Hint: "Use `kranz init --name NAME` to set the new project's name.", ExitCode: kranzcli.ExitUsage}
 	}
 	directory := globals.Directory
 	if options.dirSet {
@@ -394,7 +389,7 @@ func flagInitDocument(directory string, options initOptions) (*yaml.Node, error)
 		return nil, &kranzcli.Error{
 			Code:     "missing_command",
 			Message:  "a service needs a command",
-			Hint:     "Run `kranz init --project NAME --service NAME --command COMMAND`, or run init in a terminal to be asked.",
+			Hint:     "Run `kranz init --name NAME --service NAME --command COMMAND`, or run init in a terminal to be asked.",
 			ExitCode: kranzcli.ExitUsage,
 		}
 	}

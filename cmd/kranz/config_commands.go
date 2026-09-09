@@ -241,7 +241,7 @@ func runConfigExplain(options kranzcli.GlobalOptions, args []string, stdout io.W
 			return &kranzcli.Error{
 				Code:     "service_not_found",
 				Message:  fmt.Sprintf("service %q was not found", args[0]),
-				Hint:     "Run `kranz list services` to see what this project defines.",
+				Hint:     "Run `kranz services` to see what this project defines.",
 				ExitCode: kranzcli.ExitNotFound,
 			}
 		}

@@ -100,7 +100,7 @@ func DefaultTree() *Command {
 	return &Command{Name: "kranz", Summary: "a local service orchestrator", Children: []*Command{
 		{Name: "init", Summary: "author a Kranz configuration", Usage: "kranz init [DIRECTORY] [--from PATH] [--name NAME] [--service NAME] [--command COMMAND] [-o PATH] [-y|--yes] [--force]", Options: []Option{
 			{Flags: "--from PATH", Summary: "explicitly convert an existing Procfile or compose file"},
-			{Flags: "--name NAME", Summary: "project name to write; -p/--project remains a compatibility alias"},
+			{Flags: "--name NAME", Summary: "project name to write"},
 			{Flags: "--service NAME", Summary: "name of the first service"},
 			{Flags: "--command COMMAND", Summary: "command that first service runs"},
 			{Flags: "-o, --output-file PATH", Summary: "file to write; defaults to kranz.yaml"},
@@ -134,10 +134,16 @@ func DefaultTree() *Command {
 			{Flags: "--count N", Summary: "stop watch after N snapshots"},
 			{Flags: "--format TEMPLATE", Summary: "render each client with a Go template; prefix with 'table ' for headers"},
 		}},
-		{Name: "list", Summary: "list services, actions, or tags", Usage: "kranz list [services|actions|tags] [--format TEMPLATE]", Options: []Option{
-			{Flags: "--format TEMPLATE", Summary: "render each item with a Go template; prefix with 'table ' for headers"},
+		{Name: "services", Summary: "inspect configured services", Default: "list", Children: []*Command{
+			{Name: "list", Summary: "list configured services", Usage: "kranz services [--format TEMPLATE]", Options: []Option{
+				{Flags: "--format TEMPLATE", Summary: "render each service with a Go template; prefix with 'table ' for headers"},
+			}},
+			{Name: "info", Summary: "show service details", Usage: "kranz services info SERVICE"},
 		}},
-		{Name: "info", Summary: "show project or service details", Usage: "kranz info [SERVICE]"},
+		{Name: "tags", Summary: "list configured service tags", Usage: "kranz tags [--format TEMPLATE]", Options: []Option{
+			{Flags: "--format TEMPLATE", Summary: "render each tag with a Go template; prefix with 'table ' for headers"},
+		}},
+		{Name: "project", Summary: "show project details", Usage: "kranz project"},
 		{Name: "status", Summary: "show runtime status", Usage: "kranz status [SELECTOR ...] [--filter KEY=VALUE] [--watch] [--interval D] [--count N] [--format TEMPLATE]", Options: []Option{
 			{Flags: "--filter KEY=VALUE", Summary: "filter selected services by name, state, or health; repeatable"},
 			{Flags: "--watch", Summary: "refresh until interrupted"},
@@ -165,15 +171,15 @@ func DefaultTree() *Command {
 		{Name: "graph", Summary: "print the dependency graph", Usage: "kranz graph [--format text|json|dot]", Options: []Option{
 			{Flags: "--format FORMAT", Summary: "text, json, or dot; defaults to text", Values: []string{"text", "json", "dot"}},
 		}},
-		{Name: "ports", Summary: "list configured and detected ports", Usage: "kranz ports [SELECTOR ...] [--format TEMPLATE]", Options: []Option{
-			{Flags: "--format TEMPLATE", Summary: "render each port with a Go template; prefix with 'table ' for headers"},
+		{Name: "ports", Summary: "inspect ports", Default: "list", Children: []*Command{
+			{Name: "list", Summary: "list configured and detected ports", Usage: "kranz ports [SELECTOR ...] [--format TEMPLATE]", Options: []Option{
+				{Flags: "--format TEMPLATE", Summary: "render each port with a Go template; prefix with 'table ' for headers"},
+			}},
+			{Name: "inspect", Summary: "identify a local port listener", Usage: "kranz ports inspect PORT"},
 		}},
-		{Name: "port", Summary: "inspect a local port", Default: "inspect", Children: []*Command{
-			{Name: "inspect", Summary: "identify a port listener", Usage: "kranz port inspect PORT"},
-		}},
-		{Name: "up", Summary: "create a project runtime", Usage: "kranz up [SELECTOR ...] [-d|--detach]\n  kranz up --no-start [-d|--detach]", Options: []Option{
+		{Name: "up", Summary: "create a project runtime", Usage: "kranz up [SELECTOR ...] [-d|--detach]\n  kranz up --start [-d|--detach]", Options: []Option{
 			{Flags: "-d, --detach", Summary: "return after starting the independent runtime"},
-			{Flags: "--no-start", Summary: "create the runtime without starting any service"},
+			{Flags: "--start", Summary: "start every enabled service"},
 		}},
 		{Name: "start", Summary: "start services", Usage: "kranz start SELECTOR ..."},
 		{Name: "stop", Summary: "stop services", Usage: "kranz stop SELECTOR ..."},
@@ -183,9 +189,7 @@ func DefaultTree() *Command {
 			{Flags: "--force", Summary: "discard a runtime that no longer answers its socket"},
 		}},
 		{Name: "attach", Summary: "open the TUI for an active runtime"},
-		{Name: "mcp", Summary: "serve project runtimes over MCP stdio; global -C/-p pin it to one", Usage: "kranz mcp", Options: []Option{
-			{Flags: "--attach-only", Summary: "deprecated compatibility flag; ignored and removed in the next major release"},
-		}},
+		{Name: "mcp", Summary: "serve project runtimes over MCP stdio; global -C/-p pin it to one", Usage: "kranz mcp"},
 		{Name: "logs", Summary: "show and clear logs", Default: "show", Children: []*Command{
 			{Name: "show", Summary: "show service and action logs", Usage: "kranz logs [SELECTOR ...] [--tail N | --all] [--since D]\n  [--run N | --runs N] [--source S] [--with-actions]\n  [--plain | --no-timestamps | --no-labels] [--follow]", Options: []Option{
 				{Flags: "--tail N", Summary: "show the last N lines; a service defaults to 50"},
@@ -205,12 +209,12 @@ func DefaultTree() *Command {
 				{Flags: "--force", Summary: "required to clear every buffer at once"},
 			}},
 		}},
-		{Name: "action", Summary: "inspect and run actions", Default: "list", Children: []*Command{
-			{Name: "list", Summary: "list actions", Usage: "kranz action list [OWNER] [--format TEMPLATE]", Options: []Option{
+		{Name: "actions", Summary: "inspect and run actions", Default: "list", Children: []*Command{
+			{Name: "list", Summary: "list actions", Usage: "kranz actions [OWNER] [--format TEMPLATE]", Options: []Option{
 				{Flags: "--format TEMPLATE", Summary: "render each action with a Go template; prefix with 'table ' for headers"},
 			}},
-			{Name: "info", Summary: "show action details", Usage: "kranz action info OWNER/ACTION"},
-			{Name: "run", Summary: "run an action", Usage: "kranz action run OWNER/ACTION"},
+			{Name: "info", Summary: "show action details", Usage: "kranz actions info OWNER/ACTION"},
+			{Name: "run", Summary: "run an action", Usage: "kranz actions run OWNER/ACTION"},
 		}},
 		{Name: "completion", Summary: "generate shell completion", Usage: "kranz completion bash|zsh|fish"},
 		{Name: "help", Summary: "show command help", Usage: "kranz help [COMMAND]"},

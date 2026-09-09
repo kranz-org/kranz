@@ -8,8 +8,12 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 - `kranz ps` and `kranz clients` accept Docker-style `--format` Go templates,
   including a `table ` prefix for aligned output with headers.
-- `status`, `ports`, `doctor`, `config explain`, `action list`, and the
-  `list services/actions/tags` views support the same row formatter.
+- `status`, `ports`, `doctor`, `config explain`, `services`, `actions`, and
+  `tags` support the same row formatter.
+- Top-level `kranz services`, `kranz actions`, and `kranz tags` commands give
+  every inspectable collection a direct noun. The `actions` group defaults to
+  listing and also owns `run` and `info`. The old `list` command and singular
+  `action` group have been removed.
 - `kranz plan --operation start|stop|restart` previews every service a
   lifecycle operation would affect; bare `plan` remains a start preview.
 - `kranz runs` supports target, status, time-window, and newest-count filters,
@@ -21,19 +25,27 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ### Changed
 
+- `kranz up` now creates a runtime without starting services, matching the TUI
+  and MCP surfaces. Selectors still start the named services; `--start`
+  explicitly starts every enabled service. Foreground ownership, log streaming,
+  project exit codes, and `-d` behavior are unchanged. The redundant
+  `--no-start` flag has been removed.
+
 - Interactive `kranz init` is now a draft-based terminal wizard. It supports
   any number of editable and removable services and actions, independent
   project appearance controls with a live theme preview, and a final YAML or
   replacement diff before the only write. Init no longer scans `package.json`
   or implicitly imports nearby files; conversion requires explicit `--from`.
 
-- The obsolete MCP `--attach-only` compatibility flag now emits a deprecation
-  warning instead of being silently ignored. It remains accepted until the
-  next major release. Version-specific future-command wording in CLI help is
-  now release-neutral.
-- `kranz init --name NAME` is now the unambiguous project-name option.
-  `-p/--project` remains accepted by `init` as a compatibility alias, and
-  combining both forms is an explicit usage error.
+- The obsolete MCP `--attach-only` flag has been removed. Version-specific
+  future-command wording in CLI help is now release-neutral.
+- `kranz init --name NAME` is now the only project-name option. Global
+  `-p/--project` consistently addresses a runtime and is rejected by `init`.
+- Project, service, and port inspection now follow their entities explicitly:
+  `kranz project`, `kranz services info SERVICE`, and
+  `kranz ports inspect PORT`. Bare `services` and `ports` select their `list`
+  operations. The overloaded `info` command and singular `port` group have
+  been removed.
 - Conflicting `graph --format` and `--output=json` selections now fail instead
   of silently choosing JSON. Help and shell-completion generation explicitly
   reject JSON output because their products are text artifacts.
@@ -43,8 +55,7 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
   runtime's background ownership connection as a client, matching `kranz ps`
   and the TUI Runtimes window. `kranz ps` now shows the owning supervisor's PID
   directly.
-- `list actions` is now an exact compatibility alias of `action list`; the
-  canonical action table also shows whether each action requires confirmation.
+- The canonical action table shows whether each action requires confirmation.
 
 ## [0.13.1] - 2026-09-07
 

@@ -114,44 +114,34 @@ func runConfigCheck(options kranzcli.GlobalOptions, stdout io.Writer) error {
 	return nil
 }
 
-func runList(options kranzcli.GlobalOptions, args []string, stdout io.Writer) error {
-	formatter, args, err := extractRowFormat("list", options.Output, args)
+func runServices(options kranzcli.GlobalOptions, args []string, stdout io.Writer) error {
+	formatter, args, err := extractRowFormat("services", options.Output, args)
 	if err != nil {
 		return err
 	}
-	kind := "services"
-	if len(args) > 0 {
-		kind = args[0]
-	}
-	if len(args) > 1 {
-		return &kranzcli.Error{Code: "invalid_arguments", Message: "list accepts one of services, actions, or tags", ExitCode: kranzcli.ExitUsage}
+	if len(args) != 0 {
+		return &kranzcli.Error{Code: "invalid_arguments", Message: "services does not accept selectors", ExitCode: kranzcli.ExitUsage}
 	}
 	cfg, _, err := loadProject(options)
 	if err != nil {
 		return err
 	}
-	switch kind {
-	case "services":
-		return listServices(cfg, options, stdout, formatter)
-	case "actions":
-		// Keep the legacy `list actions` spelling as an exact alias of the
-		// canonical action command instead of maintaining two subtly different
-		// action tables and JSON contracts.
-		entries := actionListEntries(cfg, "")
-		if options.Output == kranzcli.OutputJSON {
-			return kranzcli.WriteJSON(stdout, entries)
-		}
-		return writeActionList(stdout, entries, formatter)
-	case "tags":
-		return listTags(cfg, options, stdout, formatter)
-	default:
-		return &kranzcli.Error{
-			Code:     "invalid_arguments",
-			Message:  fmt.Sprintf("unknown list kind %q", kind),
-			Hint:     "Use `kranz list services`, `kranz list actions`, or `kranz list tags`.",
-			ExitCode: kranzcli.ExitUsage,
-		}
+	return listServices(cfg, options, stdout, formatter)
+}
+
+func runTags(options kranzcli.GlobalOptions, args []string, stdout io.Writer) error {
+	formatter, args, err := extractRowFormat("tags", options.Output, args)
+	if err != nil {
+		return err
 	}
+	if len(args) != 0 {
+		return &kranzcli.Error{Code: "invalid_arguments", Message: "tags does not accept selectors", ExitCode: kranzcli.ExitUsage}
+	}
+	cfg, _, err := loadProject(options)
+	if err != nil {
+		return err
+	}
+	return listTags(cfg, options, stdout, formatter)
 }
 
 func listServices(cfg *config.Config, options kranzcli.GlobalOptions, stdout io.Writer, formatter *rowTemplate) error {
@@ -275,16 +265,24 @@ func orDash(value string) string {
 	return value
 }
 
-func runInfo(options kranzcli.GlobalOptions, args []string, stdout io.Writer) error {
-	if len(args) > 1 {
-		return &kranzcli.Error{Code: "invalid_arguments", Message: "info accepts at most one service", ExitCode: kranzcli.ExitUsage}
+func runProject(options kranzcli.GlobalOptions, args []string, stdout io.Writer) error {
+	if len(args) != 0 {
+		return &kranzcli.Error{Code: "invalid_arguments", Message: "project accepts no arguments", ExitCode: kranzcli.ExitUsage}
 	}
 	cfg, paths, err := loadProject(options)
 	if err != nil {
 		return err
 	}
-	if len(args) == 0 {
-		return projectInfo(cfg, paths, options, stdout)
+	return projectInfo(cfg, paths, options, stdout)
+}
+
+func runServiceInfo(options kranzcli.GlobalOptions, args []string, stdout io.Writer) error {
+	if len(args) != 1 {
+		return &kranzcli.Error{Code: "invalid_arguments", Message: "services info takes exactly one service", Hint: "Run `kranz services info SERVICE`.", ExitCode: kranzcli.ExitUsage}
+	}
+	cfg, _, err := loadProject(options)
+	if err != nil {
+		return err
 	}
 	name := args[0]
 	svc, ok := cfg.Services[name]
@@ -292,7 +290,7 @@ func runInfo(options kranzcli.GlobalOptions, args []string, stdout io.Writer) er
 		return &kranzcli.Error{
 			Code:     "service_not_found",
 			Message:  fmt.Sprintf("service %q was not found", name),
-			Hint:     "Run `kranz list services` to see what this project defines.",
+			Hint:     "Run `kranz services` to see what this project defines.",
 			ExitCode: kranzcli.ExitNotFound,
 		}
 	}
@@ -761,7 +759,7 @@ func detectedPortsByService(options kranzcli.GlobalOptions) map[string][]int {
 
 func runPortInspect(options kranzcli.GlobalOptions, args []string, stdout io.Writer) error {
 	if len(args) != 1 {
-		return &kranzcli.Error{Code: "invalid_arguments", Message: "port inspect takes exactly one port", Hint: "Run `kranz port inspect 8080`.", ExitCode: kranzcli.ExitUsage}
+		return &kranzcli.Error{Code: "invalid_arguments", Message: "ports inspect takes exactly one port", Hint: "Run `kranz ports inspect 8080`.", ExitCode: kranzcli.ExitUsage}
 	}
 	number, err := strconv.Atoi(args[0])
 	if err != nil || number < 1 || number > 65535 {

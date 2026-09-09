@@ -205,12 +205,7 @@ display label only; runtime addressing still follows the rules above.
 `-C DIR`, `-f FILE`, and `-p NAME|ID` pin the server to one project. A pinned
 connection resolves everything to that runtime and refuses any other address
 with `runtime_pinned` — useful when a client should be unable to reach beyond
-one checkout. Existing registrations that pass these flags keep working
-unchanged; they are now a choice rather than a requirement.
-
-`--attach-only` is deprecated and ignored. It disabled an owner fallback that
-no longer exists, now emits a warning, and will be removed in the next major
-release.
+one checkout.
 
 ## Starting a project the agent was asked to start
 

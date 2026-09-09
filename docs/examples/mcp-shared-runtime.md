@@ -52,8 +52,8 @@ reports a port conflict, inspect the owner instead of changing the example's
 ports silently:
 
 ```bash
-kranz port inspect 18931
-kranz port inspect 18932
+kranz ports inspect 18931
+kranz ports inspect 18932
 ```
 
 ## Regenerate the recording

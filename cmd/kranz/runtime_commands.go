@@ -158,13 +158,13 @@ func (h *runtimeHost) Close() error {
 }
 
 func runUp(options kranzcli.GlobalOptions, args []string, stdout io.Writer) error {
-	noStart := false
+	startAll := false
 	detached := false
 	selectors := make([]string, 0, len(args))
 	for _, arg := range args {
 		switch arg {
-		case "--no-start":
-			noStart = true
+		case "--start":
+			startAll = true
 		case "-d", "--detach":
 			detached = true
 		default:
@@ -177,20 +177,20 @@ func runUp(options kranzcli.GlobalOptions, args []string, stdout io.Writer) erro
 	if !detached && options.Output != kranzcli.OutputText {
 		return &kranzcli.Error{Code: "invalid_output", Message: "foreground up requires text output", Hint: "Use `kranz up -d --output json` for a machine-readable background start.", ExitCode: kranzcli.ExitUsage}
 	}
-	if noStart && len(selectors) > 0 {
-		return &kranzcli.Error{Code: "invalid_arguments", Message: "--no-start cannot be combined with selectors", ExitCode: kranzcli.ExitUsage}
+	if startAll && len(selectors) > 0 {
+		return &kranzcli.Error{Code: "invalid_arguments", Message: "--start cannot be combined with selectors", ExitCode: kranzcli.ExitUsage}
 	}
 	if detached {
 		if os.Getenv("KRANZ_INTERNAL_BACKGROUND") == "1" {
 			_ = os.Unsetenv("KRANZ_INTERNAL_BACKGROUND")
-			return runBackgroundChild(options, selectors, noStart)
+			return runBackgroundChild(options, selectors, startAll)
 		}
-		return spawnBackground(options, selectors, noStart, stdout)
+		return spawnBackground(options, selectors, startAll, stdout)
 	}
 	signals := make(chan os.Signal, 2)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(signals)
-	if err := spawnBackground(options, selectors, noStart, io.Discard); err != nil {
+	if err := spawnBackground(options, selectors, startAll, io.Discard); err != nil {
 		return classifyRuntimeError(err)
 	}
 	record, err := resolveSession(options)
@@ -273,7 +273,7 @@ type backgroundStartResult struct {
 
 var newBackgroundCommand = func(executable string, args ...string) *exec.Cmd { return exec.Command(executable, args...) }
 
-func spawnBackground(options kranzcli.GlobalOptions, selectors []string, noStart bool, stdout io.Writer) error {
+func spawnBackground(options kranzcli.GlobalOptions, selectors []string, startAll bool, stdout io.Writer) error {
 	executable, err := os.Executable()
 	if err != nil {
 		return err
@@ -291,11 +291,10 @@ func spawnBackground(options kranzcli.GlobalOptions, selectors []string, noStart
 		args = append(args, "-p", options.Project)
 	}
 	args = append(args, "up", "-d")
-	if noStart {
-		args = append(args, "--no-start")
-	} else {
-		args = append(args, selectors...)
+	if startAll {
+		args = append(args, "--start")
 	}
+	args = append(args, selectors...)
 	command := newBackgroundCommand(executable, args...)
 	if command.Env == nil {
 		command.Env = os.Environ()
@@ -370,7 +369,7 @@ func spawnBackground(options kranzcli.GlobalOptions, selectors []string, noStart
 	}
 }
 
-func runBackgroundChild(options kranzcli.GlobalOptions, selectors []string, noStart bool) error {
+func runBackgroundChild(options kranzcli.GlobalOptions, selectors []string, startAll bool) error {
 	readyFile := os.NewFile(3, "kranz-readiness")
 	if readyFile == nil {
 		return errors.New("background readiness descriptor is missing")
@@ -396,8 +395,8 @@ func runBackgroundChild(options kranzcli.GlobalOptions, selectors []string, noSt
 		return host.Close()
 	}
 	defer func() { _ = closeHost() }()
-	if !noStart {
-		if len(selectors) == 0 {
+	if startAll || len(selectors) > 0 {
+		if startAll {
 			for _, name := range cfg.ServiceOrder {
 				if !cfg.Services[name].Disabled {
 					selectors = append(selectors, name)

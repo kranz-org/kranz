@@ -81,7 +81,7 @@ func TestEnvironmentCoordinatesReachInspectionCommands(t *testing.T) {
 	t.Setenv("KRANZ_CONFIG", configPath)
 
 	var stdout, stderr bytes.Buffer
-	if code := execute([]string{"list", "services", "--output=json"}, &stdout, &stderr); code != 0 {
+	if code := execute([]string{"services", "--output=json"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("exit=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
 	}
 	services := decodeJSONData[[]struct {
@@ -103,7 +103,11 @@ func TestForegroundHelperProcess(t *testing.T) {
 		command.Env = append(os.Environ(), "KRANZ_TEST_BACKGROUND_HELPER=1", "KRANZ_TEST_BACKGROUND_ARGS="+base64.StdEncoding.EncodeToString(data))
 		return command
 	}
-	os.Exit(execute([]string{"-C", directory, "up", "--no-start"}, os.Stdout, os.Stderr))
+	args := []string{"-C", directory, "up"}
+	if os.Getenv("KRANZ_TEST_FOREGROUND_START_ALL") == "1" {
+		args = append(args, "--start")
+	}
+	os.Exit(execute(args, os.Stdout, os.Stderr))
 }
 
 func TestBackgroundHelperProcess(t *testing.T) {
@@ -119,6 +123,69 @@ func TestBackgroundHelperProcess(t *testing.T) {
 		t.Fatal(err)
 	}
 	os.Exit(execute(args, os.Stdout, os.Stderr))
+}
+
+func TestUpRejectsConflictingStartModes(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	args := []string{"up", "--start", "web"}
+	if code := execute(args, &stdout, &stderr); code != kranzcli.ExitUsage {
+		t.Fatalf("execute(%q) exit = %d, stdout = %q, stderr = %q", args, code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 || !strings.Contains(stderr.String(), "cannot be combined") {
+		t.Fatalf("execute(%q) stdout/stderr = %q/%q", args, stdout.String(), stderr.String())
+	}
+}
+
+func TestUpRejectsRemovedNoStartAsUnknownOption(t *testing.T) {
+	err := runUp(kranzcli.GlobalOptions{}, []string{"--no-start"}, io.Discard)
+	var commandErr *kranzcli.Error
+	if !errors.As(err, &commandErr) || commandErr.Code != "unknown_option" {
+		t.Fatalf("runUp error = %#v", err)
+	}
+}
+
+func TestUpStartAllStartsOnlyEnabledServices(t *testing.T) {
+	directory := t.TempDir()
+	name := fmt.Sprintf("test-up-start-%d", os.Getpid())
+	configText := fmt.Sprintf("project: Test Up Start\nruntime:\n  name: %s\nservices:\n  worker:\n    command: sleep 60\n  disabled:\n    command: sleep 60\n    disabled: true\n", name)
+	if err := os.WriteFile(filepath.Join(directory, "kranz.yaml"), []byte(configText), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	useHelperBackgroundRuntimes(t)
+	var stdout, stderr bytes.Buffer
+	if code := execute([]string{"-C", directory, "up", "-d", "--start"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("up exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	t.Cleanup(func() { _ = execute([]string{"-p", name, "down"}, io.Discard, io.Discard) })
+	stdout.Reset()
+	stderr.Reset()
+	if code := execute([]string{"-p", name, "status", "--format", "{{.Name}}:{{.PID}}"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("status exit=%d stderr=%q", code, stderr.String())
+	}
+	lines := stdout.String()
+	if strings.Contains(lines, "worker:-") {
+		t.Fatalf("enabled service did not start: %q", lines)
+	}
+	if !strings.Contains(lines, "disabled:-") {
+		t.Fatalf("disabled service started: %q", lines)
+	}
+}
+
+func TestRemovedCLIGrammarIsRejected(t *testing.T) {
+	for _, args := range [][]string{
+		{"list"}, {"list", "actions"}, {"list", "tags"},
+		{"action"}, {"action", "list"}, {"action", "info", "api/check"},
+		{"info"}, {"info", "api"}, {"port"}, {"port", "inspect", "8080"},
+		{"up", "--no-start"}, {"mcp", "--attach-only"},
+	} {
+		var stdout, stderr bytes.Buffer
+		if code := execute(args, &stdout, &stderr); code != kranzcli.ExitUsage {
+			t.Errorf("execute(%q) exit = %d, stdout = %q, stderr = %q", args, code, stdout.String(), stderr.String())
+		}
+		if stdout.Len() != 0 || !strings.Contains(stderr.String(), "unknown") {
+			t.Errorf("execute(%q) stdout/stderr = %q/%q", args, stdout.String(), stderr.String())
+		}
+	}
 }
 
 func TestBackgroundRuntimeReadinessConflictAndDown(t *testing.T) {
@@ -137,7 +204,7 @@ func TestBackgroundRuntimeReadinessConflictAndDown(t *testing.T) {
 	}
 	defer func() { newBackgroundCommand = previousFactory }()
 	var stdout, stderr bytes.Buffer
-	if code := execute([]string{"-C", directory, "--output=json", "up", "-d", "--no-start"}, &stdout, &stderr); code != 0 {
+	if code := execute([]string{"-C", directory, "--output=json", "up", "-d"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("up -d exit=%d stderr=%s", code, stderr.String())
 	}
 	started := decodeJSONData[backgroundStartResult](t, stdout.Bytes())
@@ -146,7 +213,7 @@ func TestBackgroundRuntimeReadinessConflictAndDown(t *testing.T) {
 	}
 	stdout.Reset()
 	stderr.Reset()
-	if code := execute([]string{"-C", directory, "up", "-d", "--no-start"}, &stdout, &stderr); code != kranzcli.ExitConflict {
+	if code := execute([]string{"-C", directory, "up", "-d"}, &stdout, &stderr); code != kranzcli.ExitConflict {
 		t.Fatalf("duplicate exit=%d stderr=%s", code, stderr.String())
 	}
 	stdout.Reset()
@@ -184,7 +251,7 @@ func TestBackgroundRuntimeReadinessConflictAndDown(t *testing.T) {
 	}
 	stdout.Reset()
 	stderr.Reset()
-	if code := execute([]string{"-p", name, "--output=json", "action", "run", "sleeper/ping"}, &stdout, &stderr); code != 0 {
+	if code := execute([]string{"-p", name, "--output=json", "actions", "run", "sleeper/ping"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("action run exit=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
 	}
 	action := decodeJSONData[struct {
@@ -380,7 +447,7 @@ func TestLogsSnapshotFollowAndClientInterrupt(t *testing.T) {
 	}
 	defer func() { newBackgroundCommand = previousFactory }()
 	var stdout, stderr bytes.Buffer
-	if code := execute([]string{"-C", directory, "up", "-d", "--no-start"}, &stdout, &stderr); code != 0 {
+	if code := execute([]string{"-C", directory, "up", "-d"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("up -d exit=%d stderr=%s", code, stderr.String())
 	}
 	t.Cleanup(func() { _ = execute([]string{"-p", name, "down"}, io.Discard, io.Discard) })
@@ -618,12 +685,30 @@ func TestForegroundSignalsPreserveSignalDeath(t *testing.T) {
 	}
 }
 
+func TestForegroundStartAllPreservesProjectExitCode(t *testing.T) {
+	directory := t.TempDir()
+	name := fmt.Sprintf("test-exit-code-%d", os.Getpid())
+	configText := fmt.Sprintf("project: Test Exit Code\nruntime:\n  name: %s\nservices:\n  job:\n    command: exit 7\n    availability:\n      exit_on_end: true\n", name)
+	if err := os.WriteFile(filepath.Join(directory, "kranz.yaml"), []byte(configText), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command(os.Args[0], "-test.run=^TestForegroundHelperProcess$")
+	command.Env = append(os.Environ(), "KRANZ_TEST_FOREGROUND_HELPER=1", "KRANZ_TEST_FOREGROUND_START_ALL=1", "KRANZ_TEST_PROJECT_DIR="+directory)
+	var stderr bytes.Buffer
+	command.Stdout, command.Stderr = io.Discard, &stderr
+	if err := command.Run(); err == nil {
+		t.Fatal("foreground up --start exited successfully, want project exit code 7")
+	} else if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 7 {
+		t.Fatalf("foreground exit = %v, stderr = %q", err, stderr.String())
+	}
+}
+
 func TestHelpUsesCommandTree(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	if code := execute([]string{"help", "action"}, &stdout, &stderr); code != 0 {
+	if code := execute([]string{"help", "actions"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("exit = %d, stderr = %q", code, stderr.String())
 	}
-	for _, expected := range []string{"action", "list", "info", "run", "--project VALUE"} {
+	for _, expected := range []string{"actions", "list", "info", "run", "--project VALUE"} {
 		if !strings.Contains(stdout.String(), expected) {
 			t.Errorf("help missing %q:\n%s", expected, stdout.String())
 		}
@@ -725,7 +810,7 @@ func TestLifecycleResolvesRuntimeFromDirectory(t *testing.T) {
 	defer func() { newBackgroundCommand = previousFactory }()
 
 	var stdout, stderr bytes.Buffer
-	if code := execute([]string{"-C", directory, "up", "-d", "--no-start"}, &stdout, &stderr); code != 0 {
+	if code := execute([]string{"-C", directory, "up", "-d"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("up -d exit=%d stderr=%s", code, stderr.String())
 	}
 	defer func() {

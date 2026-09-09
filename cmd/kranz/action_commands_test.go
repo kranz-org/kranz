@@ -41,7 +41,7 @@ func actionDirectory(t *testing.T) string {
 func TestActionListAndFilterByOwner(t *testing.T) {
 	directory := actionDirectory(t)
 
-	all := runInspection(t, directory, "action", "list")
+	all := runInspection(t, directory, "actions")
 	for _, id := range []string{"api/seed", "api/migrate", "toolbox/seed"} {
 		if !strings.Contains(all, id) {
 			t.Errorf("action list omits %q: %q", id, all)
@@ -51,14 +51,14 @@ func TestActionListAndFilterByOwner(t *testing.T) {
 		t.Errorf("action list omits confirmation requirements: %q", all)
 	}
 
-	owned := runInspection(t, directory, "action", "list", "toolbox")
+	owned := runInspection(t, directory, "actions", "toolbox")
 	if !strings.Contains(owned, "toolbox/seed") || strings.Contains(owned, "api/seed") {
 		t.Errorf("action list toolbox = %q", owned)
 	}
 }
 
 func TestActionListFormat(t *testing.T) {
-	output := runInspection(t, actionDirectory(t), "action", "list", "api", "--format", "{{.Action}}:{{.Confirm}}")
+	output := runInspection(t, actionDirectory(t), "actions", "api", "--format", "{{.Action}}:{{.Confirm}}")
 	if !strings.Contains(output, "api/seed:true") || strings.Contains(output, "toolbox/seed") {
 		t.Fatalf("formatted action list = %q", output)
 	}
@@ -66,7 +66,7 @@ func TestActionListFormat(t *testing.T) {
 
 func TestActionListRejectsAnUnknownOwner(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	if code := execute([]string{"-C", actionDirectory(t), "action", "list", "nope"}, &stdout, &stderr); code != kranzcli.ExitNotFound {
+	if code := execute([]string{"-C", actionDirectory(t), "actions", "nope"}, &stdout, &stderr); code != kranzcli.ExitNotFound {
 		t.Fatalf("exit = %d, stderr = %q", code, stderr.String())
 	}
 }
@@ -76,11 +76,11 @@ func TestActionListRejectsAnUnknownOwner(t *testing.T) {
 func TestActionInfoDistinguishesOwnersOfTheSameName(t *testing.T) {
 	directory := actionDirectory(t)
 
-	service := runInspection(t, directory, "action", "info", "api/seed")
+	service := runInspection(t, directory, "actions", "info", "api/seed")
 	if !strings.Contains(service, "(service)") || !strings.Contains(service, "echo seeded") {
 		t.Errorf("api/seed = %q", service)
 	}
-	group := runInspection(t, directory, "action", "info", "toolbox/seed")
+	group := runInspection(t, directory, "actions", "info", "toolbox/seed")
 	if !strings.Contains(group, "(group)") || !strings.Contains(group, "echo group seeded") {
 		t.Errorf("toolbox/seed = %q", group)
 	}
@@ -90,13 +90,13 @@ func TestActionInfoDistinguishesOwnersOfTheSameName(t *testing.T) {
 // the user learns the OWNER/ACTION shape.
 func TestActionInfoOnABareNameTeachesTheShape(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	if code := execute([]string{"-C", actionDirectory(t), "action", "info", "seed"}, &stdout, &stderr); code != kranzcli.ExitNotFound {
+	if code := execute([]string{"-C", actionDirectory(t), "actions", "info", "seed"}, &stdout, &stderr); code != kranzcli.ExitNotFound {
 		t.Fatalf("exit = %d, stderr = %q", code, stderr.String())
 	}
 	if !strings.Contains(stderr.String(), "OWNER/ACTION") {
 		t.Errorf("error does not teach the shape: %q", stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "kranz action info api/seed") {
+	if !strings.Contains(stderr.String(), "kranz actions info api/seed") {
 		t.Errorf("error does not use a real project action as its example: %q", stderr.String())
 	}
 }
@@ -106,7 +106,7 @@ func TestActionInfoOnABareNameTeachesTheShape(t *testing.T) {
 // refused before any runtime is contacted.
 func TestActionRunRefusesAnInteractiveAction(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	if code := execute([]string{"-C", actionDirectory(t), "action", "run", "api/migrate"}, &stdout, &stderr); code != kranzcli.ExitUsage {
+	if code := execute([]string{"-C", actionDirectory(t), "actions", "run", "api/migrate"}, &stdout, &stderr); code != kranzcli.ExitUsage {
 		t.Fatalf("exit = %d, stderr = %q", code, stderr.String())
 	}
 	if !strings.Contains(stderr.String(), "interactive") || !strings.Contains(stderr.String(), "kranz attach") {
@@ -116,13 +116,13 @@ func TestActionRunRefusesAnInteractiveAction(t *testing.T) {
 
 func TestActionRunNeedsARuntime(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := execute([]string{"-C", actionDirectory(t), "action", "run", "api/seed"}, &stdout, &stderr)
+	code := execute([]string{"-C", actionDirectory(t), "actions", "run", "api/seed"}, &stdout, &stderr)
 	if code != kranzcli.ExitNotFound {
 		t.Fatalf("exit = %d, stderr = %q", code, stderr.String())
 	}
 }
 
-// `kranz action run --output=json` promises an array of output lines. A pipe
+// `kranz actions run --output=json` promises an array of output lines. A pipe
 // hands Kranz whatever chunk it read, so without splitting, a consumer counting
 // array elements and a human counting printed lines disagree.
 func TestActionOutputLinesAreOneLineEach(t *testing.T) {

@@ -29,12 +29,12 @@ type actionListEntry struct {
 }
 
 func runActionList(options kranzcli.GlobalOptions, args []string, stdout io.Writer) error {
-	formatter, args, err := extractRowFormat("action list", options.Output, args)
+	formatter, args, err := extractRowFormat("actions", options.Output, args)
 	if err != nil {
 		return err
 	}
 	if len(args) > 1 {
-		return &kranzcli.Error{Code: "invalid_arguments", Message: "action list accepts at most one owner", ExitCode: kranzcli.ExitUsage}
+		return &kranzcli.Error{Code: "invalid_arguments", Message: "actions accepts at most one owner", ExitCode: kranzcli.ExitUsage}
 	}
 	cfg, _, err := loadProject(options)
 	if err != nil {
@@ -49,7 +49,7 @@ func runActionList(options kranzcli.GlobalOptions, args []string, stdout io.Writ
 		return &kranzcli.Error{
 			Code:     "owner_not_found",
 			Message:  fmt.Sprintf("no service or action group named %q defines actions", owner),
-			Hint:     "Run `kranz action list` to see every action this project defines.",
+			Hint:     "Run `kranz actions` to see every action this project defines.",
 			ExitCode: kranzcli.ExitNotFound,
 		}
 	}
@@ -122,13 +122,13 @@ func resolveActionID(cfg *config.Config, reference string) (config.ActionID, con
 		action, _ := cfg.ResolveAction(matches[0])
 		return matches[0], action, nil
 	case 0:
-		hint := "Run `kranz action list` to see every action this project defines."
+		hint := "Run `kranz actions` to see every action this project defines."
 		if !strings.Contains(reference, "/") {
 			hint = "Actions are named OWNER/ACTION."
 			if ids := cfg.ActionIDs(); len(ids) > 0 {
-				hint += fmt.Sprintf(" For example: `kranz action info %s`.", actionIDString(ids[0]))
+				hint += fmt.Sprintf(" For example: `kranz actions info %s`.", actionIDString(ids[0]))
 			} else {
-				hint += " Run `kranz action list` to see what this project defines."
+				hint += " Run `kranz actions` to see what this project defines."
 			}
 		}
 		return config.ActionID{}, config.Action{}, &kranzcli.Error{

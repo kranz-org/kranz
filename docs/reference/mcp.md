@@ -32,8 +32,7 @@ nothing. Which runtime answers is decided per call.
 
 `-C DIR`, `-f FILE`, and `-p NAME|ID` pin the server to one project for a
 client that should reach exactly one. A pinned server rejects any other address
-with `runtime_pinned`. `--attach-only` is a deprecated compatibility flag: it
-has no effect, emits a warning, and will be removed in the next major release.
+with `runtime_pinned`.
 
 The [MCP guide](../guide/mcp) has ready-to-copy configurations and a
 first-connection check.

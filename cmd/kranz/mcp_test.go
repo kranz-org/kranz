@@ -24,16 +24,13 @@ import (
 
 var mcpProjectCounter atomic.Int64
 
-func TestMCPAttachOnlyWarnsWithoutWritingProtocolOutput(t *testing.T) {
-	var stderr bytes.Buffer
-	warnDeprecatedMCPOptions(true, &stderr)
-	if !strings.Contains(stderr.String(), "--attach-only is deprecated") {
-		t.Fatalf("warning = %q", stderr.String())
+func TestMCPRejectsRemovedAttachOnlyOption(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := execute([]string{"mcp", "--attach-only"}, &stdout, &stderr); code != kranzcli.ExitUsage {
+		t.Fatalf("exit = %d, stdout/stderr = %q/%q", code, stdout.String(), stderr.String())
 	}
-	stderr.Reset()
-	warnDeprecatedMCPOptions(false, &stderr)
-	if stderr.Len() != 0 {
-		t.Fatalf("unexpected warning = %q", stderr.String())
+	if stdout.Len() != 0 || !strings.Contains(stderr.String(), "unknown") {
+		t.Fatalf("stdout/stderr = %q/%q", stdout.String(), stderr.String())
 	}
 }
 
@@ -87,7 +84,7 @@ func useHelperBackgroundRuntimes(t *testing.T) {
 func startTestRuntime(t *testing.T, options kranzcli.GlobalOptions, name string) kranzruntime.SessionRecord {
 	t.Helper()
 	useHelperBackgroundRuntimes(t)
-	if err := runUp(options, []string{"-d", "--no-start"}, io.Discard); err != nil {
+	if err := runUp(options, []string{"-d"}, io.Discard); err != nil {
 		t.Fatalf("start runtime: %v", err)
 	}
 	t.Cleanup(func() {

@@ -63,21 +63,15 @@ func execute(args []string, stdout, stderr io.Writer) int {
 			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
 		}
 	}
-
 	if invocation.Command() == "version" {
 		return writeVersion(stdout, stderr, invocation.Globals.Output)
 	}
 	if invocation.Command() == "mcp" {
-		attachOnly := false
 		for _, arg := range invocation.Args {
-			if arg == "--attach-only" {
-				attachOnly = true
-				continue
-			}
 			_, _ = fmt.Fprintf(stderr, "Kranz MCP: unknown mcp option or argument %q\n", arg)
 			return kranzcli.ExitUsage
 		}
-		if err := runMCP(invocation.Globals, attachOnly, stdout, stderr); err != nil {
+		if err := runMCP(invocation.Globals, stdout, stderr); err != nil {
 			_, _ = fmt.Fprintf(stderr, "Kranz MCP: %v\n", err)
 			return 1
 		}
@@ -116,13 +110,23 @@ func execute(args []string, stdout, stderr io.Writer) int {
 			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
 		}
 		return 0
-	case "list":
-		if err := runList(invocation.Globals, invocation.Args, stdout); err != nil {
+	case "services list":
+		if err := runServices(invocation.Globals, invocation.Args, stdout); err != nil {
 			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
 		}
 		return 0
-	case "info":
-		if err := runInfo(invocation.Globals, invocation.Args, stdout); err != nil {
+	case "tags":
+		if err := runTags(invocation.Globals, invocation.Args, stdout); err != nil {
+			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
+		}
+		return 0
+	case "services info":
+		if err := runServiceInfo(invocation.Globals, invocation.Args, stdout); err != nil {
+			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
+		}
+		return 0
+	case "project":
+		if err := runProject(invocation.Globals, invocation.Args, stdout); err != nil {
 			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
 		}
 		return 0
@@ -151,7 +155,7 @@ func execute(args []string, stdout, stderr io.Writer) int {
 			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
 		}
 		return 0
-	case "ports":
+	case "ports list":
 		if err := runPorts(invocation.Globals, invocation.Args, stdout); err != nil {
 			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
 		}
@@ -186,17 +190,17 @@ func execute(args []string, stdout, stderr io.Writer) int {
 			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
 		}
 		return 0
-	case "action list":
+	case "actions list":
 		if err := runActionList(invocation.Globals, invocation.Args, stdout); err != nil {
 			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
 		}
 		return 0
-	case "action info":
+	case "actions info":
 		if err := runActionInfo(invocation.Globals, invocation.Args, stdout); err != nil {
 			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
 		}
 		return 0
-	case "action run":
+	case "actions run":
 		if err := runActionRun(invocation.Globals, invocation.Args, stdout); err != nil {
 			var requested requestedExitError
 			if errors.As(err, &requested) {
@@ -205,7 +209,7 @@ func execute(args []string, stdout, stderr io.Writer) int {
 			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
 		}
 		return 0
-	case "port inspect":
+	case "ports inspect":
 		if err := runPortInspect(invocation.Globals, invocation.Args, stdout); err != nil {
 			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
 		}
@@ -515,7 +519,7 @@ func makeRestartRuntime(base kranzcli.GlobalOptions) func(directory string, conf
 		options.ConfigPaths = configPaths
 		options.Project = ""
 		options.Output = kranzcli.OutputText
-		return spawnBackground(options, nil, true, io.Discard)
+		return spawnBackground(options, nil, false, io.Discard)
 	}
 }
 
@@ -542,7 +546,7 @@ func resolveOrStartDashboardRuntime(options kranzcli.GlobalOptions, cfgPaths []s
 	backgroundOptions.Directory = directory
 	backgroundOptions.ConfigPaths = cfgPaths
 	backgroundOptions.Output = kranzcli.OutputText
-	if err := spawnBackground(backgroundOptions, nil, true, io.Discard); err != nil {
+	if err := spawnBackground(backgroundOptions, nil, false, io.Discard); err != nil {
 		return kranzruntime.SessionRecord{}, classifyRuntimeError(err)
 	}
 	record, err = resolve()

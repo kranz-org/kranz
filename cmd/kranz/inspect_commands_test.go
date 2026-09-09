@@ -56,10 +56,10 @@ func runInspection(t *testing.T, directory string, args ...string) string {
 	return stdout.String()
 }
 
-func TestListReportsServicesActionsAndTags(t *testing.T) {
+func TestCollectionCommandsReportServicesActionsAndTags(t *testing.T) {
 	directory := inspectionDirectory(t)
 
-	services := runInspection(t, directory, "list", "services")
+	services := runInspection(t, directory, "services")
 	for _, name := range []string{"db", "migrate", "api"} {
 		if !strings.Contains(services, name) {
 			t.Errorf("list services omits %q: %q", name, services)
@@ -71,10 +71,10 @@ func TestListReportsServicesActionsAndTags(t *testing.T) {
 		t.Errorf("list services lost declaration order: %q", services)
 	}
 
-	if actions := runInspection(t, directory, "list", "actions"); !strings.Contains(actions, "api/seed") {
+	if actions := runInspection(t, directory, "actions"); !strings.Contains(actions, "api/seed") {
 		t.Errorf("list actions omits the service action: %q", actions)
 	}
-	if tags := runInspection(t, directory, "list", "tags"); !strings.Contains(tags, "infra") || !strings.Contains(tags, "backend") {
+	if tags := runInspection(t, directory, "tags"); !strings.Contains(tags, "infra") || !strings.Contains(tags, "backend") {
 		t.Errorf("list tags is incomplete: %q", tags)
 	}
 }
@@ -85,9 +85,9 @@ func TestRowOrientedInspectionCommandsAcceptFormat(t *testing.T) {
 		args []string
 		want string
 	}{
-		{args: []string{"list", "services", "--format", "{{.Name}}"}, want: "api"},
-		{args: []string{"list", "actions", "--format", "{{.Action}}"}, want: "api/seed"},
-		{args: []string{"list", "tags", "--format", "{{.Tag}}"}, want: "backend"},
+		{args: []string{"services", "--format", "{{.Name}}"}, want: "api"},
+		{args: []string{"actions", "--format", "{{.Action}}"}, want: "api/seed"},
+		{args: []string{"tags", "--format", "{{.Tag}}"}, want: "backend"},
 		{args: []string{"ports", "db", "--format", "{{.Service}}:{{.Port}}"}, want: "db:65123"},
 		{args: []string{"doctor", "--format", "{{.Check}}:{{.Status}}"}, want: ":"},
 	} {
@@ -95,16 +95,6 @@ func TestRowOrientedInspectionCommandsAcceptFormat(t *testing.T) {
 		if !strings.Contains(output, test.want) {
 			t.Errorf("%v output = %q, want %q", test.args, output, test.want)
 		}
-	}
-}
-
-func TestListRejectsAnUnknownKind(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	if code := execute([]string{"-C", inspectionDirectory(t), "list", "widgets"}, &stdout, &stderr); code != kranzcli.ExitUsage {
-		t.Fatalf("exit = %d, stderr = %q", code, stderr.String())
-	}
-	if !strings.Contains(stderr.String(), "kranz list services") {
-		t.Errorf("rejection does not name the valid kinds: %q", stderr.String())
 	}
 }
 
@@ -191,14 +181,14 @@ func TestDoctorJSONKeepsAFailedPreflightToOneUsefulEnvelope(t *testing.T) {
 	}
 }
 
-func TestInfoDescribesProjectAndService(t *testing.T) {
+func TestProjectAndServiceInfoDescribeTheirEntities(t *testing.T) {
 	directory := inspectionDirectory(t)
 
-	if project := runInspection(t, directory, "info"); !strings.Contains(project, "Inspection") {
-		t.Errorf("info omits the project: %q", project)
+	if project := runInspection(t, directory, "project"); !strings.Contains(project, "Inspection") {
+		t.Errorf("project omits project details: %q", project)
 	}
 
-	service := runInspection(t, directory, "info", "migrate")
+	service := runInspection(t, directory, "services", "info", "migrate")
 	if !strings.Contains(service, "db") {
 		t.Errorf("info does not report the dependency: %q", service)
 	}
@@ -279,7 +269,7 @@ func TestDoctorFailsOnAMissingServiceDirectory(t *testing.T) {
 }
 
 func TestInspectionCommandsOutsideAProjectExplainThemselves(t *testing.T) {
-	for _, command := range [][]string{{"list"}, {"plan"}, {"graph"}, {"info"}, {"doctor"}, {"config", "check"}} {
+	for _, command := range [][]string{{"services"}, {"plan"}, {"graph"}, {"project"}, {"doctor"}, {"config", "check"}} {
 		var stdout, stderr bytes.Buffer
 		args := append([]string{"-C", t.TempDir()}, command...)
 		if code := execute(args, &stdout, &stderr); code != kranzcli.ExitUsage {
@@ -301,7 +291,7 @@ func withRuntimeSnapshots(t *testing.T, snapshots map[string]*app.ServiceSnapsho
 // What the file says is half of "tell me about this service". When a runtime is
 // up, the other half is what the service is doing right now, and info answered
 // only the first half while status held the rest.
-func TestInfoReportsLiveStateWhenARuntimeIsRunning(t *testing.T) {
+func TestServiceInfoReportsLiveStateWhenARuntimeIsRunning(t *testing.T) {
 	directory := inspectionDirectory(t)
 	withRuntimeSnapshots(t, map[string]*app.ServiceSnapshot{
 		"api": {
@@ -312,7 +302,7 @@ func TestInfoReportsLiveStateWhenARuntimeIsRunning(t *testing.T) {
 		},
 	})
 
-	output := runInspection(t, directory, "info", "api")
+	output := runInspection(t, directory, "services", "info", "api")
 	for _, want := range []string{"Right now", "running", "4242", "Health:    -", "65501"} {
 		if !strings.Contains(output, want) {
 			t.Errorf("info omits %q:\n%s", want, output)
@@ -383,10 +373,10 @@ func TestHealthLabelDistinguishesConfiguredProbesFromAssumedHealth(t *testing.T)
 
 // Without a runtime the command still describes the configuration, and must not
 // invent a state it cannot know.
-func TestInfoOmitsLiveStateWithoutARuntime(t *testing.T) {
+func TestServiceInfoOmitsLiveStateWithoutARuntime(t *testing.T) {
 	withRuntimeSnapshots(t, nil)
 
-	output := runInspection(t, inspectionDirectory(t), "info", "api")
+	output := runInspection(t, inspectionDirectory(t), "services", "info", "api")
 	if strings.Contains(output, "Right now") {
 		t.Errorf("info reported live state with no runtime:\n%s", output)
 	}
@@ -402,7 +392,7 @@ func TestListJSONUsesEmptyArraysNotNull(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(directory, "kranz.yaml"), []byte("project: Bare\nservices:\n  solo:\n    command: sleep 60\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	output := runInspection(t, directory, "list", "services", "--output", "json")
+	output := runInspection(t, directory, "services", "--output", "json")
 	if strings.Contains(output, "null") {
 		t.Errorf("list services JSON contains null:\n%s", output)
 	}
