@@ -116,6 +116,19 @@ func TestQuitConfirmationMouseCanDetach(t *testing.T) {
 	}
 }
 
+func TestQuitConfirmationOffersClickableCloseAndChooseWhenSupported(t *testing.T) {
+	model := newTestModel()
+	defer model.Shutdown()
+	model.registry = testRegistry(t)
+	model.width, model.height, model.ready = 100, 40, true
+	model.mode = ModeConfirmQuit
+
+	command := clickRenderedText(t, model, "[c]       Close & choose another runtime")
+	if command == nil || !model.exiting || model.operation != "Closing runtime" {
+		t.Fatalf("close-and-choose click = command %v, exiting %v, operation %q", command, model.exiting, model.operation)
+	}
+}
+
 // Tests for service lifecycle actions driven from the dashboard.
 
 func TestEnterDoesNotControlServiceLifecycle(t *testing.T) {

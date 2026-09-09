@@ -22,6 +22,9 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 - `ps`, `clients`, and `status` accept exact, repeatable `--filter` values and
   interruptible `--watch` refreshes. `--interval` controls refresh frequency,
   and `--count` bounds snapshots for automation.
+- The TUI quit confirmation offers `c` for **Close & choose**: it stops the
+  current runtime and opens the live runtime chooser without leaving the TUI.
+  The chooser remains usable when no other runtime is available.
 
 ### Changed
 
@@ -56,6 +59,8 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
   and the TUI Runtimes window. `kranz ps` now shows the owning supervisor's PID
   directly.
 - The canonical action table shows whether each action requires confirmation.
+- Root help keeps `actions` beside `services` and `tags`, matching the command
+  model users configure and operate in the TUI.
 
 ## [0.13.1] - 2026-09-07
 

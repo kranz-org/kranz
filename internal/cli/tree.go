@@ -140,6 +140,13 @@ func DefaultTree() *Command {
 			}},
 			{Name: "info", Summary: "show service details", Usage: "kranz services info SERVICE"},
 		}},
+		{Name: "actions", Summary: "inspect and run actions", Default: "list", Children: []*Command{
+			{Name: "list", Summary: "list actions", Usage: "kranz actions [OWNER] [--format TEMPLATE]", Options: []Option{
+				{Flags: "--format TEMPLATE", Summary: "render each action with a Go template; prefix with 'table ' for headers"},
+			}},
+			{Name: "info", Summary: "show action details", Usage: "kranz actions info OWNER/ACTION"},
+			{Name: "run", Summary: "run an action", Usage: "kranz actions run OWNER/ACTION"},
+		}},
 		{Name: "tags", Summary: "list configured service tags", Usage: "kranz tags [--format TEMPLATE]", Options: []Option{
 			{Flags: "--format TEMPLATE", Summary: "render each tag with a Go template; prefix with 'table ' for headers"},
 		}},
@@ -208,13 +215,6 @@ func DefaultTree() *Command {
 				{Flags: "--with-actions", Summary: "clear the actions an owner has run as well"},
 				{Flags: "--force", Summary: "required to clear every buffer at once"},
 			}},
-		}},
-		{Name: "actions", Summary: "inspect and run actions", Default: "list", Children: []*Command{
-			{Name: "list", Summary: "list actions", Usage: "kranz actions [OWNER] [--format TEMPLATE]", Options: []Option{
-				{Flags: "--format TEMPLATE", Summary: "render each action with a Go template; prefix with 'table ' for headers"},
-			}},
-			{Name: "info", Summary: "show action details", Usage: "kranz actions info OWNER/ACTION"},
-			{Name: "run", Summary: "run an action", Usage: "kranz actions run OWNER/ACTION"},
 		}},
 		{Name: "completion", Summary: "generate shell completion", Usage: "kranz completion bash|zsh|fish"},
 		{Name: "help", Summary: "show command help", Usage: "kranz help [COMMAND]"},

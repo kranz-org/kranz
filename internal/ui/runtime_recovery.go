@@ -82,6 +82,10 @@ func (m *Model) handleRuntimeLostKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case msg.String() == "esc":
 			m.cancelPendingRuntimeSwitch()
 			m.recoveryShowingList = false
+		case msg.String() == "q", msg.String() == "Q":
+			m.recoverySeq++
+			m.cancelPendingRuntimeSwitch()
+			return m.beginDetach()
 		}
 		return m, nil
 	}
@@ -98,6 +102,7 @@ func (m *Model) handleRuntimeLostKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.recoverySeq++
 		m.recoveryBusy = false
 		m.recoveryShowingList = true
+		m.switcherLoading = true
 		m.switcherGeneration++
 		return m, m.refreshRuntimeList()
 	case "q", "Q":

@@ -103,8 +103,9 @@ Every TUI is attached to an independently owned runtime, including the one
 opened by bare `kranz`. The quit confirmation always shows
 which managed processes and configured detached resources will stop and which
 external resources will remain active. Confirm shutdown with `Enter` or `y`,
-press `d` to detach the TUI and keep the complete runtime running, or use `Esc`
-or `n` to stay.
+press `d` to detach the TUI and keep the complete runtime running, or press `c`
+for **Close & choose**: stop this runtime and immediately choose another in the
+same TUI process. Use `Esc` or `n` to stay.
 
 The [CLI workflow](./cli-workflow) and [MCP guide](./mcp) operate the same live
 runtime. A restart from either is reflected immediately in this TUI.
@@ -139,6 +140,10 @@ instead of closing, offering `r` to restart that project or `c` to choose
 another running one. See the [switching runtimes
 reference](../reference/controls#switching-runtimes) for the complete key
 list, row states, and recovery behavior.
+
+**Close & choose** uses this same live list after intentionally stopping the
+current runtime. An empty list is a normal state; `q` exits and `Esc` returns to
+the recovery actions.
 
 ## Common keys
 

@@ -143,7 +143,10 @@ type actionResultMsg struct {
 	sessionGen uint64
 }
 
-type shutdownResultMsg struct{ err error }
+type shutdownResultMsg struct {
+	err              error
+	chooseAfterClose bool
+}
 type shellFinishedMsg struct{ err error }
 type runExportResultMsg struct {
 	path string
@@ -606,6 +609,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.mode = ModeNormal
 		return m.toggleSelectedServices()
 	case shutdownResultMsg:
+		if msg.chooseAfterClose {
+			return m.handleCloseAndChooseResult(msg.err)
+		}
 		if msg.err != nil {
 			m.addNotification("system", "Shutdown failed: "+msg.err.Error(), config.LogError)
 		}

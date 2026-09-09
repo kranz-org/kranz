@@ -110,6 +110,9 @@ func (m *Model) refreshRuntimeListIfVisible() tea.Cmd {
 func (m *Model) handleRuntimeListMsg(msg runtimeListMsg) (tea.Model, tea.Cmd) {
 	m.switcherRefreshBusy = false
 	if msg.generation != m.switcherGeneration {
+		if m.mode == ModeRuntimeSwitcher || (m.mode == ModeRuntimeLost && m.recoveryShowingList) {
+			return m, m.refreshRuntimeList()
+		}
 		return m, nil
 	}
 	m.switcherLoading = false
@@ -137,6 +140,27 @@ func (m *Model) handleRuntimeListMsg(msg runtimeListMsg) (tea.Model, tea.Cmd) {
 	}
 	m.switcherCursor = newIndex
 	return m, nil
+}
+
+func (m *Model) handleCloseAndChooseResult(closeErr error) (tea.Model, tea.Cmd) {
+	m.exiting = false
+	m.detachOnExit = true
+	m.operation = ""
+	m.sessionGeneration++
+	m.mode = ModeRuntimeLost
+	m.recoveryReason = "Runtime closed"
+	m.recoveryBusy = false
+	m.recoveryShowingList = true
+	m.recoveryErr = ""
+	if closeErr != nil {
+		m.recoveryErr = "Could not close current runtime cleanly: " + closeErr.Error()
+	}
+	m.switcherRows = nil
+	m.switcherCursor = 0
+	m.switcherLoading = true
+	m.switcherErr = ""
+	m.switcherGeneration++
+	return m, m.refreshRuntimeList()
 }
 
 func (m *Model) handleRuntimeSwitcherKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

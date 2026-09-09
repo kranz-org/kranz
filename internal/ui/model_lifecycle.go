@@ -546,6 +546,28 @@ func (m *Model) beginDetach() (tea.Model, tea.Cmd) {
 	return m.beginExit("Detaching")
 }
 
+func (m *Model) beginCloseAndChoose() (tea.Model, tea.Cmd) {
+	if !m.switcherSupported() || m.exiting {
+		return m, nil
+	}
+	if m.operationCancel != nil {
+		m.operationCancel()
+		m.operationCancel = nil
+	}
+	m.operationID++
+	m.operationKind = ""
+	m.operation = "Closing runtime"
+	m.mode = ModeNormal
+	m.exiting = true
+	// Capture the departing application just as beginExit freezes m.app. The
+	// chooser may install another session only after this command answers, and
+	// that new session must never become the target of the close request.
+	currentApp := m.app
+	return m, func() tea.Msg {
+		return shutdownResultMsg{err: currentApp.Shutdown(), chooseAfterClose: true}
+	}
+}
+
 func (m *Model) beginExit(operation string) (tea.Model, tea.Cmd) {
 	if m.operationCancel != nil {
 		m.operationCancel()
@@ -571,6 +593,8 @@ func (m *Model) handleConfirmQuitKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.beginShutdown()
 	case "d", "D":
 		return m.beginDetach()
+	case "c", "C":
+		return m.beginCloseAndChoose()
 	case "n", "N", "esc":
 		m.mode = ModeNormal
 	}

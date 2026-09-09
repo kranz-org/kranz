@@ -254,14 +254,15 @@ func (m *Model) renderConfirmQuitView() string {
 		body = append(body, "", "The current operation will be cancelled.")
 	}
 	body = append(body, "", HelpSectionStyle.Render("EXIT"))
-	content := renderConfirmationModal(
-		"Quit Kranz?",
-		body,
+	actions := []string{
 		"  [Enter/y] Stop runtime and quit",
 		"  [d]       Detach and keep runtime running",
-		"",
-		"  [Esc/n]   Stay here",
-	)
+	}
+	if m.switcherSupported() {
+		actions = append(actions, "  [c]       Close & choose another runtime")
+	}
+	actions = append(actions, "", "  [Esc/n]   Stay here")
+	content := renderConfirmationModal("Quit Kranz?", body, actions...)
 	return m.placeOverlay(content)
 }
 

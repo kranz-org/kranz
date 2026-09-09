@@ -107,9 +107,10 @@ accent-coloured shortcuts.
 
 The quit confirmation shows the complete shutdown plan. `Enter` or `y` stops
 the runtime and quits, `d` detaches the TUI while keeping the runtime running,
-and `Esc` or `n` stays in the TUI. Shutdown stops process-owned services and
-only detached services with `stop_on_exit: true`; other external resources are
-listed and remain active.
+and `c` stops the current runtime and opens the live runtime chooser without
+leaving the TUI. `Esc` or `n` stays on the current dashboard. Shutdown stops
+process-owned services and only detached services with `stop_on_exit: true`;
+other external resources are listed and remain active.
 
 ## Switching runtimes
 
@@ -172,6 +173,10 @@ the TUI. Instead it shows a recovery screen:
 | `r` or `Enter` | Restart the same project's runtime and reattach |
 | `c` | Choose a different, already-running runtime |
 | `q` or `Ctrl+C` | Close only the TUI |
+
+The same chooser opens immediately after **Close & choose**. If no runtime
+remains, the empty list is valid; press `q` to leave the TUI or `Esc` to return
+to the recovery actions.
 
 A restart reuses the project directory and configuration paths Kranz already
 had for that runtime; it does not repeat any command a user typed. If it

@@ -105,6 +105,23 @@ func TestReleaseSurfaceHasNoPlannedCommands(t *testing.T) {
 	}
 }
 
+func TestRootHelpKeepsActionsBesideServices(t *testing.T) {
+	output, err := Help(DefaultTree(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	services := strings.Index(output, "\n  services ")
+	actions := strings.Index(output, "\n  actions  ")
+	tags := strings.Index(output, "\n  tags     ")
+	if services < 0 || actions < 0 || tags < 0 {
+		t.Fatalf("root help is missing services, actions, or tags:\n%s", output)
+	}
+	if services >= actions || actions >= tags {
+		t.Fatalf("root help order is services=%d actions=%d tags=%d; actions should sit beside services:\n%s",
+			services, actions, tags, output)
+	}
+}
+
 func TestHelpDocumentsLifecycleOptionsThatChangeCommandMeaning(t *testing.T) {
 	for _, test := range []struct {
 		command []string

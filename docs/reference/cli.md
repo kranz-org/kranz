@@ -221,7 +221,10 @@ session, not the ordinary way to stop a project.
 
 Every runtime has an independent background supervisor. Leaving a TUI through
 its detach action does not stop it; confirming shutdown or running an external
-`down` stops the runtime and closes attached clients cleanly.
+`down` stops the runtime and closes attached clients cleanly. The quit
+confirmation's **Close & choose** action stops the current runtime and opens
+the live chooser so another runtime can be attached without restarting the
+TUI.
 
 `ps` lists runtimes; `clients` lists the CLI, TUI, and MCP connections working
 in them, including client identity, PID, and connection age. They are two

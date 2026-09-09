@@ -2,10 +2,12 @@ package ui
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/kranz-org/kranz/internal/app"
 	"github.com/kranz-org/kranz/internal/config"
@@ -246,6 +248,87 @@ func TestRuntimeSwitcherEndToEndSwitchesAndRestoresState(t *testing.T) {
 	switchTo(t, model, beta.record)
 	if model.panelFocus != panelLogs {
 		t.Fatalf("beta's second-visit state was not restored: panelFocus=%v", model.panelFocus)
+	}
+}
+
+func TestCloseAndChooseStopsCurrentRuntimeAndSwitchesWithoutLeavingTUI(t *testing.T) {
+	registry := testRegistry(t)
+	alpha := startTestRuntime(t, registry, "close-alpha", serviceProjectConfig("Alpha", "worker"), t.TempDir())
+	beta := startTestRuntime(t, registry, "close-beta", emptyProjectConfig("Beta"), t.TempDir())
+	model := newSwitchableTestModel(t, registry, alpha, ModelOptions{DetachOnExit: true})
+	if err := alpha.client.StartServicesContext(context.Background(), []string{"worker"}); err != nil {
+		t.Fatalf("start worker: %v", err)
+	}
+	model.width, model.height, model.ready = 100, 24, true
+	model.mode = ModeConfirmQuit
+
+	_, closeCmd := model.handleConfirmQuitKeys(keyMessage("c"))
+	if closeCmd == nil || !model.exiting || model.operation != "Closing runtime" {
+		t.Fatalf("close-and-choose did not begin: cmd=%v exiting=%v operation=%q", closeCmd, model.exiting, model.operation)
+	}
+	closeMsg, ok := closeCmd().(shutdownResultMsg)
+	if !ok || closeMsg.err != nil || !closeMsg.chooseAfterClose {
+		t.Fatalf("close-and-choose result = %#v", closeMsg)
+	}
+	if alpha.local.HasRunningServices() {
+		t.Fatal("close-and-choose left the current runtime service running")
+	}
+	// The production runtime owner removes its listener and registry record
+	// after the shutdown response. The test harness owns that process boundary.
+	alpha.stop()
+	_, discoverCmd := model.Update(closeMsg)
+	discovering := ansi.Strip(model.renderRuntimeLostView())
+	if !strings.Contains(discovering, "Discovering local runtimes…") || strings.Contains(discovering, "No other local runtimes are registered") {
+		t.Fatalf("chooser showed an empty result before discovery finished:\n%s", discovering)
+	}
+	fireOnce(model, discoverCmd)
+
+	if model.mode != ModeRuntimeLost || !model.recoveryShowingList || model.exiting {
+		t.Fatalf("after close: mode=%v showingList=%v exiting=%v", model.mode, model.recoveryShowingList, model.exiting)
+	}
+	betaIndex := -1
+	for index, row := range model.switcherRows {
+		if row.Record.ID == alpha.record.ID {
+			t.Fatal("closed runtime remained in the chooser")
+		}
+		if row.Record.ID == beta.record.ID {
+			betaIndex = index
+		}
+	}
+	if betaIndex < 0 {
+		t.Fatalf("remaining runtime was not offered: %#v", model.switcherRows)
+	}
+	model.switcherCursor = betaIndex
+	_, connectCmd := model.connectToSwitcherSelection()
+	fireOnce(model, connectCmd)
+	if model.mode != ModeNormal || model.cfg.Project != "Beta" {
+		t.Fatalf("switch after close ended at mode=%v project=%q", model.mode, model.cfg.Project)
+	}
+}
+
+func TestCloseAndChooseAllowsAnEmptyRuntimeList(t *testing.T) {
+	registry := testRegistry(t)
+	alpha := startTestRuntime(t, registry, "only-runtime", emptyProjectConfig("Only"), t.TempDir())
+	model := newSwitchableTestModel(t, registry, alpha, ModelOptions{DetachOnExit: true})
+	model.width, model.height, model.ready = 100, 24, true
+	model.mode = ModeConfirmQuit
+
+	_, closeCmd := model.handleConfirmQuitKeys(keyMessage("c"))
+	closeMsg := closeCmd().(shutdownResultMsg)
+	alpha.stop()
+	_, discoverCmd := model.Update(closeMsg)
+	fireOnce(model, discoverCmd)
+
+	if len(model.switcherRows) != 0 {
+		t.Fatalf("empty chooser contains rows: %#v", model.switcherRows)
+	}
+	plain := ansi.Strip(model.renderRuntimeLostView())
+	if !strings.Contains(plain, "Runtime closed") || !strings.Contains(plain, "No other local runtimes are registered") || !strings.Contains(plain, "[q] Quit TUI") {
+		t.Fatalf("empty close-and-choose view is incomplete:\n%s", plain)
+	}
+	_, quitCmd := model.handleRuntimeLostKeys(keyMessage("q"))
+	if quitCmd == nil {
+		t.Fatal("empty chooser recovery screen cannot quit")
 	}
 }
 

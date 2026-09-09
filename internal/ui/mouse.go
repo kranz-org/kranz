@@ -335,6 +335,9 @@ func (m *Model) handleOverlayMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m.handleRuntimeRowClick(rendered, msg, m.closeRuntimeSwitcher)
 	case ModeRuntimeLost:
 		if m.recoveryShowingList {
+			if renderedTextHit(rendered, msg.X, msg.Y, "[q] Quit TUI") {
+				return m.handleRuntimeLostKeys(keyMessage("q"))
+			}
 			return m.handleRuntimeRowClick(rendered, msg, func() {
 				m.cancelPendingRuntimeSwitch()
 				m.recoveryShowingList = false
@@ -379,6 +382,9 @@ func (m *Model) handleOverlayMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 		if renderedTextHit(rendered, msg.X, msg.Y, "[d]       Detach and keep runtime running") {
 			return m.beginDetach()
+		}
+		if renderedTextHit(rendered, msg.X, msg.Y, "[c]       Close & choose another runtime") {
+			return m.beginCloseAndChoose()
 		}
 		if renderedTextHit(rendered, msg.X, msg.Y, "[Esc/n]   Stay here") {
 			m.mode = ModeNormal

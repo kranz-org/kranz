@@ -70,8 +70,8 @@ Return to panel `1`, keep both services selected, and press `s`. Kranz asks for
 confirmation before every stop. Confirm it and watch both process groups exit.
 
 Press `q` to leave. If services are still running, choose `Enter` or `y` to
-stop the runtime, `d` to detach while keeping it running, or `Esc` or `n` to
-stay in the TUI.
+stop the runtime, `d` to detach while keeping it running, `c` to stop it and
+choose another runtime without leaving the TUI, or `Esc` or `n` to stay.
 
 ## 5. What to try next
 

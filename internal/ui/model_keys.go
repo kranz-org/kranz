@@ -10,6 +10,9 @@ import (
 // dashboard the handlers are tried in order and the first to claim it wins.
 
 func (m *Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.exiting {
+		return m, nil
+	}
 	if msg.String() == "ctrl+c" {
 		if m.mode == ModeRuntimeLost {
 			m.recoverySeq++

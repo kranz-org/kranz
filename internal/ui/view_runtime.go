@@ -93,12 +93,20 @@ func (m *Model) renderRuntimeLostView() string {
 	}
 	lines := []string{ansi.Truncate(ModalTitleStyle.Render(" "+title+" "), contentWidth, "…"), ""}
 	if m.recoveryShowingList {
-		shortcutRows := renderModalShortcutRows([]string{"[↑/↓ · j/k] Select", "[Enter] Connect", "[Esc] Back"}, contentWidth, lipgloss.NewStyle().Foreground(ColorDim))
+		shortcutRows := renderModalShortcutRows([]string{"[↑/↓ · j/k] Select", "[Enter] Connect", "[Esc] Back", "[q] Quit TUI"}, contentWidth, lipgloss.NewStyle().Foreground(ColorDim))
 		lines = append(lines, modalTextRows("Choose a running runtime:", contentWidth)...)
 		lines = append(lines, "")
+		if m.recoveryErr != "" {
+			for _, line := range modalTextRows(m.recoveryErr, contentWidth) {
+				lines = append(lines, ContextBarStyle.Render(line))
+			}
+			lines = append(lines, "")
+		}
 		rowLines := renderRuntimeRowLines(m.switcherRows, m.switcherCursor,
 			m.runListCapacity(len(lines)+max(0, len(shortcutRows)-1)), contentWidth)
-		if len(rowLines) == 0 {
+		if len(rowLines) == 0 && m.switcherLoading {
+			lines = append(lines, modalTextRows("Discovering local runtimes…", contentWidth)...)
+		} else if len(rowLines) == 0 {
 			lines = append(lines, modalTextRows("No other local runtimes are registered", contentWidth)...)
 		} else {
 			lines = append(lines, rowLines...)
