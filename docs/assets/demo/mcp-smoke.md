@@ -1,24 +1,23 @@
 # MCP demo smoke evidence
 
-Recorded: 2026-08-28 on macOS arm64 with the v0.11.0 release candidate.
+Recorded: 2026-09-09 on macOS arm64 with the v0.14.0 release candidate.
 
 The deterministic client in `examples/mcp-shared-runtime/mcp_client.py` started
 `kranz mcp`, negotiated MCP `2025-11-25`, and used only resource/tool calls.
 Against one live background runtime it observed:
 
 ```text
-runtime=mcp-shared-runtime session=ef40fcc5
-api running pid=45298
-api stderr: database connection refused; retrying
-restart targets=api,web,worker
-api ready pid=92403
-api/migrate#1 succeeded exit=0
-migration complete; schema=42
-read again: same run, no re-execution
-api/migrate#1 succeeded
+MCP  status api                 -> running, ready
+MCP  plan restart api           -> api, web, worker
+MCP  restart api                -> accepted
+MCP  wait ready                 -> api, web, worker
+MCP  action_run api/migrate     -> run #1 succeeded
+MCP  logs api/migrate#1         -> migration complete; schema=42
+MCP  action_result same run     -> #1, no re-execution
 ```
 
-The session was then stopped through the ordinary terminal CLI. The tapes use
+The session was then stopped through the ordinary terminal CLI. The tape uses
 the same client and example, so regenerated frames cannot substitute fixture
-JSON for a Kranz result. No vendor-specific coding client is named in public
-copy until its real configuration has an additional smoke record.
+JSON for a Kranz result. It deliberately renders only stable product names and
+results: no runtime ID, process ID, socket, personal path, or raw envelope is
+shown in the published recording.

@@ -4,7 +4,7 @@ layout: home
 hero:
   name: Kranz
   text: Your local services, under control
-  tagline: Start dependency graphs, observe health and ports, run one-shot actions, and manage detached infrastructure from one keyboard-first terminal UI.
+  tagline: Operate one live local stack through a keyboard-first TUI, a complete CLI, or MCP tools for coding agents.
   image:
     light: /logo-light.svg
     dark: /logo.svg
@@ -29,6 +29,8 @@ features:
     details: Run migrations, builds, checks, and project actions with captured output, timeout, and confirmation.
   - title: One MCP server, shared live runtimes
     details: Register once, address any project per call, and let agents operate the same supervisor visible in TUI and CLI.
+  - title: Runs keep their evidence
+    details: Address service and action executions by stable number, then inspect bounded logs, status, duration, cause, and provenance.
   - title: Bring your existing config
     details: Start with a Procfile, a supported Process Compose file, or native Kranz YAML when you need the full model.
   - title: Independent by design
@@ -37,7 +39,7 @@ features:
 
 <div class="demo-frame demo-frame--hero">
 
-![Kranz v0.13.0 switching between two live project runtimes](./assets/kranz-demo.gif)
+![Kranz v0.14.0 switching between differently themed runtimes, then closing one and choosing the other](./assets/kranz-demo.gif)
 
 </div>
 

@@ -27,7 +27,7 @@ terminal tabs, alongside Docker Compose when containers remain the right home
 for infrastructure.
 
 <p align="center">
-  <img src="docs/assets/kranz-demo.gif" alt="Kranz v0.13.0 terminal interface switching between two live project runtimes">
+  <img src="docs/assets/kranz-demo.gif" alt="Kranz v0.14.0 terminal interface switching between differently themed runtimes, then closing one and choosing the other">
 </p>
 
 ## TUI, CLI, and MCP
@@ -127,6 +127,10 @@ for every command, option, output contract, and exit code.
   retention state, navigation, deletion, and export
 - Procfile, native YAML, and conservative Process Compose loading
 - Live configuration reload with last-known-good fallback
+- Exact CLI filters, bounded live watch, stable JSON, and Docker-style row
+  templates for automation
+- Draft-based configuration authoring with editable services, actions,
+  appearance, and a final diff before writing
 
 ## Documentation
 

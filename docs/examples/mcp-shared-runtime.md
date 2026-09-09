@@ -6,7 +6,7 @@ runs one action, reads its numbered result again, and cleans up the session.
 
 <div class="demo-frame">
 
-![A user asks a coding agent about a live Kranz session; the agent checks API readiness, runs a migration, and safely re-reads its result through MCP](../assets/mcp-shared-runtime.gif)
+![A deterministic MCP client restarts an API and its dependents beside the same live TUI, waits for readiness, runs a migration, and safely re-reads its result](../assets/mcp-shared-runtime.gif)
 
 </div>
 
@@ -22,7 +22,7 @@ cd examples/mcp-shared-runtime
 Then use separate terminals if you want to keep the TUI visible:
 
 ```bash
-kranz up -d
+kranz up --start -d
 kranz attach                            # terminal 1: TUI
 kranz status                            # terminal 2: CLI
 python3 mcp_client.py status            # terminal 3: MCP
@@ -62,7 +62,7 @@ The recording is built from the same live client and project, with no fixture
 JSON or personal environment data:
 
 ```bash
-make build VERSION=v0.13.0
+make build VERSION=v0.14.0
 vhs docs/assets/tapes/mcp-shared-runtime.tape
 ```
 

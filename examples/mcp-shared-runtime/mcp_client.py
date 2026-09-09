@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 
 
 class Client:
@@ -70,7 +71,7 @@ def main():
             session = client.resource("kranz://session")
             status = client.tool("status", {"selectors": ["api"]})
             service = status["data"][0]
-            print(f"runtime={session['session']['name']} session={session['session']['id'][:8]}")
+            print(f"runtime={session['session']['name']}")
             print(f"api {service['state']['status']} pid={service['state']['pid']}")
         elif command == "logs":
             result = client.tool("logs", {"selectors": ["api"], "tail": 4})
@@ -95,7 +96,7 @@ def main():
         elif command == "actions":
             session = client.resource("kranz://session")
             actions = client.tool("action_list", {})
-            print(f"runtime={session['session']['name']} session={session['session']['id'][:8]}")
+            print(f"runtime={session['session']['name']}")
             for action in actions["data"]:
                 print(action["id"])
         elif command == "demo":
@@ -103,7 +104,7 @@ def main():
             print(f"MCP initialize                         -> {protocol}")
             session = client.resource("kranz://session")
             print("MCP resource kranz://session           "
-                  f"-> {session['session']['name']} {session['session']['id'][:8]}")
+                  f"-> {session['session']['name']}")
             status = client.tool("status", {"selectors": ["api"]})["data"][0]
             print("MCP tool status {selectors: [api]}     "
                   f"-> {status['state']['status']}, ready")
@@ -114,8 +115,31 @@ def main():
             again = client.tool("action_result", {"action": "api/migrate", "run": action["run"]})
             print("MCP tool action_result {same run}      "
                   f"-> run #{again['data']['run']}, no re-execution")
+        elif command == "walkthrough":
+            def step(message):
+                print(message, flush=True)
+                time.sleep(1.2)
+
+            status = client.tool("status", {"selectors": ["api"]})["data"][0]
+            step(f"MCP  status api                 -> {status['state']['status']}, ready")
+            plan = client.tool("plan", {"selectors": ["api"], "operation": "restart"})
+            targets = ", ".join(plan["data"]["targets"])
+            step(f"MCP  plan restart api           -> {targets}")
+            client.tool("restart", {"selectors": ["api"]})
+            step("MCP  restart api                -> accepted")
+            waited = client.tool("wait", {"selectors": ["api", "web", "worker"], "condition": "ready", "timeout": "10s"})
+            ready = ", ".join(service["name"] for service in waited["data"]["services"])
+            step(f"MCP  wait ready                 -> {ready}")
+            run = client.tool("action_run", {"action": "api/migrate"})
+            action = run["data"]["action_result"]
+            step(f"MCP  action_run api/migrate     -> run #{action['run']} {action['status']}")
+            logs = client.tool("logs", {"selectors": ["api/migrate"], "run": action["run"]})
+            output = next(event["text"] for event in logs["data"]["events"] if event["source"] != "kranz")
+            step(f"MCP  logs api/migrate#{action['run']}       -> {output}")
+            again = client.tool("action_result", {"action": "api/migrate", "run": action["run"]})
+            print(f"MCP  action_result same run     -> #{again['data']['run']}, no re-execution", flush=True)
         else:
-            raise SystemExit("usage: mcp_client.py status|logs|restart|migrate|actions|demo")
+            raise SystemExit("usage: mcp_client.py status|logs|restart|migrate|actions|demo|walkthrough")
     finally:
         client.close()
 

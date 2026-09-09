@@ -1,8 +1,9 @@
-# Privacy-safe, real-agent MCP walkthrough. The recorded panes run from a
-# neutral temporary directory. Setup, authentication, commands, cleanup, and
-# the user's home directory stay hidden.
+# Privacy-safe MCP walkthrough. The right pane is a deterministic client that
+# performs real MCP resource and tool calls while the left pane shows the same
+# live runtime in the TUI. No fixture JSON, personal paths, or runtime IDs are
+# rendered.
 # Regenerate from the repository root:
-#   make build VERSION=v0.13.0
+#   make build VERSION=v0.14.0
 #   vhs docs/assets/tapes/mcp-shared-runtime.tape
 Output docs/assets/mcp-shared-runtime.gif
 
@@ -15,21 +16,17 @@ Set LineHeight 1.2
 Set Framerate 12
 
 Hide
-Type "DEMO_DIR=/private/tmp/kranz-mcp-demo; DEMO_CODEX_HOME=/private/tmp/kranz-codex-demo; DEMO_SESSION=kranz-mcp-demo"
+Type "DEMO_DIR=/private/tmp/kranz-mcp-demo; DEMO_SESSION=kranz-mcp-demo"
 Enter
-Type "make build VERSION=v0.13.0"
+Type "make build VERSION=v0.14.0"
 Enter
-Type `mkdir -p "$DEMO_DIR" "$DEMO_CODEX_HOME"`
+Type `mkdir -p "$DEMO_DIR"`
 Enter
-Type `cp examples/mcp-shared-runtime/kranz.yaml examples/mcp-shared-runtime/api.py examples/mcp-shared-runtime/demo_approvals.py bin/kranz "$DEMO_DIR/"`
-Enter
-Type `ln -sf "$HOME/.codex/auth.json" "$DEMO_CODEX_HOME/auth.json"`
-Enter
-Type `printf '[projects."/private/tmp/kranz-mcp-demo"]\ntrust_level = "trusted"\n' > "$DEMO_CODEX_HOME/config.toml"`
+Type `cp examples/mcp-shared-runtime/kranz.yaml examples/mcp-shared-runtime/api.py examples/mcp-shared-runtime/mcp_client.py bin/kranz "$DEMO_DIR/"`
 Enter
 Type `"$DEMO_DIR/kranz" -C "$DEMO_DIR" down >/dev/null 2>&1 || true`
 Enter
-Type `"$DEMO_DIR/kranz" -C "$DEMO_DIR" up -d`
+Type `"$DEMO_DIR/kranz" -C "$DEMO_DIR" up --start -d`
 Enter
 Sleep 2s
 Type `tmux kill-session -t "$DEMO_SESSION" >/dev/null 2>&1 || true`
@@ -46,15 +43,9 @@ Type `tmux set-window-option -t "$DEMO_SESSION:0" allow-rename off`
 Enter
 Type `tmux select-pane -t "$DEMO_SESSION:0.0" -T 'KRANZ · LIVE RUNTIME'`
 Enter
-Type `tmux split-window -h -p 44 -t "$DEMO_SESSION:0" "env -u NO_COLOR TERM=xterm-256color COLORTERM=truecolor FORCE_COLOR=1 CODEX_HOME=$DEMO_CODEX_HOME codex -s read-only -C $DEMO_DIR -c 'mcp_servers={kranz={command=\"$DEMO_DIR/kranz\",args=[\"mcp\"]}}' 'Restart api and anything Kranz says depends on it. Wait until everything is ready again. Use only Kranz MCP—no shell commands. Begin the one-sentence final answer with Done:'"`
+Type `tmux split-window -h -p 44 -t "$DEMO_SESSION:0" "cd $DEMO_DIR && env -u NO_COLOR TERM=xterm-256color COLORTERM=truecolor FORCE_COLOR=1 PS1='' bash --noprofile --norc"`
 Enter
-Type `tmux select-pane -t "$DEMO_SESSION:0.1" -T 'CODEX · KRANZ MCP'`
-Enter
-Type `python3 "$DEMO_DIR/demo_approvals.py" "$DEMO_SESSION:0.1" >/dev/null 2>&1 &`
-Enter
-Type `until tmux capture-pane -p -t "$DEMO_SESSION:0.1" | grep -q 'kranz.restart'; do sleep 1; done`
-Enter
-Type `while tmux capture-pane -p -t "$DEMO_SESSION:0.1" | grep -q 'usage limit'; do sleep 1; done`
+Type `tmux select-pane -t "$DEMO_SESSION:0.1" -T 'AGENT WORKFLOW · KRANZ MCP'`
 Enter
 Type "clear"
 Enter
@@ -63,8 +54,10 @@ Enter
 Wait+Screen@15s /READINESS ready/
 Sleep 1s
 Show
-Wait+Screen@60s /kranz.wait/
-Sleep 12s
+Type "KRANZ_BIN=./kranz KRANZ_PROJECT_DIR=. python3 mcp_client.py walkthrough"
+Enter
+Wait+Screen@30s /no re-execution/
+Sleep 3s
 
 Hide
 Ctrl+b
@@ -73,5 +66,7 @@ Sleep 1s
 Type `tmux kill-session -t "$DEMO_SESSION" >/dev/null 2>&1 || true`
 Enter
 Type `"$DEMO_DIR/kranz" -C "$DEMO_DIR" down >/dev/null 2>&1 || true`
+Enter
+Type `rm -rf "$DEMO_DIR"`
 Enter
 Sleep 2s

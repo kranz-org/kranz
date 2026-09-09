@@ -1,6 +1,6 @@
 # The site hero, recorded from two synthetic local projects.
 # Regenerate from the repository root with the release binary in ./bin:
-#   make build VERSION=v0.13.0 && vhs docs/assets/tapes/kranz-demo.tape
+#   make build VERSION=v0.14.0 && vhs docs/assets/tapes/kranz-demo.tape
 Output docs/assets/kranz-demo.gif
 
 Set Shell "bash"
@@ -24,6 +24,10 @@ Enter
 Type `cp examples/moonflight/kranz.yaml "$DEMO_ROOT/moonflight/"`
 Enter
 Type `cp examples/native/kranz.yaml "$DEMO_ROOT/native/"`
+Enter
+Type `printf '\nui:\n  theme: dracula\n  accent: "#BD93F9"\n  background: theme\n  color_mode: dark\n' >> "$DEMO_ROOT/moonflight/kranz.yaml"`
+Enter
+Type `printf '\nui:\n  theme: github-light\n  accent: "#0969DA"\n  background: theme\n  color_mode: light\n' >> "$DEMO_ROOT/native/kranz.yaml"`
 Enter
 Type `cp examples/scripts/migrate.sh examples/scripts/moonflight_service.py examples/scripts/worker.py "$DEMO_ROOT/scripts/"`
 Enter
@@ -55,10 +59,12 @@ Down
 Enter
 Sleep 2500ms
 
-# Return to the first runtime. Its running services and UI state are intact.
-Type "p"
-Sleep 1500ms
-Down
+# Close this runtime and return to the chooser without leaving the TUI. The
+# remaining project keeps its own darker theme and live dashboard state.
+Type "q"
+Sleep 750ms
+Type "c"
+Sleep 2500ms
 Enter
 Sleep 2500ms
 
