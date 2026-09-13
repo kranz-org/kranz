@@ -2,7 +2,10 @@ package app
 
 import (
 	"fmt"
+	"hash/fnv"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/kranz-org/kranz/internal/config"
@@ -28,7 +31,7 @@ const reloadDebounce = time.Second
 func (l *Local) Reload(force bool) (ReloadResult, error) {
 	l.invalidateConfirmations()
 	l.cfgMu.Lock()
-	if len(l.configPaths) == 0 {
+	if len(l.configPaths) == 0 && l.loadOptions == nil {
 		l.cfgMu.Unlock()
 		return ReloadResult{}, nil
 	}
@@ -43,6 +46,7 @@ func (l *Local) Reload(force bool) (ReloadResult, error) {
 	l.lastConfigScan = time.Now()
 	l.reloadBusy = true
 	paths := append([]string(nil), l.configPaths...)
+	loadOptions := cloneLoadOptions(l.loadOptions)
 	watchPaths := append([]string(nil), l.watchPaths...)
 	previousStamps := cloneConfigStamps(l.stamps)
 	l.cfgMu.Unlock()
@@ -64,7 +68,12 @@ func (l *Local) Reload(force bool) (ReloadResult, error) {
 		return ReloadResult{}, nil
 	}
 
-	next, err := config.LoadFiles(paths)
+	var next *config.Config
+	if loadOptions != nil {
+		next, err = config.Compose(*loadOptions)
+	} else {
+		next, err = config.LoadFiles(paths)
+	}
 	if err != nil {
 		l.recordReloadError(err)
 		return ReloadResult{}, err
@@ -77,8 +86,11 @@ func (l *Local) Reload(force bool) (ReloadResult, error) {
 	}
 
 	l.cfgMu.Lock()
-	l.cfg = next
-	l.watchPaths = watchedConfigPaths(l.configPaths, next.WatchPaths)
+	// The manager may retain the last accepted definition for running services
+	// while the newly composed definition is pending. Every surface must expose
+	// that accepted runtime graph, not a different desired graph.
+	l.cfg = l.manager.Config()
+	l.watchPaths = watchedConfigPaths(next.Paths, next.WatchPaths)
 	l.generation++
 	generation := l.generation
 	l.loadedAt = time.Now()
@@ -126,9 +138,31 @@ func readConfigStamps(paths []string) (map[string]configStamp, error) {
 			continue
 		}
 		if err != nil {
-			return result, fmt.Errorf("stat %s: %w", path, err)
+			return result, fmt.Errorf("stat watched path %s: %s", filepath.Base(path), strings.ReplaceAll(err.Error(), path, filepath.Base(path)))
 		}
-		result[path] = configStamp{Modified: info.ModTime().UnixNano(), Size: info.Size()}
+		if !info.IsDir() {
+			result[path] = configStamp{Modified: info.ModTime().UnixNano(), Size: info.Size()}
+			continue
+		}
+		hash := fnv.New64a()
+		var entries int64
+		err = filepath.WalkDir(path, func(entryPath string, entry os.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			entryInfo, infoErr := entry.Info()
+			if infoErr != nil {
+				return infoErr
+			}
+			relative, _ := filepath.Rel(path, entryPath)
+			_, _ = fmt.Fprintf(hash, "%s\x00%d\x00%d\x00", relative, entryInfo.ModTime().UnixNano(), entryInfo.Size())
+			entries++
+			return nil
+		})
+		if err != nil {
+			return result, fmt.Errorf("scan discovery scope %s: %s", filepath.Base(path), strings.ReplaceAll(err.Error(), path, filepath.Base(path)))
+		}
+		result[path] = configStamp{Modified: int64(hash.Sum64()), Size: entries}
 	}
 	return result, nil
 }

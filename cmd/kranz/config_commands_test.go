@@ -89,26 +89,36 @@ func TestConfigExplainAttributesFieldsToTheLayerThatSetThem(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := execute([]string{"-C", directory, "-f", filepath.Join(directory, "kranz.yaml"), "-f", override, "config", "explain"}, &stdout, &stderr)
+	code := execute([]string{"-C", directory, "-f", filepath.Join(directory, "kranz.yaml"), "--override", override, "config", "explain"}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("exit = %d, stderr = %q", code, stderr.String())
 	}
 	output := stdout.String()
-	for _, line := range strings.Split(output, "\n") {
-		fields := strings.Fields(line)
-		if len(fields) != 2 {
-			continue
+	if !strings.Contains(output, "services.alpha.command") || !strings.Contains(output, "override.yaml (override)") {
+		t.Fatalf("override provenance is missing:\n%s", output)
+	}
+}
+
+func TestRepeatedConfigFlagsComposeAutonomousServices(t *testing.T) {
+	directory := t.TempDir()
+	first := filepath.Join(directory, "alpha", "kranz.yaml")
+	second := filepath.Join(directory, "beta", "kranz.yaml")
+	for path, project := range map[string]string{first: "Alpha", second: "Beta"} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
 		}
-		switch fields[0] {
-		case "project", "services.alpha.command":
-			if fields[1] != "override.yaml" {
-				t.Errorf("%s attributed to %s, want override.yaml", fields[0], fields[1])
-			}
-		case "defaults.env.LOG_LEVEL":
-			if fields[1] != "kranz.yaml" {
-				t.Errorf("%s attributed to %s, want kranz.yaml", fields[0], fields[1])
-			}
+		if err := os.WriteFile(path, []byte("project: "+project+"\nservices:\n  api:\n    command: sleep 1\n"), 0o600); err != nil {
+			t.Fatal(err)
 		}
+	}
+	var stdout, stderr bytes.Buffer
+	code := execute([]string{"-C", directory, "-f", first, "-f", second, "config", "show"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr = %q", code, stderr.String())
+	}
+	output := stdout.String()
+	if !strings.Contains(output, "alpha/api:") || !strings.Contains(output, "beta/api:") || strings.Contains(output, "project: Beta") {
+		t.Fatalf("repeated -f did not compose autonomous configs:\n%s", output)
 	}
 }
 

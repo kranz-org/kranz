@@ -194,6 +194,38 @@ func TestReloadDebouncesWithinOneSecondUnlessForced(t *testing.T) {
 	}
 }
 
+func TestReloadDiscoversNewAutonomousConfig(t *testing.T) {
+	directory := t.TempDir()
+	first := filepath.Join(directory, "first", "kranz.yaml")
+	if err := os.MkdirAll(filepath.Dir(first), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeConfig(t, first, "project: First\nservices: {api: {command: \"true\"}}\n")
+	options := config.LoadOptions{Directory: directory}
+	cfg, err := config.Compose(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	local := NewLocal(cfg, cfg.Paths, Options{LoadOptions: &options})
+	defer func() { _ = local.Shutdown() }()
+
+	second := filepath.Join(directory, "second", "kranz.yaml")
+	if err := os.MkdirAll(filepath.Dir(second), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeConfig(t, second, "project: Second\nservices: {worker: {command: \"true\"}}\n")
+	result, err := local.Reload(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Added) != 1 || result.Added[0] != "worker" {
+		t.Fatalf("discovery reload = %#v", result)
+	}
+	if _, exists := local.Service("worker"); !exists {
+		t.Fatal("newly discovered service is absent from the shared runtime graph")
+	}
+}
+
 func writeConfig(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {

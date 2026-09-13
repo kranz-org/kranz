@@ -243,6 +243,13 @@ func (s *scope) selectedServices(selectors []string) ([]*app.ServiceSnapshot, er
 	}
 	names, err := app.ResolveServiceSelectors(s.api.Config(), selectors)
 	if err != nil {
+		// A pending removal remains addressable by its accepted runtime name
+		// even though it is absent from the desired effective config.
+		if len(selectors) == 1 {
+			if service, ok := s.api.Service(selectors[0]); ok && service != nil {
+				return []*app.ServiceSnapshot{service}, nil
+			}
+		}
 		return nil, err
 	}
 	services := make([]*app.ServiceSnapshot, 0, len(names))

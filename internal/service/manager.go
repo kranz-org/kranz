@@ -33,6 +33,8 @@ type Manager struct {
 	exitRequested        atomic.Bool
 	exitCode             atomic.Int64
 	reloadMu             sync.Mutex
+	pendingReload        []PendingChange
+	pendingDesired       *config.Config
 	statusMu             sync.Mutex
 	statusMonitors       map[string]*statusMonitor
 	logsMu               sync.Mutex
@@ -111,11 +113,58 @@ type ReloadResult struct {
 	Removed   []string
 	Restarted []string
 	Updated   []string
+	Pending   []PendingChange
 }
 
-// ApplyConfig atomically reconciles a validated configuration with the live
-// manager. Unchanged processes keep running; changed running processes are
-// stopped, updated, and restarted; removed processes are always stopped first.
+// PendingChange is a desired configuration change that was deliberately not
+// applied because it would detach, replace, or rename a running process.
+type PendingChange struct {
+	ServiceID   string `json:"service_id"`
+	Name        string `json:"name"`
+	DesiredName string `json:"desired_name,omitempty"`
+	Kind        string `json:"kind"`
+	Reason      string `json:"reason"`
+}
+
+type pendingAdoptionSnapshot struct {
+	cfg            *config.Config
+	services       map[string]*Service
+	pendingReload  []PendingChange
+	pendingDesired *config.Config
+}
+
+func (m *Manager) PendingChanges() []PendingChange {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return append([]PendingChange(nil), m.pendingReload...)
+}
+
+func (m *Manager) PendingChangeFor(name string) (PendingChange, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, change := range m.pendingReload {
+		if change.Name == name {
+			return change, true
+		}
+	}
+	return PendingChange{}, false
+}
+
+func (m *Manager) ServiceIdentity(name string) config.EffectiveService {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return serviceIdentity(m.cfg, name)
+}
+
+func (m *Manager) Config() *config.Config {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.cfg
+}
+
+// ApplyConfig reconciles a validated desired configuration without silently
+// cycling a running process. Unsafe changes remain on the accepted runtime
+// snapshot and are exposed as pending until the user explicitly restarts.
 func (m *Manager) ApplyConfig(next *config.Config) (ReloadResult, error) {
 	m.reloadMu.Lock()
 	defer m.reloadMu.Unlock()
@@ -132,7 +181,6 @@ func (m *Manager) ApplyConfig(next *config.Config) (ReloadResult, error) {
 		}
 	}()
 	result := ReloadResult{}
-	runningChanged := make([]string, 0)
 
 	m.mu.RLock()
 	currentNames := make([]string, 0, len(m.services))
@@ -142,81 +190,310 @@ func (m *Manager) ApplyConfig(next *config.Config) (ReloadResult, error) {
 	m.mu.RUnlock()
 	sort.Strings(currentNames)
 
+	m.mu.RLock()
+	currentConfig := m.cfg
+	m.mu.RUnlock()
+	accepted := cloneManagerConfig(next)
+	nextByID := make(map[string]string, len(next.Services))
+	for name := range next.Services {
+		nextByID[serviceIdentity(next, name).ID] = name
+	}
+	handled := make(map[string]bool, len(next.Services))
+	pending := make([]PendingChange, 0)
+
 	for _, name := range currentNames {
 		svc, _ := m.GetService(name)
-		incoming, exists := next.Services[name]
+		identity := serviceIdentity(currentConfig, name)
+		nextName, exists := nextByID[identity.ID]
+		// Name matching is only a compatibility path for legacy, uncomposed
+		// configurations. Once a service has source-backed identity, a different
+		// service reusing its display name must never inherit the old process.
+		if !exists && identity.SourceID == "" {
+			nextName = name
+			_, exists = next.Services[name]
+		}
+		incoming := next.Services[nextName]
+		wasRunning := svc.Status() != config.StatusStopped || svc.DesiredRunning()
 		if !exists {
-			// An observe-only detached resource cannot be stopped. Removing it
-			// only detaches Kranz from the external lifecycle.
-			if !svc.Config.IsDetached() || svc.Config.Lifecycle.Stop != nil {
-				if err := m.StopService(name); err != nil {
-					return result, fmt.Errorf("stop removed service %s: %w", name, err)
-				}
+			if wasRunning {
+				accepted.Services[name] = svc.Config
+				accepted.ServiceOrder = managerAppendUnique(accepted.ServiceOrder, name)
+				accepted.ServiceMetadata[name] = identity
+				retainManagerSource(accepted, currentConfig, identity.SourceID)
+				retainManagerProvenance(accepted, currentConfig, identity.ID)
+				pending = append(pending, PendingChange{ServiceID: identity.ID, Name: name, Kind: "remove", Reason: "running service keeps its accepted snapshot until an explicit restart"})
+				continue
 			}
 			result.Removed = append(result.Removed, name)
 			continue
 		}
-		if sameManagedServiceConfig(svc.Config, incoming) {
+		handled[nextName] = true
+		if sameManagedServiceConfig(svc.Config, incoming) && name == nextName {
 			continue
 		}
-		// Detached resources are external to Kranz. Reload their definition
-		// without cycling the external resource, while retaining observed state.
-		if svc.Config.IsDetached() && incoming.IsDetached() {
-			replacement := m.newService(name, incoming)
-			replacement.CopyLogHistoryFrom(svc)
-			replacement.HealthHistory = svc.HealthHistory
-			replacement.RestoreState(svc.GetState(), svc.DesiredRunning())
-			m.mu.Lock()
-			m.services[name] = replacement
-			m.mu.Unlock()
-			result.Updated = append(result.Updated, name)
-			continue
-		}
-		wasRunning := svc.Status() != config.StatusStopped || svc.DesiredRunning()
 		if wasRunning {
-			if err := m.StopService(name); err != nil {
-				return result, fmt.Errorf("stop changed service %s: %w", name, err)
+			delete(accepted.Services, nextName)
+			delete(accepted.ServiceMetadata, nextName)
+			accepted.Services[name] = svc.Config
+			accepted.ServiceMetadata[name] = identity
+			retainManagerSource(accepted, currentConfig, identity.SourceID)
+			retainManagerProvenance(accepted, currentConfig, identity.ID)
+			accepted.ServiceOrder = managerAppendUnique(accepted.ServiceOrder, name)
+			kind := "update"
+			if name != nextName {
+				kind = "rename"
 			}
-			runningChanged = append(runningChanged, name)
+			pending = append(pending, PendingChange{ServiceID: identity.ID, Name: name, DesiredName: nextName, Kind: kind, Reason: "running service keeps its accepted snapshot until an explicit restart"})
+			continue
 		}
-		replacement := m.newService(name, incoming)
+		replacement := m.newService(nextName, incoming)
 		// Keep the visible history across a hot reload without mutating the
 		// configuration object observed by process-monitor goroutines.
 		replacement.CopyLogHistoryFrom(svc)
 		replacement.HealthHistory = svc.HealthHistory
 		m.mu.Lock()
-		m.services[name] = replacement
+		delete(m.services, name)
+		m.services[nextName] = replacement
 		m.mu.Unlock()
-		result.Updated = append(result.Updated, name)
+		result.Updated = append(result.Updated, nextName)
 	}
 
 	m.mu.Lock()
 	for _, name := range result.Removed {
 		delete(m.services, name)
 	}
-	for name, svcConfig := range next.Services {
+	for _, name := range next.ServiceNames() {
+		if handled[name] {
+			continue
+		}
+		svcConfig := next.Services[name]
 		if _, exists := m.services[name]; !exists {
 			m.services[name] = m.newService(name, svcConfig)
 			result.Added = append(result.Added, name)
+		} else {
+			identity := serviceIdentity(next, name)
+			removeManagerProvenance(accepted, identity.ID)
+			pending = append(pending, PendingChange{ServiceID: identity.ID, Name: name, Kind: "add", Reason: "display name is owned by a running service snapshot"})
 		}
 	}
 	previous := m.cfg
-	m.cfg = next
+	m.cfg = accepted
+	m.pendingReload = append([]PendingChange(nil), pending...)
+	if len(pending) > 0 {
+		m.pendingDesired = cloneManagerConfig(next)
+	} else {
+		m.pendingDesired = nil
+	}
 	m.mu.Unlock()
-	m.forgetChangedPrerequisites(previous, next)
-	m.actions.ApplyConfig(next)
-	m.reconcileStatusMonitors(next)
+	m.forgetChangedPrerequisites(previous, accepted)
+	m.actions.ApplyConfig(accepted)
+	m.reconcileStatusMonitors(accepted)
 	m.reconcileDetachedLogs()
 	reconcileBackground = false
 	sort.Strings(result.Added)
-
-	if len(runningChanged) > 0 {
-		if err := m.StartServices(runningChanged); err != nil {
-			return result, fmt.Errorf("restart changed services: %w", err)
-		}
-		result.Restarted = append(result.Restarted, runningChanged...)
-	}
+	result.Pending = append([]PendingChange(nil), pending...)
 	return result, nil
+}
+
+func retainManagerSource(target, current *config.Config, sourceID string) {
+	if sourceID == "" || target == nil || current == nil {
+		return
+	}
+	for _, source := range target.Sources {
+		if source.ID == sourceID {
+			return
+		}
+	}
+	for _, source := range current.Sources {
+		if source.ID == sourceID {
+			target.Sources = append(target.Sources, source)
+			return
+		}
+	}
+}
+
+func retainManagerProvenance(target, current *config.Config, serviceID string) {
+	removeManagerProvenance(target, serviceID)
+	for _, entry := range current.Provenance {
+		if entry.ServiceID == serviceID {
+			target.Provenance = append(target.Provenance, entry)
+		}
+	}
+}
+
+func removeManagerProvenance(target *config.Config, serviceID string) {
+	if target == nil || serviceID == "" {
+		return
+	}
+	filtered := target.Provenance[:0]
+	for _, entry := range target.Provenance {
+		if entry.ServiceID != serviceID {
+			filtered = append(filtered, entry)
+		}
+	}
+	target.Provenance = filtered
+}
+
+func cloneManagerConfig(source *config.Config) *config.Config {
+	clone := *source
+	clone.Services = make(map[string]config.Service, len(source.Services))
+	for name, service := range source.Services {
+		clone.Services[name] = service
+	}
+	clone.ServiceOrder = append([]string(nil), source.ServiceOrder...)
+	clone.ServiceMetadata = make(map[string]config.EffectiveService, len(source.ServiceMetadata))
+	for name, metadata := range source.ServiceMetadata {
+		clone.ServiceMetadata[name] = metadata
+	}
+	return &clone
+}
+
+func serviceIdentity(cfg *config.Config, name string) config.EffectiveService {
+	if cfg != nil {
+		if identity, ok := cfg.ServiceMetadata[name]; ok {
+			return identity
+		}
+	}
+	return config.EffectiveService{ID: name, SourceName: name, DisplayName: name}
+}
+
+func managerAppendUnique(values []string, value string) []string {
+	for _, existing := range values {
+		if existing == value {
+			return values
+		}
+	}
+	return append(values, value)
+}
+
+// adoptPendingStopped installs desired definitions only after the ordinary
+// restart plan has stopped every affected process. The caller holds reloadMu.
+func (m *Manager) adoptPendingStopped(names []string) []string {
+	selected := make(map[string]bool, len(names))
+	for _, name := range names {
+		selected[name] = true
+	}
+	m.mu.Lock()
+	if m.pendingDesired == nil || len(m.pendingReload) == 0 {
+		m.mu.Unlock()
+		return names
+	}
+	accepted := cloneManagerConfig(m.cfg)
+	remaining := make([]PendingChange, 0, len(m.pendingReload))
+	translated := make([]string, 0, len(names))
+	translation := make(map[string]string)
+	for _, change := range m.pendingReload {
+		if !selected[change.Name] {
+			remaining = append(remaining, change)
+			continue
+		}
+		old := m.services[change.Name]
+		delete(m.services, change.Name)
+		delete(accepted.Services, change.Name)
+		delete(accepted.ServiceMetadata, change.Name)
+		removeManagerProvenance(accepted, change.ServiceID)
+		if change.Kind == "remove" {
+			continue
+		}
+		desiredName := change.DesiredName
+		if desiredName == "" {
+			desiredName = change.Name
+		}
+		desiredService, exists := m.pendingDesired.Services[desiredName]
+		if !exists {
+			continue
+		}
+		replacement := m.newService(desiredName, desiredService)
+		if old != nil {
+			replacement.CopyLogHistoryFrom(old)
+			replacement.HealthHistory = old.HealthHistory
+		}
+		m.services[desiredName] = replacement
+		accepted.Services[desiredName] = desiredService
+		desiredIdentity := m.pendingDesired.ServiceMetadata[desiredName]
+		accepted.ServiceMetadata[desiredName] = desiredIdentity
+		retainManagerProvenance(accepted, m.pendingDesired, desiredIdentity.ID)
+		translation[change.Name] = desiredName
+	}
+	for _, name := range names {
+		if mapped, ok := translation[name]; ok {
+			translated = append(translated, mapped)
+			continue
+		}
+		if _, exists := m.services[name]; exists {
+			translated = append(translated, name)
+		}
+	}
+	if len(remaining) == 0 {
+		accepted = cloneManagerConfig(m.pendingDesired)
+	} else {
+		accepted.ServiceOrder = reconcileManagerOrder(m.pendingDesired.ServiceOrder, accepted.Services)
+	}
+	m.cfg = accepted
+	m.pendingReload = remaining
+	if len(remaining) == 0 {
+		m.pendingDesired = nil
+	}
+	m.mu.Unlock()
+	m.actions.ApplyConfig(accepted)
+	m.reconcileStatusMonitors(accepted)
+	m.reconcileDetachedLogs()
+	return translated
+}
+
+func (m *Manager) capturePendingAdoption() (*pendingAdoptionSnapshot, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.pendingDesired == nil || len(m.pendingReload) == 0 {
+		return nil, false
+	}
+	services := make(map[string]*Service, len(m.services))
+	for name, service := range m.services {
+		services[name] = service
+	}
+	return &pendingAdoptionSnapshot{
+		cfg:            cloneManagerConfig(m.cfg),
+		services:       services,
+		pendingReload:  append([]PendingChange(nil), m.pendingReload...),
+		pendingDesired: cloneManagerConfig(m.pendingDesired),
+	}, true
+}
+
+func (m *Manager) restorePendingAdoption(snapshot *pendingAdoptionSnapshot, started []string) {
+	if snapshot == nil {
+		return
+	}
+	for index := len(started) - 1; index >= 0; index-- {
+		_ = m.StopService(started[index])
+	}
+	m.mu.Lock()
+	m.cfg = snapshot.cfg
+	m.services = snapshot.services
+	m.pendingReload = snapshot.pendingReload
+	m.pendingDesired = snapshot.pendingDesired
+	m.mu.Unlock()
+	m.actions.ApplyConfig(snapshot.cfg)
+	m.reconcileStatusMonitors(snapshot.cfg)
+	m.reconcileDetachedLogs()
+}
+
+func reconcileManagerOrder(preferred []string, services map[string]config.Service) []string {
+	result := make([]string, 0, len(services))
+	seen := make(map[string]bool, len(services))
+	for _, name := range preferred {
+		if _, ok := services[name]; ok && !seen[name] {
+			result = append(result, name)
+			seen[name] = true
+		}
+	}
+	var rest []string
+	for name := range services {
+		if !seen[name] {
+			rest = append(rest, name)
+		}
+	}
+	sort.Strings(rest)
+	return append(result, rest...)
 }
 
 // sameManagedServiceConfig excludes actions because changing a one-shot command

@@ -87,6 +87,30 @@ func ResolveServiceSelectors(cfg *config.Config, selectors []string) ([]string, 
 			selected[selector] = true
 			continue
 		}
+		var sourceMatches []string
+		matchedID := false
+		for _, name := range cfg.ServiceNames() {
+			if metadata, ok := cfg.ServiceMetadata[name]; ok {
+				if metadata.ID == selector {
+					selected[name] = true
+					matchedID = true
+					break
+				}
+				if metadata.SourceName == selector {
+					sourceMatches = append(sourceMatches, name)
+				}
+			}
+		}
+		if matchedID {
+			continue
+		}
+		if len(sourceMatches) == 1 {
+			selected[sourceMatches[0]] = true
+			continue
+		}
+		if len(sourceMatches) > 1 {
+			return nil, &LogQueryError{Code: "selector_ambiguous", Selector: selector, Message: fmt.Sprintf("service name %q is ambiguous", selector), Hint: "Choose one of: " + strings.Join(sourceMatches, ", ")}
+		}
 		matched := false
 		for _, name := range cfg.ServiceOrder {
 			if slices.ContainsFunc(cfg.Services[name].Tags, func(tag string) bool { return strings.EqualFold(tag, selector) }) {
@@ -111,11 +135,15 @@ func (l *Local) Plan(request PlanRequest) (OperationPlan, error) {
 	plan := OperationPlan{SchemaVersion: OperationSchemaVersion, SessionID: project.SessionID, Generation: project.Generation, Operation: request.Operation, Selectors: append([]string(nil), request.Selectors...), IncludeDependencies: request.IncludeDependencies, Targets: []string{}}
 	switch request.Operation {
 	case "start", "stop", "restart":
+		selectorConfig := l.Config()
+		if request.Operation == "stop" || request.Operation == "restart" {
+			selectorConfig = l.manager.Config()
+		}
 		selectors := request.Selectors
 		if len(selectors) == 0 {
-			selectors = append([]string(nil), l.Config().ServiceOrder...)
+			selectors = append([]string(nil), selectorConfig.ServiceOrder...)
 		}
-		names, err := ResolveServiceSelectors(l.Config(), selectors)
+		names, err := ResolveServiceSelectors(selectorConfig, selectors)
 		if err != nil {
 			return plan, err
 		}

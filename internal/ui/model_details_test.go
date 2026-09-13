@@ -329,6 +329,18 @@ func TestServiceDetailBlocksRespectAvailableWidth(t *testing.T) {
 	}
 }
 
+func TestServiceDetailsExplainPendingReload(t *testing.T) {
+	model := newTestModel()
+	defer model.Shutdown()
+	service := model.FocusedService()
+	service.ReloadState = "pending_restart"
+	service.ReloadReason = "running service keeps its accepted snapshot until an explicit restart"
+	plain := ansi.Strip(strings.Join(model.serviceDetailLines(service, 80), "\n"))
+	if !strings.Contains(plain, "RELOAD") || !strings.Contains(plain, "PENDING") || !strings.Contains(plain, "explicit") || !strings.Contains(plain, "restart") {
+		t.Fatalf("pending reload is not visible in service details:\n%s", plain)
+	}
+}
+
 func TestServiceDetailsScrollWhenContentOverflows(t *testing.T) {
 	model := newTestModel()
 	defer model.Shutdown()

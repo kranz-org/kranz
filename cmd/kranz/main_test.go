@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kranz-org/kranz/internal/app"
 	kranzcli "github.com/kranz-org/kranz/internal/cli"
 	kranzruntime "github.com/kranz-org/kranz/internal/runtime"
 )
@@ -42,6 +43,25 @@ func decodeJSONData[T any](t *testing.T, output []byte) T {
 		t.Fatalf("schema_version = %d, want %d", envelope.SchemaVersion, kranzcli.SchemaVersion)
 	}
 	return envelope.Data
+}
+
+func TestReportReloadExposesPendingChanges(t *testing.T) {
+	result := app.ReloadResult{Pending: []app.PendingChange{{ServiceID: "svc_api", Name: "api", Kind: "update", Reason: "explicit restart required"}}}
+	var output bytes.Buffer
+	if err := reportReload(&output, kranzcli.GlobalOptions{Output: kranzcli.OutputJSON}, "runtime", result); err != nil {
+		t.Fatal(err)
+	}
+	decoded := decodeJSONData[reloadCommandResult](t, output.Bytes())
+	if !decoded.Changed || len(decoded.Pending) != 1 || decoded.Pending[0].ServiceID != "svc_api" {
+		t.Fatalf("JSON pending reload = %#v", decoded)
+	}
+	output.Reset()
+	if err := reportReload(&output, kranzcli.GlobalOptions{}, "runtime", result); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "pending: api (explicit restart required)") {
+		t.Fatalf("text pending reload = %q", output.String())
+	}
 }
 
 func TestVersionTextAndJSON(t *testing.T) {

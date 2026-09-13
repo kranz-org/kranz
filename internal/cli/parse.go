@@ -15,8 +15,10 @@ const (
 )
 
 type GlobalOptions struct {
-	ConfigPaths []string
-	Directory   string
+	ConfigPaths    []string
+	OverridePaths  []string
+	FollowSymlinks bool
+	Directory      string
 	// DirectoryExplicit distinguishes a -C the caller wrote from the default
 	// working directory. For most commands that difference does not matter;
 	// for `kranz mcp` it decides whether the launch pins to one project.
@@ -59,6 +61,10 @@ func Parse(tree *Command, args []string) (Invocation, error) {
 
 	for index := 0; index < len(args); index++ {
 		arg := args[index]
+		if arg == "--follow-symlinks" {
+			invocation.Globals.FollowSymlinks = true
+			continue
+		}
 		if value, consumed, recognized, err := globalValue(args, index); recognized {
 			if err != nil {
 				return Invocation{}, err
@@ -158,12 +164,15 @@ func globalOptionsFromEnvironment() GlobalOptions {
 	if value := os.Getenv("KRANZ_CONFIG"); value != "" {
 		options.ConfigPaths = filepath.SplitList(value)
 	}
+	if value := os.Getenv("KRANZ_OVERRIDE"); value != "" {
+		options.OverridePaths = filepath.SplitList(value)
+	}
 	return options
 }
 
 func globalValue(args []string, index int) (value string, consumed int, recognized bool, err error) {
 	arg := args[index]
-	for _, option := range []string{"-f", "--config", "-C", "--directory", "-p", "--project", "--output"} {
+	for _, option := range []string{"-f", "--config", "--override", "-C", "--directory", "-p", "--project", "--output"} {
 		if arg == option {
 			if index+1 >= len(args) {
 				return "", 0, true, usageError("missing_option_value", fmt.Sprintf("%s requires a value", arg))
@@ -188,6 +197,8 @@ func applyGlobal(options *GlobalOptions, spelling, value string) error {
 	switch {
 	case spelling == "-f" || spelling == "--config" || strings.HasPrefix(spelling, "--config="):
 		options.ConfigPaths = append(options.ConfigPaths, value)
+	case spelling == "--override" || strings.HasPrefix(spelling, "--override="):
+		options.OverridePaths = append(options.OverridePaths, value)
 	case spelling == "-C" || spelling == "--directory" || strings.HasPrefix(spelling, "--directory="):
 		options.Directory, options.DirectoryExplicit = value, true
 	case spelling == "-p" || spelling == "--project" || strings.HasPrefix(spelling, "--project="):

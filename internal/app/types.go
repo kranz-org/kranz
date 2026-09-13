@@ -33,6 +33,7 @@ type (
 	ActionResult          = service.ActionResult
 	ActionStatus          = service.ActionStatus
 	ReloadResult          = service.ReloadResult
+	PendingChange         = service.PendingChange
 	PortConflictError     = service.PortConflictError
 	ActionBusyError       = service.ActionBusyError
 	ActionExitError       = service.ActionExitError
@@ -95,15 +96,23 @@ type HealthSnapshot struct {
 // back into the runtime: every field is a value, so the same type can later
 // travel across the IPC boundary a future stream adds without redesign.
 type ServiceSnapshot struct {
-	Name           string              `json:"name"`
-	Config         config.Service      `json:"config"`
-	State          config.ServiceState `json:"state"`
-	DetectedPorts  []int               `json:"detected_ports"`
-	DesiredRunning bool                `json:"desired_running"`
-	StatusObserved bool                `json:"status_observed"`
-	CanStart       bool                `json:"can_start"`
-	CanStop        bool                `json:"can_stop"`
-	Health         HealthSnapshot      `json:"health"`
+	ID              string              `json:"id"`
+	Name            string              `json:"name"`
+	SourceName      string              `json:"source_name,omitempty"`
+	SourceID        string              `json:"source_id,omitempty"`
+	SourcePath      string              `json:"source_path,omitempty"`
+	RuntimeRevision string              `json:"runtime_revision,omitempty"`
+	DesiredRevision string              `json:"desired_revision,omitempty"`
+	ReloadState     string              `json:"reload_state"`
+	ReloadReason    string              `json:"reload_reason,omitempty"`
+	Config          config.Service      `json:"config"`
+	State           config.ServiceState `json:"state"`
+	DetectedPorts   []int               `json:"detected_ports"`
+	DesiredRunning  bool                `json:"desired_running"`
+	StatusObserved  bool                `json:"status_observed"`
+	CanStart        bool                `json:"can_start"`
+	CanStop         bool                `json:"can_stop"`
+	Health          HealthSnapshot      `json:"health"`
 }
 
 // RunExport is a detached, explicit snapshot suitable for clipboard or file
@@ -173,15 +182,18 @@ func BuildInteractiveCommand(action config.Action) *exec.Cmd {
 // ProjectSnapshot describes the currently loaded configuration and the
 // health of its hot-reload pipeline.
 type ProjectSnapshot struct {
-	SessionID       string              `json:"session_id"`
-	Name            string              `json:"name"`
-	Version         string              `json:"version,omitempty"`
-	Source          config.SourceFormat `json:"source"`
-	ConfigPaths     []string            `json:"config_paths"`
-	WatchPaths      []string            `json:"watch_paths"`
-	Generation      uint64              `json:"generation"`
-	LoadedAt        time.Time           `json:"loaded_at"`
-	LastReloadError string              `json:"last_reload_error,omitempty"`
+	SessionID       string                         `json:"session_id"`
+	Name            string                         `json:"name"`
+	Version         string                         `json:"version,omitempty"`
+	Source          config.SourceFormat            `json:"source"`
+	ConfigPaths     []string                       `json:"config_paths"`
+	WatchPaths      []string                       `json:"watch_paths"`
+	Generation      uint64                         `json:"generation"`
+	LoadedAt        time.Time                      `json:"loaded_at"`
+	LastReloadError string                         `json:"last_reload_error,omitempty"`
+	Sources         []config.ConfigSource          `json:"sources,omitempty"`
+	Diagnostics     []config.CompositionDiagnostic `json:"diagnostics,omitempty"`
+	Pending         []service.PendingChange        `json:"pending,omitempty"`
 }
 
 // ShutdownPlan describes what a full shutdown will do to every active

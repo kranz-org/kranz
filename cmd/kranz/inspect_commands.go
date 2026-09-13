@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -26,40 +24,19 @@ import (
 // loadProject reads the effective configuration the command should describe,
 // honoring -C and repeated -f exactly like the runtime commands do.
 func loadProject(options kranzcli.GlobalOptions) (*config.Config, []string, error) {
-	original, err := os.Getwd()
+	cfg, err := config.Compose(config.LoadOptions{
+		Directory:      options.Directory,
+		Sources:        options.ConfigPaths,
+		Overrides:      options.OverridePaths,
+		FollowSymlinks: options.FollowSymlinks,
+	})
 	if err != nil {
-		return nil, nil, err
-	}
-	if err := os.Chdir(options.Directory); err != nil {
-		return nil, nil, err
-	}
-	defer func() { _ = os.Chdir(original) }() // best effort; the configuration is fully read before returning
-	paths := options.ConfigPaths
-	if len(paths) == 0 {
-		paths, err = config.DiscoverFiles(".")
-		if err != nil {
-			return nil, nil, &kranzcli.Error{
-				Code:     "no_project",
-				Message:  "no Kranz configuration was found in this directory",
-				Hint:     "Run from a project directory or pass -f PATH.",
-				ExitCode: kranzcli.ExitUsage,
-				Cause:    err,
-			}
+		if strings.Contains(err.Error(), "config_not_found") {
+			return nil, nil, &kranzcli.Error{Code: "no_project", Message: "no Kranz configuration was found directly or through discovery", Hint: "Run from a project directory or pass -f PATH.", ExitCode: kranzcli.ExitUsage, Cause: err}
 		}
-	}
-	cfg, err := config.LoadFiles(paths)
-	if err != nil {
 		return nil, nil, &kranzcli.Error{Code: "invalid_config", Message: "configuration is not valid", ExitCode: kranzcli.ExitConfig, Cause: err}
 	}
-	absolute := make([]string, 0, len(paths))
-	for _, path := range paths {
-		if filepath.IsAbs(path) {
-			absolute = append(absolute, path)
-			continue
-		}
-		absolute = append(absolute, filepath.Join(options.Directory, path))
-	}
-	return cfg, absolute, nil
+	return cfg, append([]string(nil), cfg.Paths...), nil
 }
 
 // selectServices resolves positional selectors, which name either a service or
@@ -86,7 +63,7 @@ func containsString(values []string, want string) bool {
 }
 
 func runConfigCheck(options kranzcli.GlobalOptions, stdout io.Writer) error {
-	cfg, paths, err := loadProject(options)
+	cfg, _, err := loadProject(options)
 	if err != nil {
 		return err
 	}
@@ -98,11 +75,11 @@ func runConfigCheck(options kranzcli.GlobalOptions, stdout io.Writer) error {
 			Services    int      `json:"services"`
 			Actions     int      `json:"actions"`
 			Diagnostics []string `json:"diagnostics"`
-		}{cfg.Project, cfg.RuntimeName(), paths, len(cfg.Services), len(cfg.ActionIDs()), emptyIfNil(cfg.Diagnostics)})
+		}{cfg.Project, cfg.RuntimeName(), configDisplayPaths(cfg), len(cfg.Services), len(cfg.ActionIDs()), emptyIfNil(cfg.Diagnostics)})
 	}
 	_, _ = fmt.Fprintf(stdout, "Configuration is valid.\n\nProject:  %s\nRuntime:  %s\nServices: %d\nActions:  %d\n", cfg.Project, cfg.RuntimeName(), len(cfg.Services), len(cfg.ActionIDs()))
 	_, _ = fmt.Fprintf(stdout, "\nLayers:\n")
-	for _, path := range paths {
+	for _, path := range configDisplayPaths(cfg) {
 		_, _ = fmt.Fprintf(stdout, "  %s\n", path)
 	}
 	if len(cfg.Diagnostics) > 0 {
@@ -112,6 +89,16 @@ func runConfigCheck(options kranzcli.GlobalOptions, stdout io.Writer) error {
 		}
 	}
 	return nil
+}
+
+func configDisplayPaths(cfg *config.Config) []string {
+	paths := make([]string, 0, len(cfg.Sources))
+	for _, source := range cfg.Sources {
+		if source.Kind != config.SourceVirtualRoot {
+			paths = append(paths, source.DisplayPath)
+		}
+	}
+	return paths
 }
 
 func runServices(options kranzcli.GlobalOptions, args []string, stdout io.Writer) error {

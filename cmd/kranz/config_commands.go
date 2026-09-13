@@ -42,10 +42,13 @@ func runConfigShow(options kranzcli.GlobalOptions, args []string, stdout io.Writ
 		if err := document.Decode(&plain); err != nil {
 			return err
 		}
+		if provenance {
+			return kranzcli.WriteJSON(stdout, map[string]any{"effective": plain, "sources": cfg.Sources, "provenance": cfg.Provenance, "diagnostics": cfg.CompositionDiagnostics})
+		}
 		return kranzcli.WriteJSON(stdout, plain)
 	}
 	if provenance {
-		sources, err := fieldSources(paths)
+		sources, err := effectiveFieldSources(cfg, paths)
 		if err != nil {
 			return err
 		}
@@ -230,11 +233,6 @@ func runConfigExplain(options kranzcli.GlobalOptions, args []string, stdout io.W
 	if err != nil {
 		return err
 	}
-	sources, err := fieldSources(paths)
-	if err != nil {
-		return err
-	}
-
 	prefix := ""
 	if len(args) == 1 {
 		if _, ok := cfg.Services[args[0]]; !ok {
@@ -249,17 +247,44 @@ func runConfigExplain(options kranzcli.GlobalOptions, args []string, stdout io.W
 	}
 
 	type entry struct {
-		Field  string `json:"field"`
-		Source string `json:"source"`
+		Field              string                 `json:"field"`
+		Source             string                 `json:"source"`
+		Stage              config.ProvenanceStage `json:"stage,omitempty"`
+		ReplacedSource     string                 `json:"replaced_source,omitempty"`
+		ProtectedRejection bool                   `json:"protected_rejection,omitempty"`
+		OriginalValue      any                    `json:"original_value,omitempty"`
+		EffectiveValue     any                    `json:"effective_value,omitempty"`
 	}
-	entries := make([]entry, 0, len(sources))
-	for field, source := range sources {
-		if prefix != "" && !strings.HasPrefix(field, prefix) {
-			continue
+	displayByID := make(map[string]string, len(cfg.Sources))
+	for _, source := range cfg.Sources {
+		displayByID[source.ID] = source.DisplayPath
+	}
+	entries := make([]entry, 0, len(cfg.Provenance))
+	if len(cfg.Provenance) > 0 {
+		for _, provenance := range cfg.Provenance {
+			if prefix != "" && !strings.HasPrefix(provenance.FieldPath, prefix) {
+				continue
+			}
+			source := displayByID[provenance.ValueSourceID]
+			if source == "" {
+				source = provenance.ValueSourceID
+			}
+			replaced := displayByID[provenance.ReplacedSourceID]
+			entries = append(entries, entry{Field: provenance.FieldPath, Source: source, Stage: provenance.Stage, ReplacedSource: replaced, ProtectedRejection: provenance.ProtectedRejection, OriginalValue: provenance.OriginalValue, EffectiveValue: provenance.EffectiveValue})
 		}
-		entries = append(entries, entry{field, source})
+	} else {
+		sources, sourceErr := fieldSources(paths)
+		if sourceErr != nil {
+			return sourceErr
+		}
+		for field, source := range sources {
+			if prefix != "" && !strings.HasPrefix(field, prefix) {
+				continue
+			}
+			entries = append(entries, entry{Field: field, Source: source})
+		}
 	}
-	sort.Slice(entries, func(i, j int) bool { return entries[i].Field < entries[j].Field })
+	sort.SliceStable(entries, func(i, j int) bool { return entries[i].Field < entries[j].Field })
 
 	if options.Output == kranzcli.OutputJSON {
 		return kranzcli.WriteJSON(stdout, entries)
@@ -267,7 +292,7 @@ func runConfigExplain(options kranzcli.GlobalOptions, args []string, stdout io.W
 	if formatter != nil {
 		rows := make([]map[string]any, 0, len(entries))
 		for _, item := range entries {
-			rows = append(rows, map[string]any{"Field": item.Field, "Source": item.Source})
+			rows = append(rows, map[string]any{"Field": item.Field, "Source": item.Source, "Stage": item.Stage})
 		}
 		return formatter.write(stdout, map[string]any{"Field": "FIELD", "Source": "SET BY"}, rows)
 	}
@@ -277,8 +302,13 @@ func runConfigExplain(options kranzcli.GlobalOptions, args []string, stdout io.W
 	}
 	// Provenance is a question about layers. With one layer the answer is the
 	// same for every field, and printing it once per field buries that.
-	if len(paths) == 1 && !all {
-		_, _ = fmt.Fprintf(stdout, "This project has one configuration layer, so every field comes from it:\n\n  %s\n\n", paths[0])
+	if len(cfg.Sources) <= 1 && len(paths) == 1 && !all {
+		display := configDisplayPaths(cfg)
+		path := filepath.Base(paths[0])
+		if len(display) == 1 {
+			path = display[0]
+		}
+		_, _ = fmt.Fprintf(stdout, "This project has one configuration layer, so every field comes from it:\n\n  %s\n\n", path)
 		_, _ = fmt.Fprintf(stdout, "%d fields are set there. Run `kranz config explain --all` to list them,\n", len(entries))
 		_, _ = fmt.Fprintln(stdout, "or `kranz config show` to read the effective configuration.")
 		return nil
@@ -286,7 +316,33 @@ func runConfigExplain(options kranzcli.GlobalOptions, args []string, stdout io.W
 	w := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(w, "FIELD\tSET BY")
 	for _, item := range entries {
-		_, _ = fmt.Fprintf(w, "%s\t%s\n", item.Field, item.Source)
+		source := item.Source
+		if item.Stage != "" {
+			source += " (" + string(item.Stage) + ")"
+		}
+		if item.ProtectedRejection {
+			source += fmt.Sprintf("; rejected %v", item.OriginalValue)
+		}
+		_, _ = fmt.Fprintf(w, "%s\t%s\n", item.Field, source)
 	}
 	return w.Flush()
+}
+
+func effectiveFieldSources(cfg *config.Config, paths []string) (map[string]string, error) {
+	if len(cfg.Provenance) == 0 {
+		return fieldSources(paths)
+	}
+	displayByID := make(map[string]string, len(cfg.Sources))
+	for _, source := range cfg.Sources {
+		displayByID[source.ID] = source.DisplayPath
+	}
+	result := make(map[string]string, len(cfg.Provenance))
+	for _, provenance := range cfg.Provenance {
+		source := displayByID[provenance.ValueSourceID]
+		if source == "" {
+			source = provenance.ValueSourceID
+		}
+		result[provenance.FieldPath] = source + " (" + string(provenance.Stage) + ")"
+	}
+	return result, nil
 }

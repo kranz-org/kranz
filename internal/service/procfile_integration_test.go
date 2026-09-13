@@ -108,8 +108,11 @@ func TestProcfileReleaseScenario(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ApplyConfig() error = %v", err)
 	}
-	if !reflect.DeepEqual(result.Updated, []string{"worker"}) {
-		t.Fatalf("ApplyConfig() updated = %v, want [worker]", result.Updated)
+	if len(result.Pending) != 1 || result.Pending[0].Name != "worker" {
+		t.Fatalf("ApplyConfig() pending = %#v, want worker", result.Pending)
+	}
+	if err := manager.RestartService("worker"); err != nil {
+		t.Fatalf("RestartService(worker) error = %v", err)
 	}
 	_ = waitForTestFile(t, reloadMarker)
 	assertFileBytes(t, procfilePath, updatedProcfile)

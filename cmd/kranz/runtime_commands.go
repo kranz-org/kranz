@@ -63,17 +63,12 @@ func startRuntime(options kranzcli.GlobalOptions) (*runtimeHost, *config.Config,
 	}
 	fail := func(err error) (*runtimeHost, *config.Config, error) { return nil, nil, errors.Join(err, restore()) }
 
-	cfgPaths := options.ConfigPaths
-	if len(cfgPaths) == 0 {
-		cfgPaths, err = config.DiscoverFiles(".")
-		if err != nil {
-			return fail(fmt.Errorf("discover configuration: %w", err))
-		}
-	}
-	cfg, err := config.LoadFiles(cfgPaths)
+	loadOptions := config.LoadOptions{Directory: ".", Sources: options.ConfigPaths, Overrides: options.OverridePaths, FollowSymlinks: options.FollowSymlinks, Cache: config.NewSourceCache()}
+	cfg, err := config.Compose(loadOptions)
 	if err != nil {
 		return fail(fmt.Errorf("load configuration: %w", err))
 	}
+	cfgPaths := append([]string(nil), cfg.Paths...)
 	name := cfg.RuntimeName()
 	if options.Project != "" {
 		if err := config.ValidateRuntimeName(options.Project); err != nil {
@@ -85,6 +80,7 @@ func startRuntime(options kranzcli.GlobalOptions) (*runtimeHost, *config.Config,
 	if err != nil {
 		return fail(err)
 	}
+	loadOptions.Directory = directory
 	registry, err := kranzruntime.DefaultRegistry()
 	if err != nil {
 		return fail(err)
@@ -98,7 +94,7 @@ func startRuntime(options kranzcli.GlobalOptions) (*runtimeHost, *config.Config,
 		_ = session.Close()
 		return fail(err)
 	}
-	local := app.NewLocal(cfg, cfgPaths, app.Options{SessionID: metadata.ID})
+	local := app.NewLocal(cfg, cfgPaths, app.Options{SessionID: metadata.ID, LoadOptions: &loadOptions})
 	supervisor := kranzruntime.NewSupervisor(local)
 	if err := supervisor.Listen(metadata.Socket); err != nil {
 		_ = session.Close()
@@ -286,6 +282,12 @@ func spawnBackground(options kranzcli.GlobalOptions, selectors []string, startAl
 	args := []string{"-C", options.Directory}
 	for _, path := range options.ConfigPaths {
 		args = append(args, "-f", path)
+	}
+	for _, path := range options.OverridePaths {
+		args = append(args, "--override", path)
+	}
+	if options.FollowSymlinks {
+		args = append(args, "--follow-symlinks")
 	}
 	if options.Project != "" {
 		args = append(args, "-p", options.Project)
@@ -569,22 +571,9 @@ func runtimeNameFromDirectory(options kranzcli.GlobalOptions) (string, error) {
 		return "", err
 	}
 	defer func() { _ = os.Chdir(original) }() // best effort; command performs no work after resolution on failure
-	paths := options.ConfigPaths
-	if len(paths) == 0 {
-		paths, err = config.DiscoverFiles(".")
-		if err != nil {
-			return "", &kranzcli.Error{
-				Code:     "no_project",
-				Message:  "no Kranz configuration was found in this directory",
-				Hint:     "Run from a project directory, pass -f PATH, or name a runtime with -p NAME_OR_ID.",
-				ExitCode: kranzcli.ExitUsage,
-				Cause:    err,
-			}
-		}
-	}
-	cfg, err := config.LoadFiles(paths)
+	cfg, err := config.Compose(config.LoadOptions{Directory: ".", Sources: options.ConfigPaths, Overrides: options.OverridePaths, FollowSymlinks: options.FollowSymlinks})
 	if err != nil {
-		return "", err
+		return "", &kranzcli.Error{Code: "no_project", Message: "no Kranz configuration was found in this directory", Hint: "Run from a project directory, pass -f PATH, or name a runtime with -p NAME_OR_ID.", ExitCode: kranzcli.ExitUsage, Cause: err}
 	}
 	return cfg.RuntimeName(), nil
 }
@@ -807,22 +796,24 @@ func reportLifecycle(stdout io.Writer, options kranzcli.GlobalOptions, command s
 }
 
 type reloadCommandResult struct {
-	Command   string   `json:"command"`
-	Runtime   string   `json:"runtime"`
-	Changed   bool     `json:"changed"`
-	Added     []string `json:"added"`
-	Removed   []string `json:"removed"`
-	Restarted []string `json:"restarted"`
-	Updated   []string `json:"updated"`
+	Command   string              `json:"command"`
+	Runtime   string              `json:"runtime"`
+	Changed   bool                `json:"changed"`
+	Added     []string            `json:"added"`
+	Removed   []string            `json:"removed"`
+	Restarted []string            `json:"restarted"`
+	Updated   []string            `json:"updated"`
+	Pending   []app.PendingChange `json:"pending"`
 }
 
 func reportReload(stdout io.Writer, options kranzcli.GlobalOptions, name string, result app.ReloadResult) error {
-	changed := len(result.Added) + len(result.Removed) + len(result.Restarted) + len(result.Updated)
+	changed := len(result.Added) + len(result.Removed) + len(result.Restarted) + len(result.Updated) + len(result.Pending)
 	if options.Output == kranzcli.OutputJSON {
 		return kranzcli.WriteJSON(stdout, reloadCommandResult{
 			Command: "reload", Runtime: name, Changed: changed > 0,
 			Added: emptyIfNil(result.Added), Removed: emptyIfNil(result.Removed),
 			Restarted: emptyIfNil(result.Restarted), Updated: emptyIfNil(result.Updated),
+			Pending: emptyPendingIfNil(result.Pending),
 		})
 	}
 	if changed == 0 {
@@ -849,7 +840,19 @@ func reportReload(stdout io.Writer, options kranzcli.GlobalOptions, name string,
 			}
 		}
 	}
+	for _, pending := range result.Pending {
+		if _, err := fmt.Fprintf(stdout, "  pending: %s (%s)\n", pending.Name, pending.Reason); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func emptyPendingIfNil(changes []app.PendingChange) []app.PendingChange {
+	if changes == nil {
+		return []app.PendingChange{}
+	}
+	return changes
 }
 
 // resolveServiceSelectors is the one meaning a selector has anywhere in the

@@ -74,6 +74,22 @@ func TestExplicitGlobalFlagsOverrideEnvironment(t *testing.T) {
 	}
 }
 
+func TestParseSeparatesCompositionOverridesAndSymlinkPolicy(t *testing.T) {
+	clearKranzCoordinateEnvironment(t)
+	invocation, err := Parse(DefaultTree(), []string{
+		"-f", "services/*.yaml", "--override", "local.yaml", "--override=secrets.yaml", "--follow-symlinks", "config", "show",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(invocation.Globals.ConfigPaths, []string{"services/*.yaml"}) {
+		t.Fatalf("config paths = %v", invocation.Globals.ConfigPaths)
+	}
+	if !reflect.DeepEqual(invocation.Globals.OverridePaths, []string{"local.yaml", "secrets.yaml"}) || !invocation.Globals.FollowSymlinks {
+		t.Fatalf("composition flags = %#v", invocation.Globals)
+	}
+}
+
 func TestParseNestedCommandAndGlobalsAfterCommand(t *testing.T) {
 	clearKranzCoordinateEnvironment(t)
 	invocation, err := Parse(DefaultTree(), []string{"-p", "shop", "config", "show", "--output", "json", "--provenance"})

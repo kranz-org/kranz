@@ -63,7 +63,9 @@ func optionFields(flags string) []string {
 // cannot describe the same flag differently.
 func GlobalFlags() []Option {
 	return []Option{
-		{Flags: "-f, --config PATH", Summary: "configuration layer; repeatable"},
+		{Flags: "-f, --config PATH", Summary: "autonomous config or glob; repeatable"},
+		{Flags: "--override PATH", Summary: "ordered override layer; repeatable"},
+		{Flags: "--follow-symlinks", Summary: "follow symlinks during discovery"},
 		{Flags: "-C, --directory DIR", Summary: "working directory for discovery"},
 		{Flags: "-p, --project VALUE", Summary: "runtime name, ID, or unique ID prefix"},
 		{Flags: "--output text|json", Summary: "output format", Values: []string{"text", "json"}},

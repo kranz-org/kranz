@@ -467,8 +467,14 @@ func sanitizeThemeColorValue(value string) string {
 
 func (m *Model) reloadSavedAppearance() {
 	projectAppearance := m.cfg.UI
-	if len(m.configPaths) > 0 {
-		loaded, err := config.LoadFiles(m.configPaths)
+	rootPath := ""
+	if len(m.cfg.Sources) > 0 && m.cfg.Sources[0].Kind != config.SourceVirtualRoot {
+		rootPath = m.cfg.Sources[0].CanonicalPath
+	} else if len(m.configPaths) > 0 {
+		rootPath = m.configPaths[0]
+	}
+	if rootPath != "" {
+		loaded, err := config.Load(rootPath)
 		if err != nil {
 			m.addNotification("appearance", "Could not reload project appearance: "+err.Error(), config.LogError)
 			return

@@ -19,6 +19,9 @@ type Options struct {
 	HealthChecker   *health.Checker
 	ListenerScanner port.ListenerScanner
 	SessionID       string
+	// LoadOptions preserves the composition request (not merely its expanded
+	// file list) so reload can discover newly added and removed sources.
+	LoadOptions *config.LoadOptions
 }
 
 // Local implements API directly over a service.Manager living in this
@@ -49,6 +52,7 @@ type Local struct {
 	reloadBusy     bool
 	lastConfigScan time.Time
 	stamps         map[string]configStamp
+	loadOptions    *config.LoadOptions
 }
 
 // NewLocal constructs the runtime for one project and starts it observing
@@ -75,12 +79,18 @@ func NewLocal(cfg *config.Config, configPaths []string, opts Options) *Local {
 	manager.SetListenerScanner(listenerScanner)
 
 	paths := append([]string(nil), configPaths...)
-	if len(paths) == 0 {
+	if opts.LoadOptions != nil {
+		paths = append([]string(nil), opts.LoadOptions.Sources...)
+	} else if len(paths) == 0 {
 		paths = append([]string(nil), cfg.Paths...)
 	}
-	watchPaths := watchedConfigPaths(paths, cfg.WatchPaths)
+	watchPaths := watchedConfigPaths(cfg.Paths, cfg.WatchPaths)
 	stamps, _ := readConfigStamps(watchPaths)
 
+	loadOptions := cloneLoadOptions(opts.LoadOptions)
+	if loadOptions != nil && loadOptions.Cache == nil {
+		loadOptions.Cache = config.NewSourceCache()
+	}
 	return &Local{
 		manager:       manager,
 		healthChecker: healthChecker,
@@ -93,7 +103,18 @@ func NewLocal(cfg *config.Config, configPaths []string, opts Options) *Local {
 		generation:    1,
 		loadedAt:      time.Now(),
 		stamps:        stamps,
+		loadOptions:   loadOptions,
 	}
+}
+
+func cloneLoadOptions(options *config.LoadOptions) *config.LoadOptions {
+	if options == nil {
+		return nil
+	}
+	clone := *options
+	clone.Sources = append([]string(nil), options.Sources...)
+	clone.Overrides = append([]string(nil), options.Overrides...)
+	return &clone
 }
 
 var _ API = (*Local)(nil)
@@ -118,19 +139,51 @@ func (l *Local) Project() ProjectSnapshot {
 		Generation:      l.generation,
 		LoadedAt:        l.loadedAt,
 		LastReloadError: l.lastReloadErr,
+		Sources:         append([]config.ConfigSource(nil), l.cfg.Sources...),
+		Diagnostics:     append([]config.CompositionDiagnostic(nil), l.cfg.CompositionDiagnostics...),
+		Pending:         l.manager.PendingChanges(),
 	}
 }
 
 func (l *Local) snapshotOf(svc *service.Service) *ServiceSnapshot {
+	identity := l.manager.ServiceIdentity(svc.Name)
+	sourcePath := ""
+	for _, source := range l.manager.Config().Sources {
+		if source.ID == identity.SourceID {
+			sourcePath = source.DisplayPath
+			break
+		}
+	}
+	l.cfgMu.RLock()
+	generationNumber := l.generation
+	l.cfgMu.RUnlock()
+	generation := fmt.Sprintf("%d", generationNumber)
+	runtimeRevision, reloadState := generation, "current"
+	reloadReason := ""
+	if change, pending := l.manager.PendingChangeFor(svc.Name); pending {
+		reloadState = "pending_restart"
+		reloadReason = change.Reason
+		if generationNumber > 1 {
+			runtimeRevision = fmt.Sprintf("%d", generationNumber-1)
+		}
+	}
 	snapshot := &ServiceSnapshot{
-		Name:           svc.Name,
-		Config:         svc.Config,
-		State:          svc.GetState(),
-		DetectedPorts:  svc.DetectedPorts(),
-		DesiredRunning: svc.DesiredRunning(),
-		StatusObserved: svc.LifecycleStatusObserved(),
-		CanStart:       svc.CanStart(),
-		CanStop:        svc.CanStop(),
+		ID:              identity.ID,
+		Name:            svc.Name,
+		SourceName:      identity.SourceName,
+		SourceID:        identity.SourceID,
+		SourcePath:      sourcePath,
+		RuntimeRevision: runtimeRevision,
+		DesiredRevision: generation,
+		ReloadState:     reloadState,
+		ReloadReason:    reloadReason,
+		Config:          svc.Config,
+		State:           svc.GetState(),
+		DetectedPorts:   svc.DetectedPorts(),
+		DesiredRunning:  svc.DesiredRunning(),
+		StatusObserved:  svc.LifecycleStatusObserved(),
+		CanStart:        svc.CanStart(),
+		CanStop:         svc.CanStop(),
 	}
 	if l.healthChecker != nil {
 		if h := l.healthChecker.GetHealth(svc.Name); h != nil {
@@ -295,23 +348,39 @@ func (l *Local) StopAll() error {
 }
 
 func (l *Local) RestartAll() error {
-	return l.manager.RestartAll()
+	err := l.manager.RestartAll()
+	l.syncAcceptedConfig()
+	return err
 }
 
 func (l *Local) RestartAllContext(ctx context.Context) error {
-	return l.manager.RestartAllContext(ctx)
+	err := l.manager.RestartAllContext(ctx)
+	l.syncAcceptedConfig()
+	return err
 }
 
 func (l *Local) RestartService(name string) error {
-	return l.manager.RestartService(name)
+	err := l.manager.RestartService(name)
+	l.syncAcceptedConfig()
+	return err
 }
 
 func (l *Local) RestartServices(names []string) error {
-	return l.manager.RestartServices(names)
+	err := l.manager.RestartServices(names)
+	l.syncAcceptedConfig()
+	return err
 }
 
 func (l *Local) RestartServicesContext(ctx context.Context, names []string) error {
-	return l.manager.RestartServicesContext(ctx, names)
+	err := l.manager.RestartServicesContext(ctx, names)
+	l.syncAcceptedConfig()
+	return err
+}
+
+func (l *Local) syncAcceptedConfig() {
+	l.cfgMu.Lock()
+	l.cfg = l.manager.Config()
+	l.cfgMu.Unlock()
 }
 
 func (l *Local) HasRunningServices() bool {

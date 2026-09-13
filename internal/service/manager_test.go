@@ -620,14 +620,89 @@ func TestApplyConfigPreservesUnchangedProcessesAndReconcilesChanges(t *testing.T
 	if stableAfter != stableBefore || stableAfter.PID() != stablePID {
 		t.Fatalf("unchanged service restarted: before PID %d after PID %d", stablePID, stableAfter.PID())
 	}
-	if changedAfter == changedBefore || changedAfter.PID() == 0 || changedAfter.PID() == changedPID {
-		t.Fatalf("changed service was not replaced/restarted: before PID %d after PID %d", changedPID, changedAfter.PID())
+	if changedAfter != changedBefore || changedAfter.PID() != changedPID {
+		t.Fatalf("changed running service did not keep its snapshot: before PID %d after PID %d", changedPID, changedAfter.PID())
 	}
-	if _, exists := manager.GetService("removed"); exists || added.Status() != config.StatusStopped {
-		t.Fatalf("removed/added reconciliation failed; result %#v", result)
+	if _, exists := manager.GetService("removed"); !exists || added.Status() != config.StatusStopped {
+		t.Fatalf("pending removal/safe addition reconciliation failed; result %#v", result)
 	}
-	if strings.Join(result.Restarted, ",") != "changed" {
+	if len(result.Restarted) != 0 || len(result.Pending) != 2 {
 		t.Fatalf("reload result = %#v", result)
+	}
+	if err := manager.RestartServices([]string{"changed", "removed"}); err != nil {
+		t.Fatal(err)
+	}
+	changedAfter, _ = manager.GetService("changed")
+	if changedAfter == changedBefore || changedAfter.PID() == 0 || changedAfter.PID() == changedPID {
+		t.Fatalf("explicit restart did not adopt desired config: before PID %d after PID %d", changedPID, changedAfter.PID())
+	}
+	if _, exists := manager.GetService("removed"); exists {
+		t.Fatal("explicit restart did not confirm pending removal")
+	}
+}
+
+func TestApplyConfigDoesNotTransferProcessToNewStableIdentity(t *testing.T) {
+	current := &config.Config{Project: "Test", Services: map[string]config.Service{
+		"api": {Command: "sleep 60"},
+	}, ServiceMetadata: map[string]config.EffectiveService{
+		"api": {ID: "svc_old", SourceID: "src_old", SourceName: "api", DisplayName: "api"},
+	}}
+	manager := NewManager(current)
+	defer manager.Shutdown()
+	if err := manager.StartService("api"); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := manager.GetService("api")
+	pid := before.PID()
+	next := &config.Config{Project: "Test", Services: map[string]config.Service{
+		"api": {Command: "sleep 60"},
+	}, ServiceMetadata: map[string]config.EffectiveService{
+		"api": {ID: "svc_new", SourceID: "src_new", SourceName: "api", DisplayName: "api"},
+	}}
+	result, err := manager.ApplyConfig(next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, _ := manager.GetService("api")
+	if after != before || after.PID() != pid || len(result.Pending) != 2 {
+		t.Fatalf("process ownership changed during reload: pid=%d result=%#v", after.PID(), result)
+	}
+	if got := manager.ServiceIdentity("api").ID; got != "svc_old" {
+		t.Fatalf("accepted identity = %q, want svc_old", got)
+	}
+	if err := manager.RestartService("api"); err != nil {
+		t.Fatal(err)
+	}
+	if got := manager.ServiceIdentity("api").ID; got != "svc_new" {
+		t.Fatalf("confirmed restart identity = %q, want svc_new", got)
+	}
+}
+
+func TestPendingRestartRollsBackAcceptedSnapshotWhenStartFails(t *testing.T) {
+	current := &config.Config{Project: "Test", Services: map[string]config.Service{
+		"api": {Command: "sleep 60"},
+	}, ServiceMetadata: map[string]config.EffectiveService{
+		"api": {ID: "svc_api", SourceID: "src_api", SourceName: "api", DisplayName: "api"},
+	}}
+	manager := NewManager(current)
+	defer manager.Shutdown()
+	if err := manager.StartService("api"); err != nil {
+		t.Fatal(err)
+	}
+	next := &config.Config{Project: "Test", Services: map[string]config.Service{
+		"api": {},
+	}, ServiceMetadata: current.ServiceMetadata}
+	if _, err := manager.ApplyConfig(next); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.RestartService("api"); err == nil {
+		t.Fatal("restart with no start capability unexpectedly succeeded")
+	}
+	if got := manager.Config().Services["api"].Command; got != "sleep 60" {
+		t.Fatalf("accepted snapshot was not rolled back: command=%q", got)
+	}
+	if len(manager.PendingChanges()) != 1 {
+		t.Fatalf("pending change was lost after rollback: %#v", manager.PendingChanges())
 	}
 }
 
@@ -683,11 +758,18 @@ func TestApplyConfigUpdatesDetachedDefinitionWithoutCyclingResource(t *testing.T
 		t.Fatal(err)
 	}
 	after, _ := manager.GetService("stack")
-	if after == before || after.Status() != config.StatusRunning || len(result.Restarted) != 0 {
+	if after != before || after.Status() != config.StatusRunning || len(result.Pending) != 1 {
 		t.Fatalf("detached reload state = %s, result = %#v", after.Status(), result)
 	}
 	if _, err := os.Stat(marker); err != nil {
 		t.Fatalf("detached resource was cycled during reload: %v", err)
+	}
+	if err := manager.RestartService("stack"); err != nil {
+		t.Fatal(err)
+	}
+	after, _ = manager.GetService("stack")
+	if after == before || after.Config.Lifecycle.Stop.Command != "printf stopped" {
+		t.Fatal("explicit restart did not adopt detached definition")
 	}
 }
 
@@ -704,8 +786,14 @@ func TestApplyConfigCanRemoveObserveOnlyDetachedService(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, exists := manager.GetService("stack"); exists || len(result.Removed) != 1 || result.Removed[0] != "stack" {
+	if _, exists := manager.GetService("stack"); !exists || len(result.Pending) != 1 || result.Pending[0].Kind != "remove" {
 		t.Fatalf("observe-only removal result = %#v", result)
+	}
+	if err := manager.RestartService("stack"); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := manager.GetService("stack"); exists {
+		t.Fatal("explicit restart did not detach removed observe-only service")
 	}
 }
 

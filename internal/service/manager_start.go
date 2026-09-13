@@ -440,17 +440,48 @@ func (m *Manager) RestartServicesContext(ctx context.Context, names []string) er
 
 	// Stop dependents before their dependencies.
 	for i := len(affected) - 1; i >= 0; i-- {
+		if change, pending := m.PendingChangeFor(affected[i]); pending && change.Kind == "remove" {
+			if svc, ok := m.GetService(affected[i]); ok && !svc.CanStop() {
+				continue
+			}
+		}
 		if err := m.StopService(affected[i]); err != nil {
 			return fmt.Errorf("stop service %q: %w", affected[i], err)
+		}
+	}
+	rollback, hasPending := m.capturePendingAdoption()
+	affected = m.adoptPendingStopped(affected)
+	if len(affected) > 0 {
+		updatedOrder, orderErr := m.topologicalSort()
+		if orderErr != nil {
+			if hasPending {
+				m.restorePendingAdoption(rollback, nil)
+			}
+			return orderErr
+		}
+		selectedAfterAdoption := make(map[string]bool, len(affected))
+		for _, name := range affected {
+			selectedAfterAdoption[name] = true
+		}
+		affected = affected[:0]
+		for _, name := range updatedOrder {
+			if selectedAfterAdoption[name] {
+				affected = append(affected, name)
+			}
 		}
 	}
 
 	// Start dependencies before their dependents.
 	ctx = WithStartReason(ctx, "manual_restart")
+	started := make([]string, 0, len(affected))
 	for _, n := range affected {
 		if err := m.startService(ctx, n, false); err != nil {
+			if hasPending {
+				m.restorePendingAdoption(rollback, started)
+			}
 			return fmt.Errorf("start service %q: %w", n, err)
 		}
+		started = append(started, n)
 	}
 
 	return nil
@@ -483,12 +514,34 @@ func (m *Manager) RestartAllContext(ctx context.Context) error {
 			}
 		}
 	}
+	runningNames := make([]string, 0, len(running))
+	for name := range running {
+		runningNames = append(runningNames, name)
+	}
+	rollback, hasPending := m.capturePendingAdoption()
+	runningNames = m.adoptPendingStopped(runningNames)
+	running = make(map[string]bool, len(runningNames))
+	for _, name := range runningNames {
+		running[name] = true
+	}
+	order, err = m.topologicalSort()
+	if err != nil {
+		if hasPending {
+			m.restorePendingAdoption(rollback, nil)
+		}
+		return err
+	}
 	ctx = WithStartReason(ctx, "manual_restart")
+	started := make([]string, 0, len(runningNames))
 	for _, name := range order {
 		if running[name] {
 			if err := m.startService(ctx, name, false); err != nil {
+				if hasPending {
+					m.restorePendingAdoption(rollback, started)
+				}
 				return err
 			}
+			started = append(started, name)
 		}
 	}
 	return nil

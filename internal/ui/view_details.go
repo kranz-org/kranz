@@ -227,6 +227,20 @@ func (m *Model) serviceDetailLines(svc *app.ServiceSnapshot, contentWidth int) [
 	if svc.Config.Disabled {
 		lines = append(lines, StartingBadgeStyle.Render("DISABLED")+" "+detailValue("manual start only"))
 	}
+	if svc.SourcePath != "" {
+		source := svc.SourcePath
+		if svc.SourceName != "" && svc.SourceName != svc.Name {
+			source += " · " + svc.SourceName
+		}
+		lines = append(lines, detailFieldLines("SOURCE", source, contentWidth)...)
+	}
+	if svc.ReloadState == "pending_restart" {
+		reason := svc.ReloadReason
+		if reason == "" {
+			reason = "Explicit restart required"
+		}
+		lines = append(lines, detailFieldLines("RELOAD", StartingBadgeStyle.Render("PENDING")+" "+detailValue(reason), contentWidth)...)
+	}
 	if visualState == visualQueued {
 		reason := "Scheduled by the current start operation"
 		if len(svc.Config.DependsOn) > 0 {

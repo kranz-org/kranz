@@ -139,9 +139,11 @@ func (s *scope) configResource(context.Context) ResultEnvelope {
 		// Loader diagnostics are the configuration's own complaints about
 		// itself. They were only visible to `kranz doctor`, which left a
 		// structured client reading a config that had already been questioned.
-		"diagnostics":       append([]string(nil), s.api.Config().Diagnostics...),
+		"diagnostics":       append([]config.CompositionDiagnostic(nil), s.api.Config().CompositionDiagnostics...),
 		"last_reload_error": project.LastReloadError,
-		"provenance":        map[string]any{"config_paths": project.ConfigPaths, "watch_paths": project.WatchPaths, "source": project.Source},
+		"provenance":        s.api.Config().Provenance,
+		"sources":           project.Sources,
+		"reload":            map[string]any{"pending": project.Pending, "generation": project.Generation},
 	})
 }
 
@@ -158,16 +160,24 @@ func yamlValue(value any) (any, error) {
 }
 
 type serviceResourceEntry struct {
-	Name           string              `json:"name"`
-	Definition     any                 `json:"definition"`
-	State          config.ServiceState `json:"state"`
-	DetectedPorts  []int               `json:"detected_ports"`
-	DesiredRunning bool                `json:"desired_running"`
-	StatusObserved bool                `json:"status_observed"`
-	CanStart       bool                `json:"can_start"`
-	CanStop        bool                `json:"can_stop"`
-	Health         app.HealthSnapshot  `json:"health"`
-	PrimaryAction  string              `json:"primary_action,omitempty"`
+	ID              string              `json:"id"`
+	Name            string              `json:"name"`
+	SourceName      string              `json:"source_name,omitempty"`
+	SourceID        string              `json:"source_id,omitempty"`
+	SourcePath      string              `json:"source_path,omitempty"`
+	RuntimeRevision string              `json:"runtime_revision,omitempty"`
+	DesiredRevision string              `json:"desired_revision,omitempty"`
+	ReloadState     string              `json:"reload_state"`
+	ReloadReason    string              `json:"reload_reason,omitempty"`
+	Definition      any                 `json:"definition"`
+	State           config.ServiceState `json:"state"`
+	DetectedPorts   []int               `json:"detected_ports"`
+	DesiredRunning  bool                `json:"desired_running"`
+	StatusObserved  bool                `json:"status_observed"`
+	CanStart        bool                `json:"can_start"`
+	CanStop         bool                `json:"can_stop"`
+	Health          app.HealthSnapshot  `json:"health"`
+	PrimaryAction   string              `json:"primary_action,omitempty"`
 }
 
 func (s *scope) servicesResource(context.Context) ResultEnvelope {
@@ -192,7 +202,7 @@ func serviceEntry(service *app.ServiceSnapshot) (serviceResourceEntry, error) {
 	if err != nil {
 		return serviceResourceEntry{}, err
 	}
-	return serviceResourceEntry{Name: service.Name, Definition: definition, State: service.State, DetectedPorts: service.DetectedPorts, DesiredRunning: service.DesiredRunning, StatusObserved: service.StatusObserved, CanStart: service.CanStart, CanStop: service.CanStop, Health: service.Health, PrimaryAction: app.PrimaryServiceAction(service)}, nil
+	return serviceResourceEntry{ID: service.ID, Name: service.Name, SourceName: service.SourceName, SourceID: service.SourceID, SourcePath: service.SourcePath, RuntimeRevision: service.RuntimeRevision, DesiredRevision: service.DesiredRevision, ReloadState: service.ReloadState, ReloadReason: service.ReloadReason, Definition: definition, State: service.State, DetectedPorts: service.DetectedPorts, DesiredRunning: service.DesiredRunning, StatusObserved: service.StatusObserved, CanStart: service.CanStart, CanStop: service.CanStop, Health: service.Health, PrimaryAction: app.PrimaryServiceAction(service)}, nil
 }
 
 type actionResourceEntry struct {

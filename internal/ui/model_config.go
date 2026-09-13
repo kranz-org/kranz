@@ -105,8 +105,15 @@ func (m *Model) handleConfigReload(msg configReloadMsg) (tea.Model, tea.Cmd) {
 	} else if err := m.applyEffectiveAppearance(); err != nil {
 		m.addNotification("appearance", err.Error(), config.LogWarn)
 	}
-	message := fmt.Sprintf("Configuration reloaded: %d added, %d removed, %d updated, %d restarted",
-		len(msg.result.Added), len(msg.result.Removed), len(msg.result.Updated), len(msg.result.Restarted))
+	message := fmt.Sprintf("Configuration reloaded: %d added, %d removed, %d updated, %d restarted, %d pending restart",
+		len(msg.result.Added), len(msg.result.Removed), len(msg.result.Updated), len(msg.result.Restarted), len(msg.result.Pending))
 	m.addNotification("config", message, config.LogInfo)
+	for _, pending := range msg.result.Pending {
+		detail := pending.Name
+		if pending.DesiredName != "" && pending.DesiredName != pending.Name {
+			detail += " -> " + pending.DesiredName
+		}
+		m.addNotification("config", fmt.Sprintf("Pending %s for %s: %s", pending.Kind, detail, pending.Reason), config.LogWarn)
+	}
 	return m, m.scanFocusedPorts(true)
 }
