@@ -89,6 +89,19 @@ func RedactedCopy(cfg *Config) (*Config, error) {
 	result.ActionGroupOrder = append([]string(nil), cfg.ActionGroupOrder...)
 	result.Paths = append([]string(nil), cfg.Paths...)
 	result.WatchPaths = append([]string(nil), cfg.WatchPaths...)
+	result.Sources = append([]ConfigSource(nil), cfg.Sources...)
+	result.Provenance = append([]FieldProvenance(nil), cfg.Provenance...)
+	for index := range result.Provenance {
+		entry := &result.Provenance[index]
+		entry.OriginalValue = redactProvenanceValue(entry.FieldPath, entry.OriginalValue)
+		entry.EffectiveValue = redactProvenanceValue(entry.FieldPath, entry.EffectiveValue)
+	}
+	result.CompositionDiagnostics = append([]CompositionDiagnostic(nil), cfg.CompositionDiagnostics...)
+	result.DiscoveryScopes = append([]DiscoveryScope(nil), cfg.DiscoveryScopes...)
+	result.ServiceMetadata = make(map[string]EffectiveService, len(cfg.ServiceMetadata))
+	for name, metadata := range cfg.ServiceMetadata {
+		result.ServiceMetadata[name] = metadata
+	}
 	for name, service := range result.Services {
 		service.ActionOrder = append([]string(nil), cfg.Services[name].ActionOrder...)
 		result.Services[name] = service
@@ -98,4 +111,19 @@ func RedactedCopy(cfg *Config) (*Config, error) {
 		result.ActionGroups[name] = group
 	}
 	return &result, nil
+}
+
+func redactProvenanceValue(field string, value any) any {
+	text, ok := value.(string)
+	if !ok {
+		return value
+	}
+	key := ""
+	if index := strings.Index(field, ".env."); index >= 0 {
+		key = field[index+len(".env."):]
+	}
+	if redacted, changed := redactEnvironmentValue(key, text); changed {
+		return redacted
+	}
+	return value
 }

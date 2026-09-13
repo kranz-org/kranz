@@ -10,21 +10,117 @@ import (
 
 // Config is the normalized root structure for every supported source format.
 type Config struct {
-	Project          string                 `yaml:"project"`
-	Version          string                 `yaml:"version,omitempty"`
-	Runtime          RuntimeConfig          `yaml:"runtime,omitempty"`
-	UI               UIConfig               `yaml:"ui,omitempty"`
-	Defaults         Defaults               `yaml:"defaults,omitempty"`
-	Services         map[string]Service     `yaml:"services,omitempty"`
-	ActionGroups     map[string]ActionGroup `yaml:"action_groups,omitempty"`
-	ServiceOrder     []string               `yaml:"-"`
-	ActionGroupOrder []string               `yaml:"-"`
-	Source           SourceFormat           `yaml:"-"`
-	Diagnostics      []string               `yaml:"-"`
-	Paths            []string               `yaml:"-"`
-	WatchPaths       []string               `yaml:"-"`
-	dotenvEnv        map[string]string      `yaml:"-"`
-	explicitEnv      map[string]string      `yaml:"-"`
+	Project                string                      `yaml:"project"`
+	Version                string                      `yaml:"version,omitempty"`
+	Runtime                RuntimeConfig               `yaml:"runtime,omitempty"`
+	UI                     UIConfig                    `yaml:"ui,omitempty"`
+	Defaults               Defaults                    `yaml:"defaults,omitempty"`
+	Services               map[string]Service          `yaml:"services,omitempty"`
+	ActionGroups           map[string]ActionGroup      `yaml:"action_groups,omitempty"`
+	Include                []IncludeSpec               `yaml:"include,omitempty"`
+	Overrides              []string                    `yaml:"overrides,omitempty"`
+	Protected              map[string]any              `yaml:"protected,omitempty"`
+	ServiceOrder           []string                    `yaml:"-"`
+	ActionGroupOrder       []string                    `yaml:"-"`
+	Source                 SourceFormat                `yaml:"-"`
+	Diagnostics            []string                    `yaml:"-"`
+	Paths                  []string                    `yaml:"-"`
+	WatchPaths             []string                    `yaml:"-"`
+	Sources                []ConfigSource              `yaml:"-" json:"sources,omitempty"`
+	ServiceMetadata        map[string]EffectiveService `yaml:"-" json:"service_metadata,omitempty"`
+	Provenance             []FieldProvenance           `yaml:"-" json:"provenance,omitempty"`
+	CompositionDiagnostics []CompositionDiagnostic     `yaml:"-" json:"composition_diagnostics,omitempty"`
+	DiscoveryScopes        []DiscoveryScope            `yaml:"-" json:"discovery_scopes,omitempty"`
+	dotenvEnv              map[string]string           `yaml:"-"`
+	explicitEnv            map[string]string           `yaml:"-"`
+}
+
+// IncludeSpec selects one or more autonomous local configuration sources.
+// Exactly one of Path, Glob, or Discover must be set.
+type IncludeSpec struct {
+	Path     string         `yaml:"path,omitempty" json:"path,omitempty"`
+	Glob     string         `yaml:"glob,omitempty" json:"glob,omitempty"`
+	Discover *DiscoverySpec `yaml:"discover,omitempty" json:"discover,omitempty"`
+	MaxDepth *int           `yaml:"max_depth,omitempty" json:"max_depth,omitempty"`
+}
+
+// DiscoverySpec controls a bounded filesystem search for autonomous configs.
+type DiscoverySpec struct {
+	Root           string `yaml:"root,omitempty" json:"root,omitempty"`
+	MaxDepth       *int   `yaml:"max_depth,omitempty" json:"max_depth,omitempty"`
+	FollowSymlinks bool   `yaml:"follow_symlinks,omitempty" json:"follow_symlinks,omitempty"`
+}
+
+type ConfigSourceKind string
+
+const (
+	SourceExplicit      ConfigSourceKind = "explicit"
+	SourceGlob          ConfigSourceKind = "glob"
+	SourceDiscovery     ConfigSourceKind = "discovery"
+	SourceNestedInclude ConfigSourceKind = "nested_include"
+	SourceVirtualRoot   ConfigSourceKind = "virtual_root"
+	SourceOverride      ConfigSourceKind = "override"
+)
+
+// ConfigSource describes one canonical input without exposing its absolute
+// path through normal user-facing serialization.
+type ConfigSource struct {
+	ID             string           `json:"id"`
+	CanonicalPath  string           `json:"-"`
+	DisplayPath    string           `json:"display_path"`
+	Kind           ConfigSourceKind `json:"kind"`
+	ParentID       string           `json:"parent_id,omitempty"`
+	Depth          int              `json:"depth"`
+	DiscoveryDepth *int             `json:"discovery_depth,omitempty"`
+	Order          int              `json:"order"`
+	Truncated      bool             `json:"truncated,omitempty"`
+}
+
+// DiscoveryScope is watched as a directory so additions and removals trigger
+// the same effective-graph rebuild as edits to already loaded files.
+type DiscoveryScope struct {
+	Path           string `json:"-"`
+	DisplayPath    string `json:"display_path"`
+	MaxDepth       *int   `json:"max_depth,omitempty"`
+	FollowSymlinks bool   `json:"follow_symlinks"`
+}
+
+type ProvenanceStage string
+
+const (
+	StageExplicit  ProvenanceStage = "explicit"
+	StageDefault   ProvenanceStage = "default"
+	StageOverride  ProvenanceStage = "override"
+	StageProtected ProvenanceStage = "protected"
+	StageBuiltIn   ProvenanceStage = "built_in"
+)
+
+// FieldProvenance records the winning source and, for protected values, the
+// rejected value without bypassing the shared redaction policy.
+type FieldProvenance struct {
+	ServiceID          string          `json:"service_id,omitempty"`
+	FieldPath          string          `json:"field_path"`
+	ValueSourceID      string          `json:"value_source_id"`
+	Stage              ProvenanceStage `json:"stage"`
+	ReplacedSourceID   string          `json:"replaced_source_id,omitempty"`
+	ProtectedRejection bool            `json:"protected_rejection,omitempty"`
+	OriginalValue      any             `json:"original_value,omitempty"`
+	EffectiveValue     any             `json:"effective_value,omitempty"`
+}
+
+// EffectiveService separates immutable source identity from its display name.
+type EffectiveService struct {
+	ID          string `json:"id"`
+	SourceID    string `json:"source_id"`
+	SourceName  string `json:"source_name"`
+	DisplayName string `json:"display_name"`
+	ResolvedDir string `json:"-"`
+}
+
+type CompositionDiagnostic struct {
+	Code     string `json:"code"`
+	Message  string `json:"message"`
+	SourceID string `json:"source_id,omitempty"`
 }
 
 // RuntimeConfig controls the discoverable local runtime identity.
