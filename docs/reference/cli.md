@@ -22,7 +22,9 @@ The first positional argument after the global options is always a subcommand.
 
 | Option | Description |
 | --- | --- |
-| `-f`, `--config PATH` | Load a configuration layer. Repeatable, merged left to right. |
+| `-f`, `--config PATH` | Compose an autonomous config or local glob. Repeatable. |
+| `--override PATH` | Apply an ordered partial override layer. Repeatable. |
+| `--follow-symlinks` | Follow symlinks during automatic discovery. |
 | `-C`, `--directory DIR` | Work in `DIR` instead of the current directory. |
 | `-p`, `--project VALUE` | Address a runtime by name, ID, or unique ID prefix. |
 | `--output text\|json` | Choose human output or the machine-readable envelope. |
@@ -39,6 +41,7 @@ exported for a shell that works with one runtime repeatedly:
 | `KRANZ_PROJECT` | `-p`, accepting a runtime name, ID, or unique ID prefix |
 | `KRANZ_DIRECTORY` | `-C` |
 | `KRANZ_CONFIG` | One or more `-f` paths separated by the operating system's path-list separator (`:` on macOS and Linux) |
+| `KRANZ_OVERRIDE` | One or more `--override` paths separated by the operating system's path-list separator |
 
 Explicit command-line options win over environment defaults. If any `-f` or
 `--config` option is present, its ordered layers replace `KRANZ_CONFIG` rather
@@ -456,7 +459,7 @@ $ kranz restart api --output json
 {"schema_version":1,"data":{"command":"restart","services":["api","web"]}}
 
 $ kranz reload --output json
-{"schema_version":1,"data":{"command":"reload","runtime":"shop-dev","changed":false,"added":[],"removed":[],"restarted":[],"updated":[]}}
+{"schema_version":1,"data":{"command":"reload","runtime":"shop-dev","changed":false,"added":[],"removed":[],"restarted":[],"updated":[],"pending":[]}}
 ```
 
 `init --output json` omits the human preview and reports the absolute path it
@@ -517,17 +520,17 @@ adding `kranz.yaml` to a project takes effect without deleting anything.
 
 ## Layering
 
-Several files merge left to right; later files override earlier ones:
+Several autonomous files compose into one effective project:
 
 ```bash
-kranz -f kranz.yaml -f kranz.local.yaml
+kranz -f repositories/catalog/kranz.yaml -f 'repositories/*/kranz.yaml'
 ```
 
-Keep the shared configuration in version control and personal overrides out of
-it. Because `command` is normalized to `lifecycle.start` before merging, a later
-layer can override a start timeout or a confirmation without repeating the
-command. `kranz config explain` shows which layer set each field. Merge rules
-per field are listed in the [configuration reference](./configuration).
+Each file keeps its own project metadata, defaults, `.env`, and relative path
+root. Use `--override kranz.local.yaml` for an ordered patch instead of
+overloading `-f`. `kranz config explain` shows which source set each field.
+Composition and patch rules are listed in the
+[configuration reference](./configuration#composition).
 
 ## Signals
 

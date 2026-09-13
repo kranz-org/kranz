@@ -97,12 +97,12 @@ Run with auto-discovery or explicit files:
 ```bash
 kranz
 kranz -f path/to/kranz.yaml
-kranz -f kranz.yaml -f kranz.local.yaml
+kranz -f kranz.yaml --override kranz.local.yaml
 ```
 
 Bare `kranz` searches the current directory. Use `-f` when the file has a
-different name or lives elsewhere; repeat it only when you intentionally want
-to layer several files.
+different name or lives elsewhere. Repeated `-f` values compose autonomous
+projects; they do not patch one another.
 
 Auto-discovery uses the first existing file in this order:
 
@@ -113,13 +113,16 @@ Auto-discovery uses the first existing file in this order:
 5. `Procfile.dev`
 6. `Procfile`
 
-Explicit `-f` sources merge left to right. `command` is normalized to the
-canonical `lifecycle.start.command` before layers merge, so a later layer can
-override only a start timeout or confirmation. A single source file must use
-either `command` or `lifecycle.start`, never both.
+Explicit `-f` sources compose independently runnable configurations. Use the
+separate repeatable `--override` option for ordered patches. A root file can use
+`include` with exact paths, globs, or bounded discovery; without a root file the
+working directory becomes a virtual project over discovered configs.
 
-Valid file changes hot-reload. Invalid changes leave the last known good
-runtime untouched. Press `Ctrl+L` to reload immediately.
+Valid file changes hot-reload. New services and stopped-service changes apply
+immediately. Running services keep their accepted snapshot when changed,
+renamed, or removed; the pending reason is visible until an explicit restart.
+Invalid changes leave the last known good runtime untouched. Press `Ctrl+L` to
+reload immediately.
 
 ## Environment precedence
 
@@ -142,3 +145,4 @@ expanded after the layers merge.
 - One complete annotated file:
   [annotated kranz.yaml](../reference/kranz-yaml)
 - Flags, discovery, and exit codes: [CLI reference](../reference/cli)
+- Moving from layered `-f` files: [composition migration](./composition-migration)

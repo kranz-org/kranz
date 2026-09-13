@@ -261,8 +261,10 @@ kranz status --output json |
 
 Mutation results carry what changed. For example,
 `restart api --output json` returns the full service expansion, and
-`reload --output json` returns the added, removed, restarted, and updated
-sets. `up -d --output json` returns the runtime's full ID, name, PID, and mode.
+`reload --output json` returns the added, removed, restarted, updated, and
+pending sets. Pending changes identify the stable service ID and explain why a
+running snapshot awaits an explicit restart. `up -d --output json` returns the
+runtime's full ID, name, PID, and mode.
 
 Exit codes distinguish the failures worth branching on: `2` is your command
 being wrong, `3` is the configuration being wrong, `4` is something not

@@ -21,7 +21,7 @@ is gone for the same reason.
 ## Command
 
 ```bash
-kranz mcp [-C DIR] [-f FILE] [-p NAME_OR_ID]
+kranz mcp [-C DIR] [-f FILE] [--override FILE] [--follow-symlinks] [-p NAME_OR_ID]
 kranz mcp --help
 ```
 
@@ -30,7 +30,7 @@ no project arguments. The server starts anywhere, including a directory with no
 Kranz configuration, writes nothing to the runtime registry, and supervises
 nothing. Which runtime answers is decided per call.
 
-`-C DIR`, `-f FILE`, and `-p NAME|ID` pin the server to one project for a
+`-C DIR`, `-f FILE`, `--override FILE`, and `-p NAME|ID` pin the server to one project for a
 client that should reach exactly one. A pinned server rejects any other address
 with `runtime_pinned`.
 
@@ -47,8 +47,8 @@ client or the repository's [minimal example client](../examples/mcp-shared-runti
 | --- | --- |
 | `kranz://session` | Identity, protocol, and generation of the runtime this read resolved to |
 | `kranz://runtimes` | Registry sessions, service counts, and connected client counts (global) |
-| `kranz://config` | Effective config with shared secret redaction, loader diagnostics, and provenance |
-| `kranz://services` | Definitions, snapshots, and computed `primary_action` |
+| `kranz://config` | Effective config, source list, shared secret redaction, provenance, diagnostics, and pending reload diff |
+| `kranz://services` | Definitions, stable IDs, source/display names, reload state, snapshots, and computed `primary_action` |
 | `kranz://actions` | Service/group actions and current state |
 | `kranz://graph` | Dependency, prerequisite, and ownership edges with live service state |
 | `kranz://tags` | Shared service/tag selector index |

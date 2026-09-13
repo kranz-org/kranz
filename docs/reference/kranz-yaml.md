@@ -37,7 +37,7 @@ and Kranz stops guessing.
 Keep the shared file in version control and your own tweaks out of it:
 
 ```bash
-kranz -f kranz.yaml -f kranz.local.yaml
+kranz -f kranz.yaml --override kranz.local.yaml
 ```
 
 ```yaml

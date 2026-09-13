@@ -107,7 +107,7 @@ Moving to a native `kranz.yaml` additionally gives you:
   prerequisites;
 - [detached lifecycle](../guide/lifecycle) for Docker and remote resources;
 - runtime [port discovery](../guide/logs-and-ports) and dynamic probe targets;
-- layered configuration with `-f`;
+- ordered patch layering with `--override`;
 - project [appearance](../guide/appearance).
 
 The [full-stack example](../examples/full-stack) ships the same project in both

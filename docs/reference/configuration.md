@@ -16,6 +16,9 @@ project: Northstar
 version: "1.0"
 runtime: {}
 defaults: {}
+include: []
+overrides: []
+protected: {}
 services: {}
 action_groups: {}
 ui: {}
@@ -27,6 +30,9 @@ ui: {}
 | [`version`](#version) | string | — | Free-form version label for your own use |
 | [`runtime`](#runtime) | map | `{}` | Stable runtime addressing options |
 | [`defaults`](#defaults) | map | `{}` | Execution context inherited by every service |
+| [`include`](#composition) | list | `[]` | Autonomous local configurations to compose |
+| [`overrides`](#override-layers) | string list | `[]` | Ordered partial files applied to this autonomous config |
+| [`protected`](#protected-values) | map | `{}` | Final values enforced over this config and its descendants |
 | [`services`](#services) | map | `{}` | Long-running processes and detached resources |
 | [`action_groups`](#action-groups) | map | `{}` | Project-level one-shot commands |
 | [`ui`](#ui) | map | `{}` | Appearance for this project |
@@ -97,6 +103,81 @@ defaults:
 
 Relative `dir` values resolve against the directory of the configuration file,
 not the directory you started Kranz in.
+
+## Composition
+
+Every included file is a complete, independently runnable configuration. Its
+`project`, `ui`, and `defaults` remain local; only its services and action groups
+are exported. Relative paths and the adjacent `.env` are resolved from that
+file's directory before it joins the effective graph.
+
+```yaml
+project: Workspace
+include:
+  - path: repositories/catalog/kranz.yaml
+  - glob: repositories/*/kranz.yaml
+  - discover:
+      root: tools
+      max_depth: 3
+      follow_symlinks: false
+    max_depth: 2
+```
+
+An include entry sets exactly one of `path`, `glob`, or `discover`. Exact paths
+must exist. Empty globs are diagnosed separately. Glob and discovery results are
+sorted by normalized path, then canonical paths are deduplicated. `max_depth` on
+`discover` bounds filesystem descent; the outer `max_depth` bounds recursive
+includes and intentionally truncates deeper includes at zero.
+
+Discovery does not follow file or directory symlinks by default. Explicitly
+including a symlink is allowed. Opt in per discovery block or globally with
+`--follow-symlinks`. Hidden and dependency directories are not implicitly
+ignored; choose a narrow root or depth when that matters.
+
+If the working directory has no conventional root file, Kranz discovers
+autonomous configs below it and creates a virtual project named after the
+directory. If none exist, the TUI keeps its runtime picker fallback.
+
+Service names remain short when unique. Collisions receive the smallest useful
+directory prefix. The canonical source path plus original service key forms a
+stable internal ID, so later display-name qualification cannot transfer a live
+process to another service. An ambiguous short selector reports the qualified
+choices; the effective name and stable ID are always unambiguous.
+
+### Override layers
+
+`overrides` is distinct from composition. Layers apply left to right to the
+logical config that declares them; CLI layers use repeatable `--override PATH`.
+
+```yaml
+overrides:
+  - kranz.local.yaml
+  - kranz.secrets.yaml
+```
+
+Mappings merge by key, sequences replace, an empty mapping clears a mapping,
+and `null` removes a value so its normal default can apply. Structural type
+changes are errors. Override files cannot declare `defaults`, `include`,
+`overrides`, or `protected`; this prevents defaults from leaking between files.
+Relative `dir` values in a layer resolve beside that layer.
+
+### Protected values
+
+`protected` uses the ordinary typed configuration tree and applies after local
+defaults and overrides. Descendant protected values apply first; each parent is
+applied afterwards, so the root policy wins.
+
+```yaml
+protected:
+  services:
+    database:
+      env:
+        TLS_MODE: required
+```
+
+`config show --provenance`, `config explain`, and `kranz://config` expose the
+winning source and protected rejection without revealing secret environment
+values.
 
 ## Services
 
@@ -706,4 +787,6 @@ Kranz rejects a configuration rather than starting with an ambiguous one:
 - `before_start` must reference an action that exists and is not interactive.
 
 An invalid change during a live reload leaves the running configuration in
-place; the error is reported and nothing is disrupted.
+place. Additions and stopped-service changes apply immediately. A changed,
+renamed, or removed running service keeps its accepted snapshot and is reported
+as `pending_restart`; an explicit restart adopts the desired snapshot.

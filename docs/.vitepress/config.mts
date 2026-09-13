@@ -47,6 +47,7 @@ export default defineConfig({
         text: 'Workflows',
         items: [
           { text: 'Configuration', link: '/guide/configuration' },
+          { text: 'Composition migration', link: '/guide/composition-migration' },
           { text: 'Lifecycle', link: '/guide/lifecycle' },
           { text: 'Actions', link: '/guide/actions' },
           { text: 'Health and dependencies', link: '/guide/health-and-dependencies' },

@@ -42,6 +42,12 @@ Kranz exposes each runtime through three views:
 They use the same supervisor. A service restarted by a command or coding agent
 changes immediately in the open TUI; none of these views starts a second stack.
 
+Large workspaces can compose independently runnable repository configs through
+exact includes, globs, or bounded discovery. File-local defaults and relative
+paths stay isolated; ordered `--override` layers, final `protected` values,
+stable service IDs, provenance, and safe pending reloads remain identical in
+the TUI, CLI, and MCP.
+
 ### Coding agents join your live runtimes
 
 Kranz MCP gives a coding agent the same services, actions, readiness, ports,

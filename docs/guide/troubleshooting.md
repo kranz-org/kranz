@@ -121,12 +121,12 @@ reloads valid changes without restarting running services.
 
 - **The change was invalid.** The previous configuration keeps running and the
   error is reported. Fix the error and save again.
-- **The file is not one Kranz loaded.** Auto-discovery uses the first matching
-  name only, so a `kranz.yaml` shadows a `process-compose.yaml` in the same
-  directory. Check which files are in use, and pass them explicitly with `-f`
-  if needed.
-- **The value is overridden by a later layer.** With `-f a.yaml -f b.yaml`, the
-  right-hand file wins.
+- **The file is not one Kranz loaded.** A conventional root file wins in its
+  own directory; otherwise recursive discovery builds a virtual project. Run
+  `kranz config check` to see the safe relative source list.
+- **The value is overridden by a patch or protected policy.** Run
+  `kranz config explain` to see the ordered field provenance. Use repeated
+  `--override`, not repeated `-f`, for patch layering.
 
 `Ctrl+L` forces an immediate reload.
 
