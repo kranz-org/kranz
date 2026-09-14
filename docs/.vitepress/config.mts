@@ -47,7 +47,7 @@ export default defineConfig({
         text: 'Workflows',
         items: [
           { text: 'Configuration', link: '/guide/configuration' },
-          { text: 'Composition migration', link: '/guide/composition-migration' },
+          { text: 'Composing configurations', link: '/guide/composition' },
           { text: 'Lifecycle', link: '/guide/lifecycle' },
           { text: 'Actions', link: '/guide/actions' },
           { text: 'Health and dependencies', link: '/guide/health-and-dependencies' },
@@ -65,6 +65,13 @@ export default defineConfig({
           { text: 'MCP server reference', link: '/reference/mcp' },
           { text: 'Keyboard shortcuts', link: '/reference/controls' },
           { text: 'Process Compose', link: '/reference/process-compose' }
+        ]
+      },
+      {
+        text: 'Upgrading',
+        items: [
+          { text: 'Upgrading to 0.15.0', link: '/releases/0.15.0' },
+          { text: 'Upgrading to 0.8.0', link: '/releases/0.8.0' }
         ]
       },
       {

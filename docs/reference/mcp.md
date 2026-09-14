@@ -13,10 +13,8 @@ runtime produced it. Failures use `{code, message, hint?, details?}` rather than
 CLI text. Log results also contain `truncated`, `next_cursor`, and actual window
 boundaries.
 
-`session` names the runtime that **answered the call**. Before `schema_version`
-2 it named what the connection was bound to; connections are no longer bound to
-anything, so the old reading has no referent. `current` in the runtime listing
-is gone for the same reason.
+`session` names the runtime that **answered the call**. Connections are not
+bound to a runtime, so each result names its own.
 
 ## Command
 

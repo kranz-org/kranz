@@ -130,3 +130,13 @@ for the fixed and dynamically selected localhost port ranges.
 file behind the [configuration reference](https://kranz-org.github.io/kranz/reference/kranz-yaml),
 using every part of the format with a comment on each field. A test loads and
 validates it, so it cannot drift from what Kranz actually accepts.
+
+## Configuration composition
+
+`examples/composition/` is a catalog of the composition model: autonomous
+per-repository configs, explicit/glob/discovery includes, recursive includes,
+graph depth limits, symlink policy, file-local defaults, ordered overrides,
+`protected`, name collisions, relative paths, virtual roots, provenance, and the
+negative cases that must fail loudly. Each scenario is a self-contained config
+validated by `internal/config/composition_examples_test.go`. See
+[composition/README.md](composition/README.md) for the full map.

@@ -124,10 +124,28 @@ include:
 ```
 
 An include entry sets exactly one of `path`, `glob`, or `discover`. Exact paths
-must exist. Empty globs are diagnosed separately. Glob and discovery results are
-sorted by normalized path, then canonical paths are deduplicated. `max_depth` on
-`discover` bounds filesystem descent; the outer `max_depth` bounds recursive
-includes and intentionally truncates deeper includes at zero.
+must exist. A glob that matches nothing fails with its own `config_glob_empty`
+error rather than the missing-file error, so a typo is easy to tell apart.
+Remote sources (URLs) are rejected. Glob and discovery results are sorted by
+normalized path, then canonical paths are deduplicated: a file reached twice,
+for example through two includes of a shared stack, loads once and is reported
+as `source_deduplicated`. An include cycle fails with `config_include_cycle` and
+the chain of relative paths.
+
+Two different limits apply. `discover.max_depth` bounds the filesystem walk.
+The entry-level `max_depth` bounds the include graph below the files that entry
+selects: `max_depth: N` lets N further include levels load, and a file with no
+budget left still loads, but its own includes are truncated and reported as
+`include_depth_truncated`. `max_depth: 0` therefore loads the selected files and
+none of their includes. Without `max_depth`, include depth is unlimited.
+
+The selector can resolve a native Kranz file, a `Procfile`, or a supported
+`process-compose.yaml`. Native files may recursively include more sources.
+Procfile and Process Compose sources are terminal leaves: they contribute their
+services with paths resolved beside the leaf, but cannot declare Kranz
+`include` or `overrides`. A later composition-wide `--override` may still patch
+their effective services. The conventional `process-compose.override.yaml` is
+loaded with its Process Compose base for compatibility.
 
 Discovery does not follow file or directory symlinks by default. Explicitly
 including a symlink is allowed. Opt in per discovery block or globally with
@@ -136,13 +154,15 @@ ignored; choose a narrow root or depth when that matters.
 
 If the working directory has no conventional root file, Kranz discovers
 autonomous configs below it and creates a virtual project named after the
-directory. If none exist, the TUI keeps its runtime picker fallback.
+directory. If discovery finds nothing either, commands that need a project fail
+with `config_not_found`; a bare `kranz` opens the runtime picker instead when a
+local runtime is already running.
 
 Service names remain short when unique. Collisions receive the smallest useful
 directory prefix. The canonical source path plus original service key forms a
-stable internal ID, so later display-name qualification cannot transfer a live
-process to another service. An ambiguous short selector reports the qualified
-choices; the effective name and stable ID are always unambiguous.
+stable internal ID, so later qualification of a display name cannot transfer a
+live process to another service. An ambiguous short selector reports the
+qualified display names; the display name and stable ID are always unambiguous.
 
 ### Override layers
 
@@ -155,11 +175,28 @@ overrides:
   - kranz.secrets.yaml
 ```
 
+Where a layer is declared decides what it can see:
+
+- A file's own `overrides:` list applies to that file before it joins the
+  composition. It patches only that file's services and names them by their
+  original keys (`api`), even if the service is later shown as `catalog/api`.
+- `--override PATH` (or `KRANZ_OVERRIDE`) applies after the whole graph is
+  composed, so it can patch any service and names it by display name
+  (`catalog/api`). Relative CLI paths resolve against the working directory
+  after `-C`.
+
 Mappings merge by key, sequences replace, an empty mapping clears a mapping,
 and `null` removes a value so its normal default can apply. Structural type
 changes are errors. Override files cannot declare `defaults`, `include`,
 `overrides`, or `protected`; this prevents defaults from leaking between files.
-Relative `dir` values in a layer resolve beside that layer.
+Relative `dir` values in a layer resolve beside that layer, and `${VAR}`
+references expand from the process environment, then the `.env` beside the
+layer.
+
+`command` and `lifecycle.start` are one field. A layer can change only
+`lifecycle.start.confirm` or a start timeout and keep the base command, and a
+layer that sets `command` keeps the base start options. Setting `command: null`
+removes the start command.
 
 ### Protected values
 
@@ -177,7 +214,9 @@ protected:
 
 `config show --provenance`, `config explain`, and `kranz://config` expose the
 winning source and protected rejection without revealing secret environment
-values.
+values. `config sources` (or `m` in the dashboard) shows the same result per
+file: the include tree, the services each file defined, and every field it
+overrode, including protected values.
 
 ## Services
 
@@ -408,7 +447,7 @@ services:
 
 Precedence, lowest to highest:
 
-1. `.env` beside the first configuration file
+1. `.env` beside the configuration file that declares the service
 2. `defaults.env`
 3. `defaults.env_files`, in order
 4. service `env_files`, in order
@@ -416,7 +455,8 @@ Precedence, lowest to highest:
 
 A value already present in your shell environment wins over the adjacent
 `.env`, but explicit configuration values always win. `$HOME`-style references
-expand after all layers merge. Every referenced dotenv file is watched, so
+expand after all layers merge. In a composed project each file's `.env` reaches
+only the services that file declares. Every referenced dotenv file is watched, so
 editing one reloads the configuration.
 
 ### is_dotenv_disabled
@@ -424,7 +464,7 @@ editing one reloads the configuration.
 **Type:** bool · **Default:** `false`
 
 Set this on a service when it must not inherit the automatically discovered
-`.env` beside the first configuration file. Explicit `defaults.env`,
+`.env` beside the configuration file that declares it. Explicit `defaults.env`,
 `defaults.env_files`, service `env_files`, and service `env` still apply.
 
 ```yaml

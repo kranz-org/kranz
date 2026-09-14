@@ -100,6 +100,7 @@ accent-coloured shortcuts.
 | `Ctrl+T` | Theme and appearance picker |
 | `Ctrl+L` | Reload configuration and terminal appearance |
 | `Ctrl+O` | Hand terminal to a shell; press again to return |
+| `m` | Open the configuration map |
 | `p` | Switch to another local Kranz runtime |
 | `?` | Help |
 | `q` | Always open the quit confirmation |
@@ -111,6 +112,26 @@ and `c` stops the current runtime and opens the live runtime chooser without
 leaving the TUI. `Esc` or `n` stays on the current dashboard. Shutdown stops
 process-owned services and only detached services with `stop_on_exit: true`;
 other external resources are listed and remain active.
+
+## Configuration map
+
+`m` opens a read-only map of where the effective configuration came from. It
+never reads or writes a file: every row is derived from the configuration the
+runtime already loaded. The default **by source** view lists the resolved files
+in deterministic order, drawn as the include tree.
+How each file joined the merge follows its name in parentheses: `(explicit)`,
+`(via glob)`, `(via discover)`, `(override)`, or `(virtual root)`, with an exact
+include left untagged, plus `(truncated)` when an include budget cut a source's
+children. Under each file it names the services that file defined, the fields
+it overrode grouped under `overrides FILE:` for the earlier file whose value
+they replaced, and `sets:` for fields no earlier file had set. `Tab` switches to the **by service**
+view: one row per service with the file that defined it, and every later
+override layer with its fields beneath, so "which file changed this service?" is
+one glance away. `↑`/`↓` (or `j`/`k`) scroll a long map line by line,
+`PgUp`/`PgDn` page through it, `Home`/`End` (or `g`/`G`) jump to either end, and
+`Esc` closes it. `kranz config sources` and `kranz config sources --by-service`
+print both views without colour from the same layout, so the dashboard and the
+CLI cannot disagree about merge order or attribution.
 
 ## Switching runtimes
 

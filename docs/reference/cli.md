@@ -24,7 +24,7 @@ The first positional argument after the global options is always a subcommand.
 | --- | --- |
 | `-f`, `--config PATH` | Compose an autonomous config or local glob. Repeatable. |
 | `--override PATH` | Apply an ordered partial override layer. Repeatable. |
-| `--follow-symlinks` | Follow symlinks during automatic discovery. |
+| `--follow-symlinks` | Follow symlinks during discovery. |
 | `-C`, `--directory DIR` | Work in `DIR` instead of the current directory. |
 | `-p`, `--project VALUE` | Address a runtime by name, ID, or unique ID prefix. |
 | `--output text\|json` | Choose human output or the machine-readable envelope. |
@@ -45,7 +45,8 @@ exported for a shell that works with one runtime repeatedly:
 
 Explicit command-line options win over environment defaults. If any `-f` or
 `--config` option is present, its ordered layers replace `KRANZ_CONFIG` rather
-than being appended to a hidden inherited list.
+than being appended to a hidden inherited list. An explicit `--override`
+replaces `KRANZ_OVERRIDE` the same way.
 
 ```bash
 KRANZ_PROJECT=billing kranz status
@@ -144,6 +145,8 @@ kranz config                        # same as config show
 kranz config check                  # load, merge, and validate
 kranz config show [--provenance]    # effective configuration, secrets redacted
 kranz config explain [SERVICE] [--all]  # which layer set each field
+kranz config sources                # configuration files in merge order, and what each contributed
+kranz config sources --by-service   # each service with its defining file and later overrides
 kranz doctor                        # preflight checks
 kranz project                       # project details
 kranz services                      # configured services
@@ -169,6 +172,50 @@ so the same command never changes entity based on whether an argument is present
 keeps services, action groups, and actions in the order the configuration
 declares them. `config explain` on a single-layer project says so instead of
 repeating the same filename on every field; `--all` lists them anyway.
+
+`config sources` answers "which files became my configuration, and who wrote
+each field?" It lists every resolved source in deterministic order, drawn as the
+include tree. Each file is named below the directory of the
+nearest file that includes it, and a `kranz.yaml` base name is left off, so
+`services/api/kranz.yaml` reads as `services/api`; when two files would share a
+name, both show their full path. How the file joined the merge follows the name
+in parentheses: `(explicit)`, `(via glob)` for a match of an include `glob:`,
+`(via discover)` for a file an include `discover:` scan found, `(override)`, or
+`(virtual root)`. An exact include `path:` is left untagged because the tree
+already shows it, and `(truncated)` marks a subtree an include depth limit cut.
+
+Beneath each file it prints the services that file defined and the fields it
+overrode, grouped by the file whose value they replaced: `overrides FILE:` names
+that file once, and `sets:` lists fields no earlier file had set. A list that
+does not fit after its label moves beneath it, one entry per `↳` row:
+
+```console
+$ kranz config sources
+3 sources · 2 services · 1 override · resolved order; field writes shown below
+
+● kranz.yaml  (explicit)
+│   services: web
+└─● services/api
+  │   services: api
+  └─● overrides/local.yaml  (override)
+        overrides services/api: api.ports
+```
+
+Global `--override` layers belong to no file, so each starts its own block
+after a blank line below the tree.
+
+`--by-service` reads the same map from the other side: one row per service with
+the file that defined it, and every later override layer with its fields
+beneath. It deliberately omits service detail such as ports and actions;
+`config show` is the effective configuration and `config explain SERVICE`
+answers per-field questions. `--output json` carries both directions, with
+machine kind values (`explicit`, `glob`, `discovery`, `nested_include`,
+`override`, `virtual_root`); `--format` renders one row per source (`.Path`,
+`.Kind`, `.Order`, `.Depth`, `.Parent`, `.Truncated`, `.Services`,
+`.Overrides`), or one row per service (`.Service`, `.DefinedIn`, `.Overrides`)
+with `--by-service`. The text output is the dashboard's `m` config
+map without colour — both render through the same layout — so the two never
+disagree.
 
 A group runs its obvious subcommand when invoked bare: `kranz config` is
 `config show`, `kranz services` is `services list`, `kranz actions` is
@@ -459,7 +506,7 @@ $ kranz restart api --output json
 {"schema_version":1,"data":{"command":"restart","services":["api","web"]}}
 
 $ kranz reload --output json
-{"schema_version":1,"data":{"command":"reload","runtime":"shop-dev","changed":false,"added":[],"removed":[],"restarted":[],"updated":[],"pending":[]}}
+{"schema_version":1,"data":{"command":"reload","runtime":"shop-dev","changed":false,"added":[],"removed":[],"updated":[],"pending":[]}}
 ```
 
 `init --output json` omits the human preview and reports the absolute path it
@@ -518,6 +565,11 @@ in this order:
 Native configuration wins over a Process Compose file in the same directory, so
 adding `kranz.yaml` to a project takes effect without deleting anything.
 
+When no conventional root file exists, Kranz discovers autonomous configs below
+the working directory and composes them into a virtual project. If discovery
+finds nothing either, commands that need a project fail with
+`config_not_found`, while a bare `kranz` keeps its runtime picker fallback.
+
 ## Layering
 
 Several autonomous files compose into one effective project:
@@ -527,9 +579,10 @@ kranz -f repositories/catalog/kranz.yaml -f 'repositories/*/kranz.yaml'
 ```
 
 Each file keeps its own project metadata, defaults, `.env`, and relative path
-root. Use `--override kranz.local.yaml` for an ordered patch instead of
-overloading `-f`. `kranz config explain` shows which source set each field.
-Composition and patch rules are listed in the
+root. Partial files are override layers, applied in order with
+`--override kranz.local.yaml`. `kranz config explain` shows which source set
+each field.
+Composition and override rules are listed in the
 [configuration reference](./configuration#composition).
 
 ## Signals
@@ -544,7 +597,9 @@ setting.
 | Path | Purpose |
 | --- | --- |
 | `./kranz.yaml` and the other discovered names | Project configuration |
-| `.env` beside the first configuration file | Environment, if present |
+| Included files and override layers | Composed configuration |
+| `.env` beside each configuration file | Environment for that file's services, if present |
+| `.env` beside each override layer | `${VAR}` expansion in that layer, if present |
 | Every file named in `env_files` | Environment |
 | `$XDG_RUNTIME_DIR` or the user's temporary directory | Runtime registry, locks, and sockets |
 | `$XDG_CONFIG_HOME/kranz/settings.yaml` (Linux) | Personal appearance |
@@ -552,25 +607,5 @@ setting.
 
 Runtime state belongs to the invoking user. Kranz never manages another user's
 runtime and starts no system-wide daemon.
-
-## Changes from 0.7
-
-The positional configuration form is gone:
-
-```bash
-kranz prod.yaml     # 0.7
-kranz -f prod.yaml  # 0.8
-```
-
-Kranz recognises the old shape and says what to do instead:
-
-```console
-$ kranz prod.yaml
-Kranz: unknown command "prod.yaml".
-Did you mean `kranz -f prod.yaml`?
-```
-
-Bare `kranz` still opens the TUI, and every 0.7 configuration file loads
-unchanged.
 
 See the [controls reference](./controls) for every key binding.

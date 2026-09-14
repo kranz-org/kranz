@@ -102,7 +102,7 @@ kranz -f kranz.yaml --override kranz.local.yaml
 
 Bare `kranz` searches the current directory. Use `-f` when the file has a
 different name or lives elsewhere. Repeated `-f` values compose autonomous
-projects; they do not patch one another.
+projects into one; `--override` applies partial files on top.
 
 Auto-discovery uses the first existing file in this order:
 
@@ -113,10 +113,15 @@ Auto-discovery uses the first existing file in this order:
 5. `Procfile.dev`
 6. `Procfile`
 
-Explicit `-f` sources compose independently runnable configurations. Use the
-separate repeatable `--override` option for ordered patches. A root file can use
-`include` with exact paths, globs, or bounded discovery; without a root file the
-working directory becomes a virtual project over discovered configs.
+Explicit `-f` sources compose independently runnable configurations, and the
+repeatable `--override` option applies ordered override layers. A root file can
+use `include` with exact paths, globs, or bounded discovery; without a root file
+the working directory becomes a virtual project over discovered configs. See
+[composing configurations](./composition).
+
+The root and every recursive composition node use native `kranz.yaml` syntax.
+`Procfile` and supported `process-compose.yaml` files are valid terminal leaves:
+they contribute services but cannot declare `include` or `overrides` themselves.
 
 Valid file changes hot-reload. New services and stopped-service changes apply
 immediately. Running services keep their accepted snapshot when changed,
@@ -128,7 +133,7 @@ reload immediately.
 
 From lowest to highest precedence:
 
-1. `.env` beside the first configuration file
+1. `.env` beside the configuration file that declares the service
 2. `defaults.env`
 3. `defaults.env_files`, in order
 4. service `env_files`, in order
@@ -138,6 +143,10 @@ An existing host environment value wins over the adjacent `.env`. Explicit
 configuration values remain explicit overrides. References such as `$HOME` are
 expanded after the layers merge.
 
+In a composed project every file keeps its own `.env` and `defaults`: a
+repository's `.env` reaches only the services that repository declares, never a
+sibling's.
+
 ## Where to go next
 
 - Every field, with types and defaults:
@@ -145,4 +154,4 @@ expanded after the layers merge.
 - One complete annotated file:
   [annotated kranz.yaml](../reference/kranz-yaml)
 - Flags, discovery, and exit codes: [CLI reference](../reference/cli)
-- Moving from layered `-f` files: [composition migration](./composition-migration)
+- Several files in one project: [composing configurations](./composition)

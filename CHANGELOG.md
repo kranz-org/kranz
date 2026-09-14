@@ -4,6 +4,46 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-09-14
+
+### Added
+
+- Configuration composition. A root file can `include` other autonomous
+  configurations by exact `path`, sorted `glob`, or bounded `discover`, with an
+  optional include-graph `max_depth`. Each file keeps its own `project`, `ui`,
+  `defaults`, `.env`, and relative paths. Colliding service names are qualified
+  by the smallest useful directory prefix, and a stable ID ties every service to
+  its source file. Without a root file, discovery builds a virtual project named
+  after the directory.
+- Ordered override layers: a file's own `overrides:` list, and the repeatable
+  global `--override PATH` with its `KRANZ_OVERRIDE` default for layers applied
+  after composition. `protected` values apply last, and the outermost policy
+  wins.
+- Native files can include Procfile and supported Process Compose projects as
+  terminal leaves. Their services keep source-relative paths and participate in
+  the same stable-ID graph; native `include` and `overrides` remain exclusive to
+  Kranz files.
+- `--follow-symlinks` opts discovery into following symlinks.
+- `kranz config sources` lists every configuration file in merge order as an
+  include tree, with the services each defined and the fields each overrode.
+  `--by-service` lists each service with its defining file and later overrides.
+- The dashboard's `m` key opens the same configuration map, with `Tab` to switch
+  direction and line, page, and end-to-end scrolling.
+- Reload results report `pending` changes: a running service that was changed,
+  renamed, or removed keeps its accepted snapshot until an explicit restart,
+  with the reason. `kranz://config` and `kranz://services` carry sources, stable
+  IDs, and reload state.
+
+### Changed
+
+- **Breaking:** repeated `-f` now composes independent projects instead of
+  merging later files into earlier ones. Move partial files to `--override`; see
+  [Upgrading to 0.15.0](docs/releases/0.15.0.md).
+- **Breaking:** colliding service names from different files are qualified by
+  directory, so a bare shared name in a selector or `depends_on` fails.
+- **Breaking:** `reload --output json` no longer has a `restarted` set; changed
+  running services appear under `pending` instead.
+
 ## [0.14.0] - 2026-09-09
 
 ### Added
@@ -799,7 +839,8 @@ artifacts.
 - Explicit global-user and project-config save destinations in the live theme picker.
 - Native compatibility for common Process Compose configurations.
 
-[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/kranz-org/kranz/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/kranz-org/kranz/compare/v0.13.1...v0.14.0
 [0.13.1]: https://github.com/kranz-org/kranz/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/kranz-org/kranz/compare/v0.12.1...v0.13.0

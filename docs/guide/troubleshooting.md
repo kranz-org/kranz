@@ -123,10 +123,19 @@ reloads valid changes without restarting running services.
   error is reported. Fix the error and save again.
 - **The file is not one Kranz loaded.** A conventional root file wins in its
   own directory; otherwise recursive discovery builds a virtual project. Run
-  `kranz config check` to see the safe relative source list.
-- **The value is overridden by a patch or protected policy.** Run
-  `kranz config explain` to see the ordered field provenance. Use repeated
-  `--override`, not repeated `-f`, for patch layering.
+  `kranz config sources` (or press `m` in the dashboard) to see every loaded
+  file as an include tree. A missing branch is usually a glob that matched
+  elsewhere, a discovery root or `max_depth` that is too narrow, or an
+  `include_depth_truncated` diagnostic in `kranz config check`.
+- **The value comes from an override layer or protected policy.** Run
+  `kranz config sources --by-service` to see which files overrode the service,
+  then `kranz config explain SERVICE` for the ordered field provenance.
+- **A partial file passed with `-f` adds services instead of changing them.**
+  `-f` composes complete projects; pass partial files with `--override`.
+- **An override layer seems ignored.** A file's own `overrides:` list patches
+  only that file's services by their original names (`api`). To change a
+  service another file contributes, pass `--override` and use its display name
+  (`catalog/api`).
 
 `Ctrl+L` forces an immediate reload.
 
@@ -134,7 +143,7 @@ reloads valid changes without restarting running services.
 
 Precedence runs from lowest to highest:
 
-1. `.env` beside the first configuration file
+1. `.env` beside the configuration file that declares the service
 2. `defaults.env`
 3. `defaults.env_files`, in order
 4. service `env_files`, in order

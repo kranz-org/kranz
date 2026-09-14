@@ -12,6 +12,12 @@ kranz -f process-compose.yaml
 A native `kranz.yaml` in the same directory takes priority, so adding one later
 is not a breaking change.
 
+A native composition can include a Process Compose file by exact path, glob, or
+discovery. It is a terminal leaf in that graph: its processes become services,
+but it cannot declare Kranz `include` or `overrides`. The conventional adjacent
+`process-compose.override.yaml` is still merged with the leaf, and a
+composition-wide `--override` can patch the final effective service names.
+
 Compatibility is deliberately conservative: a feature is either translated
 faithfully, ignored with a visible diagnostic, or rejected before anything
 starts. Kranz never accepts a file by quietly dropping a field that changes
@@ -25,6 +31,7 @@ what your processes do.
 | `name` | ✅ Translated | Project name; defaults to the directory name |
 | `environment` | ✅ Translated | Mapping or `NAME=value` list |
 | `processes` | ✅ Translated | See below |
+| `include`, `overrides` | ❌ Rejected | Native composition directives are not valid in a terminal leaf |
 
 ## Process fields
 
@@ -107,7 +114,7 @@ Moving to a native `kranz.yaml` additionally gives you:
   prerequisites;
 - [detached lifecycle](../guide/lifecycle) for Docker and remote resources;
 - runtime [port discovery](../guide/logs-and-ports) and dynamic probe targets;
-- ordered patch layering with `--override`;
+- ordered override layering with `--override`;
 - project [appearance](../guide/appearance).
 
 The [full-stack example](../examples/full-stack) ships the same project in both

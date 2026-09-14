@@ -112,8 +112,7 @@ runtime. A restart from either is reflected immediately in this TUI.
 
 ## Switch between local runtimes
 
-Working on several projects at once no longer means running a separate TUI
-for each. Press `p` to open a modal styled like Run history with every Kranz
+One TUI can work with several projects. Press `p` to open a modal styled like Run history with every Kranz
 runtime registered on this machine — current runtime first — and press
 `Enter` on another one to attach to it in the same process. `Esc` closes the
 modal without changing anything.
@@ -161,6 +160,7 @@ the recovery actions.
 | `v` | Open run history; filter and select with keyboard or mouse |
 | `e` / `Shift+E` | Export the selected run to clipboard / a chosen file |
 | `p` | Switch to another local Kranz runtime |
+| `m` | Open the configuration map |
 | `Ctrl+T` | Open the theme and appearance picker |
 | `Ctrl+L` | Reload configuration |
 | `?` | Open help |
