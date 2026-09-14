@@ -23,6 +23,7 @@ type Error struct {
 	Code     string
 	Message  string
 	Hint     string
+	Details  any
 	ExitCode int
 	Cause    error
 }
@@ -58,6 +59,7 @@ type errorPayload struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 	Hint    string `json:"hint,omitempty"`
+	Details any    `json:"details,omitempty"`
 }
 
 // WriteError renders a failure without mixing diagnostics into JSON stdout.
@@ -66,7 +68,7 @@ func WriteError(stdout, stderr io.Writer, format OutputFormat, err error) int {
 	commandError := AsError(err)
 	if format == OutputJSON {
 		if encodeErr := json.NewEncoder(stdout).Encode(errorEnvelope{SchemaVersion: SchemaVersion, Error: errorPayload{
-			Code: commandError.Code, Message: commandError.Error(), Hint: commandError.Hint,
+			Code: commandError.Code, Message: commandError.Error(), Hint: commandError.Hint, Details: commandError.Details,
 		}}); encodeErr != nil {
 			return ExitInternal
 		}

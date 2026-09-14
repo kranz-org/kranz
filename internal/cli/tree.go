@@ -151,7 +151,9 @@ func DefaultTree() *Command {
 				{Flags: "--format TEMPLATE", Summary: "render each action with a Go template; prefix with 'table ' for headers"},
 			}},
 			{Name: "info", Summary: "show action details", Usage: "kranz actions info OWNER/ACTION"},
-			{Name: "run", Summary: "run an action", Usage: "kranz actions run OWNER/ACTION"},
+			{Name: "run", Summary: "run an action", Usage: "kranz actions run OWNER/ACTION [--confirm]", Options: []Option{
+				{Flags: "--confirm", Summary: "approve the exact resolved plan for an action with confirm: true"},
+			}},
 		}},
 		{Name: "tags", Summary: "list configured service tags", Usage: "kranz tags [--format TEMPLATE]", Options: []Option{
 			{Flags: "--format TEMPLATE", Summary: "render each tag with a Go template; prefix with 'table ' for headers"},

@@ -43,6 +43,10 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
   directory, so a bare shared name in a selector or `depends_on` fails.
 - **Breaking:** `reload --output json` no longer has a `restarted` set; changed
   running services appear under `pending` instead.
+- **Breaking:** `confirm: true` is now fail-closed consistently across CLI and
+  MCP. `kranz actions run OWNER/ACTION` returns the resolved confirmation plan;
+  repeat it with `--confirm` to run. Actions without confirmation remain
+  single-step.
 
 ## [0.14.0] - 2026-09-09
 

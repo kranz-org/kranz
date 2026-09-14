@@ -189,9 +189,22 @@ func runActionInfo(options kranzcli.GlobalOptions, args []string, stdout io.Writ
 }
 
 func runActionRun(options kranzcli.GlobalOptions, args []string, stdout io.Writer) error {
-	if len(args) != 1 {
-		return &kranzcli.Error{Code: "invalid_arguments", Message: "action run takes exactly one OWNER/ACTION", ExitCode: kranzcli.ExitUsage}
+	confirmed := false
+	identities := make([]string, 0, 1)
+	for _, arg := range args {
+		switch {
+		case arg == "--confirm":
+			confirmed = true
+		case strings.HasPrefix(arg, "-"):
+			return &kranzcli.Error{Code: "unknown_option", Message: fmt.Sprintf("unknown actions run option %q", arg), Hint: "actions run accepts one OWNER/ACTION and --confirm.", ExitCode: kranzcli.ExitUsage}
+		default:
+			identities = append(identities, arg)
+		}
 	}
+	if len(identities) != 1 {
+		return &kranzcli.Error{Code: "invalid_arguments", Message: "actions run takes exactly one OWNER/ACTION", ExitCode: kranzcli.ExitUsage}
+	}
+	identity := identities[0]
 	// In the ordinary project-local workflow, reject an interactive action
 	// before looking for a runtime so the user gets the useful TUI instruction.
 	// With an explicit -p, the selected runtime is authoritative and may belong
@@ -201,7 +214,7 @@ func runActionRun(options kranzcli.GlobalOptions, args []string, stdout io.Write
 		if err != nil {
 			return err
 		}
-		id, action, err := resolveActionID(cfg, args[0])
+		id, action, err := resolveActionID(cfg, identity)
 		if err != nil {
 			return err
 		}
@@ -220,7 +233,7 @@ func runActionRun(options kranzcli.GlobalOptions, args []string, stdout io.Write
 	}
 	defer func() { _ = client.Close() }()
 
-	id, action, err := resolveActionID(client.Config(), args[0])
+	id, action, err := resolveActionID(client.Config(), identity)
 	if err != nil {
 		return err
 	}
@@ -228,7 +241,7 @@ func runActionRun(options kranzcli.GlobalOptions, args []string, stdout io.Write
 		return err
 	}
 
-	operation, runErr := executeConfirmedPlan(client, app.PlanRequest{Operation: "action", Action: id}, options, stdout)
+	operation, runErr := executePlanWithApproval(client, app.PlanRequest{Operation: "action", Action: id}, confirmed)
 	if operation.ActionResult == nil {
 		return classifyRuntimeError(runErr)
 	}

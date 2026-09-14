@@ -770,7 +770,7 @@ func runLifecycle(options kranzcli.GlobalOptions, command string, args []string,
 		return reportReload(stdout, options, record.Name, result)
 	}
 	request := app.PlanRequest{Operation: command, Selectors: args, IncludeDependencies: command == "start"}
-	result, err := executeConfirmedPlan(client, request, options, stdout)
+	result, err := executePlanWithApproval(client, request, true)
 	if err != nil {
 		return err
 	}
@@ -965,6 +965,22 @@ func reportDown(stdout io.Writer, options kranzcli.GlobalOptions, name, id strin
 }
 
 func classifyRuntimeError(err error) error {
+	var confirmation *app.ConfirmationRequiredError
+	if errors.As(err, &confirmation) {
+		plan := confirmation.Plan
+		plan.ConfirmationToken = ""
+		resolved := plan.Operation + " " + strings.Join(plan.Targets, ", ")
+		if plan.Operation == "action" {
+			resolved = "action " + plan.Action
+		}
+		return &kranzcli.Error{
+			Code:     "confirmation_required",
+			Message:  "operation requires explicit confirmation",
+			Hint:     "Resolved plan: " + resolved + ". Review it, then repeat the same command with --confirm.",
+			Details:  map[string]any{"plan": plan},
+			ExitCode: kranzcli.ExitUsage,
+		}
+	}
 	var conflict *kranzruntime.SessionConflictError
 	if errors.As(err, &conflict) {
 		return &kranzcli.Error{Code: "runtime_conflict", Message: conflict.Error(), Hint: "Inspect it with `kranz status`, stop it with `kranz down`, or start a second one with `kranz -p " + conflict.Name + "-2 up -d`.", ExitCode: kranzcli.ExitConflict}

@@ -54,6 +54,9 @@ func TestEveryDocumentedOptionIsAcceptedByItsCommand(t *testing.T) {
 						return
 					}
 					args := append([]string{"-C", directory, "--output=json"}, path...)
+					if kranzcli.PathString(path) == "actions run" {
+						args = append(args, "sample/check")
+					}
 					var stdout, stderr bytes.Buffer
 					if code := execute(append(args, spelling...), &stdout, &stderr); code == 0 {
 						return

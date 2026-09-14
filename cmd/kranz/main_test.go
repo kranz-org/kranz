@@ -214,7 +214,7 @@ func TestRemovedCLIGrammarIsRejected(t *testing.T) {
 func TestBackgroundRuntimeReadinessConflictAndDown(t *testing.T) {
 	directory := t.TempDir()
 	name := fmt.Sprintf("test-background-%d", os.Getpid())
-	configText := fmt.Sprintf("project: Test Background\nruntime:\n  name: %s\nservices:\n  sleeper:\n    command: sleep 60\n    tags: [workers]\n    actions:\n      ping:\n        command: echo pong\n", name)
+	configText := fmt.Sprintf("project: Test Background\nruntime:\n  name: %s\nservices:\n  sleeper:\n    command: sleep 60\n    tags: [workers]\n    actions:\n      ping:\n        command: echo pong\n        confirm: true\n      quick:\n        command: echo quick\n", name)
 	if err := os.WriteFile(filepath.Join(directory, "kranz.yaml"), []byte(configText), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -274,7 +274,26 @@ func TestBackgroundRuntimeReadinessConflictAndDown(t *testing.T) {
 	}
 	stdout.Reset()
 	stderr.Reset()
-	if code := execute([]string{"-p", name, "--output=json", "actions", "run", "sleeper/ping"}, &stdout, &stderr); code != 0 {
+	if code := execute([]string{"-p", name, "--output=json", "actions", "run", "sleeper/ping"}, &stdout, &stderr); code != kranzcli.ExitUsage {
+		t.Fatalf("unconfirmed action exit=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	var confirmation struct {
+		Error struct {
+			Code    string `json:"code"`
+			Details struct {
+				Plan struct {
+					RequiresConfirmation bool   `json:"requires_confirmation"`
+					ConfirmationToken    string `json:"confirmation_token"`
+				} `json:"plan"`
+			} `json:"details"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &confirmation); err != nil || confirmation.Error.Code != "confirmation_required" || !confirmation.Error.Details.Plan.RequiresConfirmation || confirmation.Error.Details.Plan.ConfirmationToken != "" {
+		t.Fatalf("confirmation response = %s, %v", stdout.String(), err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := execute([]string{"-p", name, "--output=json", "actions", "run", "sleeper/ping", "--confirm"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("action run exit=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
 	}
 	action := decodeJSONData[struct {
@@ -284,6 +303,17 @@ func TestBackgroundRuntimeReadinessConflictAndDown(t *testing.T) {
 	}](t, stdout.Bytes())
 	if action.ID != "sleeper/ping" || len(action.Stdout) != 1 || action.Stderr == nil || len(action.Stderr) != 0 {
 		t.Fatalf("action result = %#v", action)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := execute([]string{"-p", name, "--output=json", "actions", "run", "sleeper/quick"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("ordinary action exit=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	ordinary := decodeJSONData[struct {
+		ID string `json:"id"`
+	}](t, stdout.Bytes())
+	if ordinary.ID != "sleeper/quick" {
+		t.Fatalf("ordinary action result = %#v", ordinary)
 	}
 	stdout.Reset()
 	stderr.Reset()

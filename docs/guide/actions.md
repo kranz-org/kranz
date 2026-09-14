@@ -105,8 +105,12 @@ walkthrough.
 
 ## Confirmation and cancellation
 
-`confirm: true` requires explicit approval before starting an action. Stopping
-a running action always asks for confirmation regardless of its start setting.
+`confirm: true` requires a separate explicit approval before starting an action.
+In the CLI, review the `confirmation_required` plan and repeat the command with
+`--confirm`; MCP repeats the call with the returned `confirmation_token`. Both
+paths use the same plan-bound, one-shot supervisor token. Actions without this
+setting still run immediately. Stopping a running action always asks for
+confirmation regardless of its start setting.
 `timeout` covers the whole process group; cancellation sends a graceful signal
 and escalates when necessary.
 

@@ -449,13 +449,20 @@ rather than an address and stays silent when it overlaps the start of history.
 ```bash
 kranz actions [OWNER]
 kranz actions info OWNER/ACTION
-kranz actions run OWNER/ACTION
+kranz actions run OWNER/ACTION [--confirm]
 ```
 
 An action is identified by owner and name together, so a service action and an
 action-group action may share a name. Running one goes through the runtime,
 which owns the execution slot. A failed action fails the command. Interactive
 actions need the real terminal and are run from the TUI.
+
+For an action with `confirm: true`, the first run attempt is fail-closed and
+returns `confirmation_required` with the exact resolved plan. Review it, then
+repeat the same command with `--confirm`. The CLI obtains and consumes the
+supervisor's plan-bound one-shot token inside that confirmed invocation. Actions
+without `confirm: true` still run in one command. MCP exposes the same flow with
+its explicit `confirmation_token` field.
 
 ### Help and version
 
