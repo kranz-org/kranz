@@ -70,8 +70,8 @@ export default defineConfig({
       {
         text: 'Upgrading',
         items: [
-          { text: 'Upgrading to 0.15.0', link: '/releases/0.15.0' },
-          { text: 'Upgrading to 0.8.0', link: '/releases/0.8.0' }
+          { text: 'Upgrading to 0.15', link: '/releases/0.15.0' },
+          { text: 'Upgrading to 0.8', link: '/releases/0.8.0' }
         ]
       },
       {
