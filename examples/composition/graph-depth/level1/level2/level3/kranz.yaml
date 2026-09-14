@@ -1,0 +1,9 @@
+# Level 3 is never loaded because of the root's include.max_depth: 1. This file
+# exists only to prove the cut happens one hop higher.
+
+defaults:
+  shell: /bin/sh
+
+services:
+  level3-service:
+    command: printf 'level3 ready\n'; sleep 3600

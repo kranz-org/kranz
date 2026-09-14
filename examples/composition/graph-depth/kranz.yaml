@@ -1,0 +1,25 @@
+# Graph depth limit.
+#
+# `include.max_depth` bounds the include GRAPH, a different knob from
+# discovery.max_depth, which bounds the FILE TREE walk. Here the chain
+# is root -> level1 -> level2 -> level3. `max_depth: 1` on the root's include
+# lets level1 and one level below it (level2) load; level2's own include is
+# truncated, so level3-service never appears. `max_depth: 0` would load level1
+# and truncate its includes instead.
+#
+# A truncation is a deliberate limit, not an error. Kranz reports it as the
+# `include_depth_truncated` diagnostic and marks the boundary source.
+
+project: Depth Limiter
+
+defaults:
+  dir: .
+  shell: /bin/sh
+
+include:
+  - path: level1/kranz.yaml
+    max_depth: 1
+
+services:
+  root-service:
+    command: printf 'root ready\n'; sleep 3600

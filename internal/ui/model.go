@@ -36,6 +36,7 @@ const (
 	ModeConfirmServiceStop
 	ModeConfirmThemeSave
 	ModeThemes
+	ModeConfigMap
 	ModeRunList
 	ModeRunExport
 	ModeConfirmDeleteRun
@@ -265,6 +266,11 @@ type Model struct {
 	height     int
 	ready      bool
 	helpOffset int
+	// configMapOffset and configMapView hold the read-only configuration
+	// provenance modal's scroll position and reading direction. Opening it
+	// resets both; nothing here is persisted.
+	configMapOffset int
+	configMapView   configMapView
 
 	followMode   bool
 	pinnedFollow bool
@@ -702,6 +708,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m.handleConfigReload(msg)
+	case appearanceReloadMsg:
+		if msg.sessionGen != m.sessionGeneration {
+			return m, nil
+		}
+		m.applyReloadedAppearance(msg)
+		return m, nil
 	case runtimeListMsg:
 		return m.handleRuntimeListMsg(msg)
 	case switchTargetMsg:

@@ -10,7 +10,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	for _, name := range []string{"KRANZ_PROJECT", "KRANZ_DIRECTORY", "KRANZ_CONFIG"} {
+	for _, name := range []string{"KRANZ_PROJECT", "KRANZ_DIRECTORY", "KRANZ_CONFIG", "KRANZ_OVERRIDE"} {
 		_ = os.Unsetenv(name)
 	}
 	os.Exit(m.Run())
@@ -18,7 +18,7 @@ func TestMain(m *testing.M) {
 
 func clearKranzCoordinateEnvironment(t *testing.T) {
 	t.Helper()
-	for _, name := range []string{"KRANZ_PROJECT", "KRANZ_DIRECTORY", "KRANZ_CONFIG"} {
+	for _, name := range []string{"KRANZ_PROJECT", "KRANZ_DIRECTORY", "KRANZ_CONFIG", "KRANZ_OVERRIDE"} {
 		t.Setenv(name, "")
 	}
 }
@@ -71,6 +71,49 @@ func TestExplicitGlobalFlagsOverrideEnvironment(t *testing.T) {
 	}
 	if !reflect.DeepEqual(invocation.Globals.ConfigPaths, []string{"flag-base.yaml", "flag-local.yaml"}) {
 		t.Fatalf("flag config paths = %v", invocation.Globals.ConfigPaths)
+	}
+}
+
+// An explicit --override replaces the environment list it shares a meaning with,
+// exactly as -f replaces KRANZ_CONFIG. Supplementing would silently keep every
+// override the environment named alongside the ones the caller typed.
+func TestExplicitOverrideReplacesEnvironment(t *testing.T) {
+	t.Setenv("KRANZ_OVERRIDE", strings.Join([]string{"environment-first.yaml", "environment-second.yaml"}, string(os.PathListSeparator)))
+
+	invocation, err := Parse(DefaultTree(), []string{"--override", "flag-one.yaml", "--override=flag-two.yaml", "status"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(invocation.Globals.OverridePaths, []string{"flag-one.yaml", "flag-two.yaml"}) {
+		t.Fatalf("flag override paths = %v", invocation.Globals.OverridePaths)
+	}
+}
+
+func TestFollowSymlinksAcceptsAnExplicitValue(t *testing.T) {
+	clearKranzCoordinateEnvironment(t)
+	enabled, err := Parse(DefaultTree(), []string{"--follow-symlinks=true", "config", "show"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !enabled.Globals.FollowSymlinks {
+		t.Fatal("--follow-symlinks=true did not enable the flag")
+	}
+	disabled, err := Parse(DefaultTree(), []string{"--follow-symlinks=false", "config", "show"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if disabled.Globals.FollowSymlinks {
+		t.Fatal("--follow-symlinks=false did not disable the flag")
+	}
+	if _, err := Parse(DefaultTree(), []string{"--follow-symlinks=maybe", "config", "show"}); err == nil {
+		t.Fatal("--follow-symlinks=maybe was accepted")
+	}
+	// The error message promises true/false, so the accepted grammar must not be
+	// wider than that: strconv.ParseBool-style spellings are rejected too.
+	for _, spelling := range []string{"--follow-symlinks=1", "--follow-symlinks=TRUE", "--follow-symlinks=t"} {
+		if _, err := Parse(DefaultTree(), []string{spelling, "config", "show"}); err == nil {
+			t.Fatalf("%s was accepted", spelling)
+		}
 	}
 }
 

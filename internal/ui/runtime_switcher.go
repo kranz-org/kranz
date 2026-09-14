@@ -263,14 +263,7 @@ func (m *Model) installSession(record kranzruntime.SessionRecord, client *kranzr
 	m.sessionID = record.ID
 	m.sessionRecord = record
 	m.sessionConfigPaths = append([]string(nil), project.ConfigPaths...)
-	virtualRoot := false
-	for _, source := range project.Sources {
-		if source.Kind == config.SourceVirtualRoot {
-			virtualRoot = true
-			break
-		}
-	}
-	if len(m.sessionConfigPaths) == 0 && !virtualRoot {
+	if len(m.sessionConfigPaths) == 0 && !config.HasVirtualRoot(project.Sources) {
 		m.sessionConfigPaths = append([]string(nil), cfg.Paths...)
 	}
 	m.configPaths = append([]string(nil), m.sessionConfigPaths...)

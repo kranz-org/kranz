@@ -1,0 +1,40 @@
+# Autonomous repository config: Catalog.
+#
+# Run it alone from this directory:
+#
+#     kranz -C examples/composition/workspace/repositories/catalog
+#
+# It declares its own `project` and `version`; neither leaks into the
+# composition root. Its `defaults` are file-local: `CATALOG_SCOPE` is
+# applied only to the two services below, never to its siblings.
+#
+# `dir: src` is resolved relative to THIS file, not to the directory Kranz was
+# launched from.
+
+project: Catalog Repository
+version: "1.0"
+
+# A file-local ordered override layer. It targets the raw name `api` because it
+# is applied before this file's services are exported into the composition.
+overrides:
+  - overrides/catalog-api.yaml
+
+defaults:
+  dir: src
+  shell: /bin/sh
+  env:
+    CATALOG_SCOPE: catalog-only
+    CATALOG_SERVICE_NAME: catalog
+
+services:
+  api:
+    description: Catalog API, collides on "api" with the checkout repository
+    command: ./run.sh catalog-api
+    ports: [18101]
+    env:
+      SERVICE_KIND: api
+  migrator:
+    description: One-shot catalog migration
+    command: printf 'catalog migrator done\n'
+    availability:
+      restart: no

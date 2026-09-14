@@ -1,0 +1,70 @@
+# Composition workspace root.
+#
+# This file is the explicit "root config" of the composition. It is itself a
+# normal, runnable Kranz file (`kranz -C examples/composition/workspace`). Every
+# other file it pulls in stays a fully autonomous configuration: each one can be
+# run on its own from its own directory.
+#
+# What this root demonstrates:
+#   * all three source selectors in one place: exact path, glob, and discovery
+#   * ordered external override layers, separate from composition
+#   * a root `protected` policy that wins over nested protected values
+#   * root-local defaults that do NOT leak into included sources
+
+project: Aurora
+version: "1.0"
+
+runtime:
+  name: aurora-composition
+
+ui:
+  theme: tokyo-night
+  color_mode: auto
+
+# Root-scoped defaults. `ROOT_SCOPE` and the adjacent .env are visible only to
+# `root-task`; no included repository inherits them.
+defaults:
+  dir: .
+  shell: /bin/sh
+  env:
+    ROOT_SCOPE: root-only
+
+# Composition sources, in deterministic order:
+#   1. one exact autonomous file (explicit include)
+#   2. Procfile and process-compose terminal leaves
+#   3. a glob over service directories (sorted by normalized path)
+#   4. bounded discovery under `repositories/` (depth-limited walk)
+include:
+  - path: platform/kranz.yaml
+  - path: leaves/procfile/Procfile
+  - path: leaves/process-compose/process-compose.yaml
+  - glob: services/*/kranz.yaml
+  - discover:
+      root: repositories
+      max_depth: 3
+      follow_symlinks: false
+
+# Ordered local override layers. A file's `overrides:` list patches services
+# declared in the SAME file, before that file exports them. To patch
+# services that come from other sources, use `--override PATH` on the command
+# line, which applies after the whole graph is composed. The
+# composition-wide layers live in overrides/10-ports.yaml and
+# overrides/20-debug.yaml; see the README for the exact command.
+overrides:
+  - overrides/root-local.yaml
+
+# Root protected policy, applied after composition and after override layers.
+# `checkout/api` also declares its own nested protected value; the outer one
+# wins and the rejected value stays visible in provenance.
+protected:
+  services:
+    checkout/api:
+      env:
+        TLS_MODE: required
+
+services:
+  root-task:
+    description: A root-owned service, kept separate from included repositories
+    command: printf 'root task ready\n'; sleep 3600
+    env:
+      ROOT_TASK_ONLY: "yes"

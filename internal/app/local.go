@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -58,7 +59,10 @@ type Local struct {
 // NewLocal constructs the runtime for one project and starts it observing
 // health and ports. configPaths is the set of files Reload re-reads; it
 // defaults to cfg.Paths when empty, matching how Kranz discovered the
-// configuration in the first place.
+// configuration in the first place. When opts.LoadOptions is set it takes
+// precedence and configPaths is ignored, because reloading must re-resolve the
+// composition request — discovery, globs, and ordered overrides included — not
+// merely re-read an expanded file list.
 func NewLocal(cfg *config.Config, configPaths []string, opts Options) *Local {
 	manager := service.NewManager(cfg)
 
@@ -85,7 +89,15 @@ func NewLocal(cfg *config.Config, configPaths []string, opts Options) *Local {
 		paths = append([]string(nil), cfg.Paths...)
 	}
 	watchPaths := watchedConfigPaths(cfg.Paths, cfg.WatchPaths)
-	stamps, _ := readConfigStamps(watchPaths)
+	stamps, stampErr := readConfigStamps(watchPaths)
+	initialReloadError := ""
+	if stampErr != nil {
+		// A watch-path scan that fails at construction is surfaced rather than
+		// swallowed: change detection is degraded until the path is readable
+		// again, and a silent failure would look like a project that never
+		// changes.
+		initialReloadError = "watch configuration: " + stampErr.Error()
+	}
 
 	loadOptions := cloneLoadOptions(opts.LoadOptions)
 	if loadOptions != nil && loadOptions.Cache == nil {
@@ -102,6 +114,7 @@ func NewLocal(cfg *config.Config, configPaths []string, opts Options) *Local {
 		watchPaths:    watchPaths,
 		generation:    1,
 		loadedAt:      time.Now(),
+		lastReloadErr: initialReloadError,
 		stamps:        stamps,
 		loadOptions:   loadOptions,
 	}
@@ -142,7 +155,46 @@ func (l *Local) Project() ProjectSnapshot {
 		Sources:         append([]config.ConfigSource(nil), l.cfg.Sources...),
 		Diagnostics:     append([]config.CompositionDiagnostic(nil), l.cfg.CompositionDiagnostics...),
 		Pending:         l.manager.PendingChanges(),
+		Composition:     l.compositionRequest(),
 	}
+}
+
+// ProjectComposition returns the request the shared composer can replay, so a
+// client or delivery surface can rebuild the same effective graph without
+// guessing at discovery roots or override order. It is the cross-process
+// counterpart of ProjectSnapshot.Composition, which JSON deliberately omits
+// because the request names absolute paths.
+func (l *Local) ProjectComposition() *CompositionRequest {
+	l.cfgMu.RLock()
+	defer l.cfgMu.RUnlock()
+	return l.compositionRequest()
+}
+
+// compositionRequest reports a request the shared composer can replay, so a
+// client or delivery surface can rebuild the same effective graph without
+// guessing at discovery roots or override order. A runtime built from an
+// already-resolved file list synthesizes {Directory, Sources} from those paths;
+// the result is nil only when there is nothing to replay, meaning neither a
+// load option nor a config path was recorded.
+func (l *Local) compositionRequest() *CompositionRequest {
+	request := CompositionRequest{}
+	if l.loadOptions != nil {
+		request = CompositionRequest{
+			Directory:      l.loadOptions.Directory,
+			Sources:        append([]string(nil), l.loadOptions.Sources...),
+			Overrides:      append([]string(nil), l.loadOptions.Overrides...),
+			FollowSymlinks: l.loadOptions.FollowSymlinks,
+		}
+	} else if len(l.configPaths) > 0 {
+		request = CompositionRequest{
+			Directory: filepath.Dir(l.configPaths[0]),
+			Sources:   append([]string(nil), l.configPaths...),
+		}
+	}
+	if !request.Configured() {
+		return nil
+	}
+	return &request
 }
 
 func (l *Local) snapshotOf(svc *service.Service) *ServiceSnapshot {

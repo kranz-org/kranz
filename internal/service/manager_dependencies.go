@@ -214,8 +214,8 @@ func (m *Manager) expandWithDependencies(names []string) (map[string]bool, error
 	return selected, nil
 }
 
-// Shutdown rejects new starts and stops every child process exactly once.
-
+// GetAffectedServices returns a restart target followed by its transitive
+// dependents that are not already stopped, in dependency order.
 func (m *Manager) GetAffectedServices(name string) []string {
 	order, err := m.topologicalSort()
 	if err != nil {

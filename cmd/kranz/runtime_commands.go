@@ -796,23 +796,22 @@ func reportLifecycle(stdout io.Writer, options kranzcli.GlobalOptions, command s
 }
 
 type reloadCommandResult struct {
-	Command   string              `json:"command"`
-	Runtime   string              `json:"runtime"`
-	Changed   bool                `json:"changed"`
-	Added     []string            `json:"added"`
-	Removed   []string            `json:"removed"`
-	Restarted []string            `json:"restarted"`
-	Updated   []string            `json:"updated"`
-	Pending   []app.PendingChange `json:"pending"`
+	Command string              `json:"command"`
+	Runtime string              `json:"runtime"`
+	Changed bool                `json:"changed"`
+	Added   []string            `json:"added"`
+	Removed []string            `json:"removed"`
+	Updated []string            `json:"updated"`
+	Pending []app.PendingChange `json:"pending"`
 }
 
 func reportReload(stdout io.Writer, options kranzcli.GlobalOptions, name string, result app.ReloadResult) error {
-	changed := len(result.Added) + len(result.Removed) + len(result.Restarted) + len(result.Updated) + len(result.Pending)
+	changed := len(result.Added) + len(result.Removed) + len(result.Updated) + len(result.Pending)
 	if options.Output == kranzcli.OutputJSON {
 		return kranzcli.WriteJSON(stdout, reloadCommandResult{
 			Command: "reload", Runtime: name, Changed: changed > 0,
 			Added: emptyIfNil(result.Added), Removed: emptyIfNil(result.Removed),
-			Restarted: emptyIfNil(result.Restarted), Updated: emptyIfNil(result.Updated),
+			Updated: emptyIfNil(result.Updated),
 			Pending: emptyPendingIfNil(result.Pending),
 		})
 	}
@@ -831,7 +830,6 @@ func reportReload(stdout io.Writer, options kranzcli.GlobalOptions, name string,
 	}{
 		{"added", result.Added},
 		{"removed", result.Removed},
-		{"restarted", result.Restarted},
 		{"updated", result.Updated},
 	} {
 		if len(group.services) > 0 {

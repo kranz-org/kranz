@@ -12,6 +12,7 @@ import (
 // Stopping services and shutting the manager down, including the ordered stop
 // of detached resources that declare their own stop command.
 
+// StopService gracefully stops one service and releases its process group.
 func (m *Manager) StopService(name string) error {
 	svc, ok := m.GetService(name)
 	if !ok {
@@ -131,22 +132,19 @@ func (m *Manager) appendLifecycleResult(svc *Service, operation string, result A
 	svc.AppendLog(fmt.Sprintf("[Kranz] Lifecycle %s %s · exit %d", operation, result.Status.String(), result.ExitCode))
 }
 
-// StartAll starts every enabled service in dependency order.
-
+// StopAll stops every service in reverse dependency order.
 func (m *Manager) StopAll() error {
 	return m.stopServices(m.configSnapshot().ServiceNames(), false)
 }
 
 // StopServices stops the requested services and every transitive dependent, in
 // reverse dependency order.
-
 func (m *Manager) StopServices(names []string) error {
 	return m.stopServices(names, true)
 }
 
 // ForceStopServices stops exactly the requested services without expanding
 // dependents. It is the shutdown counterpart to ForceStartServices.
-
 func (m *Manager) ForceStopServices(names []string) error {
 	return m.stopServices(names, false)
 }
@@ -192,6 +190,8 @@ func (m *Manager) stopServices(names []string, includeDependents bool) error {
 	return errors.Join(stopErrors...)
 }
 
+// Shutdown rejects new starts and stops every child process exactly once, then
+// shuts down the action runner.
 func (m *Manager) Shutdown() error {
 	m.shuttingDown.Store(true)
 	m.stopListenerDiscovery()
@@ -208,5 +208,3 @@ func (m *Manager) Shutdown() error {
 	m.actions.Shutdown()
 	return err
 }
-
-// RestartService restarts a service and all transitive dependents.

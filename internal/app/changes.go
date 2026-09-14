@@ -155,8 +155,8 @@ func (l *Local) recordReloadTransition(generation uint64, result ReloadResult) {
 }
 
 func reloadSummary(result ReloadResult) string {
-	parts := make([]string, 0, 4)
-	for label, names := range map[string][]string{"added": result.Added, "removed": result.Removed, "updated": result.Updated, "restarted": result.Restarted} {
+	parts := make([]string, 0, 3)
+	for label, names := range map[string][]string{"added": result.Added, "removed": result.Removed, "updated": result.Updated} {
 		if len(names) > 0 {
 			parts = append(parts, label+" "+strings.Join(names, ","))
 		}

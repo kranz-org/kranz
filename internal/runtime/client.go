@@ -300,6 +300,22 @@ func (c *Client) Project() app.ProjectSnapshot {
 	return resp
 }
 
+// ProjectComposition asks the runtime for the request behind the snapshot.
+// The request is not part of Project's JSON because it names absolute paths.
+func (c *Client) ProjectComposition() *app.CompositionRequest {
+	resp, _ := call[emptyRequest, compositionResponse](c, context.Background(), methodProjectComposition, emptyRequest{})
+	request := app.CompositionRequest{
+		Directory:      resp.Directory,
+		Sources:        append([]string(nil), resp.Sources...),
+		Overrides:      append([]string(nil), resp.Overrides...),
+		FollowSymlinks: resp.FollowSymlinks,
+	}
+	if !request.Configured() {
+		return nil
+	}
+	return &request
+}
+
 func (c *Client) Config() *config.Config {
 	resp, _ := call[emptyRequest, *config.Config](c, context.Background(), methodConfig, emptyRequest{})
 	return resp

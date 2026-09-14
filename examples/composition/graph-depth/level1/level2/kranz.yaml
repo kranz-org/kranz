@@ -1,0 +1,13 @@
+# Level 2 of the chain. It is the boundary: it loads, but its include is
+# truncated, so level3 is not visited and `Truncated` is recorded on this
+# source.
+
+defaults:
+  shell: /bin/sh
+
+services:
+  level2-service:
+    command: printf 'level2 ready\n'; sleep 3600
+
+include:
+  - path: level3/kranz.yaml

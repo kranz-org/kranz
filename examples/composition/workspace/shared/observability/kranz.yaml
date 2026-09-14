@@ -1,0 +1,14 @@
+# Shared stack reached from two different parents (diamond), and itself a
+# recursive include: it pulls in the logging config one level deeper.
+
+defaults:
+  shell: /bin/sh
+
+services:
+  traces:
+    description: Trace collector from the shared observability stack
+    command: printf 'traces ready\n'; sleep 3600
+    tags: [observability]
+
+include:
+  - path: ../logging/kranz.yaml

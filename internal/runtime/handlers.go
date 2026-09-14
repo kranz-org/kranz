@@ -36,6 +36,18 @@ var handlers = map[string]handlerFunc{
 	methodProject: handler(func(_ context.Context, l *app.Local, _ emptyRequest) (app.ProjectSnapshot, error) {
 		return l.Project(), nil
 	}),
+	methodProjectComposition: handler(func(_ context.Context, l *app.Local, _ emptyRequest) (compositionResponse, error) {
+		request := l.ProjectComposition()
+		if request == nil {
+			return compositionResponse{}, nil
+		}
+		return compositionResponse{
+			Directory:      request.Directory,
+			Sources:        append([]string(nil), request.Sources...),
+			Overrides:      append([]string(nil), request.Overrides...),
+			FollowSymlinks: request.FollowSymlinks,
+		}, nil
+	}),
 	methodConfig: handler(func(_ context.Context, l *app.Local, _ emptyRequest) (*config.Config, error) {
 		return l.Config(), nil
 	}),

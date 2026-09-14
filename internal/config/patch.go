@@ -19,7 +19,10 @@ func applyConfigPatch(base *Config, path string) error {
 	if err != nil {
 		return err
 	}
-	expanded := []byte(os.ExpandEnv(string(data)))
+	expanded, err := expandPatchEnvironment(data, filepath.Dir(path))
+	if err != nil {
+		return err
+	}
 	var patch yaml.Node
 	if err := yaml.Unmarshal(expanded, &patch); err != nil {
 		return fmt.Errorf("parse YAML: %w", err)
@@ -35,6 +38,20 @@ func applyConfigPatch(base *Config, path string) error {
 	}
 	resolvePatchPaths(patchRoot, filepath.Dir(path))
 	return applyConfigPatchNode(base, patchRoot)
+}
+
+// expandPatchEnvironment expands ${VAR} the same way the single-file loader
+// does: process environment first, then the .env file beside the patch. Using
+// os.ExpandEnv here would silently empty a variable that only the adjacent
+// dotenv defines, so a base file and its override could disagree about ${VAR}.
+// The dotenv read failure names the file so a malformed .env can be found.
+func expandPatchEnvironment(data []byte, directory string) ([]byte, error) {
+	dotenvPath := filepath.Join(directory, ".env")
+	dotenv, err := readDotEnv(dotenvPath)
+	if err != nil {
+		return nil, fmt.Errorf("read .env for %s: %w", dotenvPath, err)
+	}
+	return []byte(os.Expand(string(data), envExpander(dotenv))), nil
 }
 
 func applyConfigPatchNode(base *Config, patchRoot *yaml.Node) error {
@@ -129,8 +146,12 @@ func patchServiceNodes(path string) (map[string]*yaml.Node, error) {
 	if err != nil {
 		return nil, err
 	}
+	expanded, err := expandPatchEnvironment(data, filepath.Dir(path))
+	if err != nil {
+		return nil, err
+	}
 	var document yaml.Node
-	if err := yaml.Unmarshal([]byte(os.ExpandEnv(string(data))), &document); err != nil {
+	if err := yaml.Unmarshal(expanded, &document); err != nil {
 		return nil, err
 	}
 	root, err := yamlMappingRoot(&document)

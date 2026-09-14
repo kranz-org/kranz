@@ -1,0 +1,12 @@
+# Discovered under the virtual root. Run alone from here with
+# `kranz -C examples/composition/virtual-root/alpha`.
+
+project: Alpha
+
+defaults:
+  shell: /bin/sh
+
+services:
+  alpha-api:
+    command: printf 'alpha api ready\n'; sleep 3600
+    ports: [18211]

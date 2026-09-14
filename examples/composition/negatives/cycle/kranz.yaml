@@ -1,0 +1,19 @@
+# Cycle detection (negative example).
+#
+# Root includes a, a includes b, and b includes a again. Kranz rejects the
+# include graph before any runtime starts and prints the chain of relative
+# paths. Cycle detection is independent of include.max_depth.
+#
+#     kranz -C examples/composition/negatives/cycle config check
+#
+# Expected: a `config_include_cycle` error naming a/kranz.yaml -> b/kranz.yaml
+# -> a/kranz.yaml.
+
+project: Cycle Lab
+
+services:
+  root-service:
+    command: printf 'root\n'; sleep 3600
+
+include:
+  - path: a/kranz.yaml

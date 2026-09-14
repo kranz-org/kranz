@@ -312,7 +312,7 @@ func (m *Model) handleThemeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		m.applyThemePicker(names)
 	case "r", "R":
-		m.reloadSavedAppearance()
+		return m, m.reloadSavedAppearance()
 	case "g", "G":
 		m.beginThemeSaveConfirmation(themeSaveGlobal)
 	case "c", "C":
@@ -465,40 +465,67 @@ func sanitizeThemeColorValue(value string) string {
 	return strings.ToUpper(result.String())
 }
 
-func (m *Model) reloadSavedAppearance() {
-	projectAppearance := m.cfg.UI
-	rootPath := ""
-	if len(m.cfg.Sources) > 0 && m.cfg.Sources[0].Kind != config.SourceVirtualRoot {
-		rootPath = m.cfg.Sources[0].CanonicalPath
-	} else if len(m.configPaths) > 0 {
-		rootPath = m.configPaths[0]
-	}
-	if rootPath != "" {
-		loaded, err := config.Load(rootPath)
-		if err != nil {
-			m.addNotification("appearance", "Could not reload project appearance: "+err.Error(), config.LogError)
-			return
-		}
-		projectAppearance = loaded.UI
-	}
+// appearanceReloadMsg carries the result of reloadSavedAppearance's off-thread
+// work back into Update. The composition read is an RPC when the model is
+// attached to a runtime, so it must not run on the Update goroutine.
+type appearanceReloadMsg struct {
+	projectUI    config.UIConfig
+	userSettings usersettings.Settings
+	errMessage   string
+	sessionGen   uint64
+}
 
-	userSettings, err := usersettings.Load(m.settingsPath)
-	if err != nil {
-		m.addNotification("appearance", "Could not reload global appearance: "+err.Error(), config.LogError)
+// reloadSavedAppearance schedules the reload of the saved appearance off the
+// Update goroutine. Rebuilding the effective graph goes through the shared
+// composer, never by reading one source in isolation: a project may be
+// discovery-based, a virtual root, or a base plus ordered override layers, and
+// only the composer knows how those combine. Both the composer and the runtime
+// lookup behind m.app.ProjectComposition can touch I/O — for an attached
+// runtime the composition read is an RPC to the supervisor — so the whole
+// reload runs in a tea.Cmd and reports back through appearanceReloadMsg.
+func (m *Model) reloadSavedAppearance() tea.Cmd {
+	application := m.app
+	projectAppearance := m.cfg.UI
+	settingsPath := m.settingsPath
+	sessionGen := m.sessionGeneration
+	return func() tea.Msg {
+		if request := application.ProjectComposition(); request.Configured() {
+			loaded, err := config.Compose(config.LoadOptions{
+				Directory:      request.Directory,
+				Sources:        append([]string(nil), request.Sources...),
+				Overrides:      append([]string(nil), request.Overrides...),
+				FollowSymlinks: request.FollowSymlinks,
+			})
+			if err != nil {
+				return appearanceReloadMsg{errMessage: "Could not reload project appearance: " + err.Error(), sessionGen: sessionGen}
+			}
+			projectAppearance = loaded.UI
+		}
+		userSettings, err := usersettings.Load(settingsPath)
+		if err != nil {
+			return appearanceReloadMsg{errMessage: "Could not reload global appearance: " + err.Error(), sessionGen: sessionGen}
+		}
+		return appearanceReloadMsg{projectUI: projectAppearance, userSettings: userSettings, sessionGen: sessionGen}
+	}
+}
+
+// applyReloadedAppearance installs the appearance a reload command resolved.
+func (m *Model) applyReloadedAppearance(msg appearanceReloadMsg) {
+	if msg.errMessage != "" {
+		m.addNotification("appearance", msg.errMessage, config.LogError)
 		return
 	}
-	name, accent, background, colorMode := effectiveAppearance(projectAppearance, userSettings)
+	name, accent, background, colorMode := effectiveAppearance(msg.projectUI, msg.userSettings)
 	theme, err := applyAppearance(name, accent, background, colorMode, m.terminalDark)
 	if err != nil {
 		m.addNotification("appearance", "Could not apply saved appearance: "+err.Error(), config.LogError)
 		return
 	}
-
-	m.cfg.UI = projectAppearance
-	m.userSettings = userSettings
+	m.cfg.UI = msg.projectUI
+	m.userSettings = msg.userSettings
 	m.activeTheme = theme
 	m.themeBefore = theme
-	m.settingsBefore = userSettings
+	m.settingsBefore = msg.userSettings
 	m.syncThemePickerControls()
 	m.addNotification("appearance", "Saved appearance reloaded from configuration", config.LogInfo)
 }

@@ -69,12 +69,7 @@ func loadFile(path, basePath string) (*Config, error) {
 		if detectErr != nil {
 			return nil, detectErr
 		}
-		expanded := []byte(os.Expand(string(data), func(name string) string {
-			if value, ok := os.LookupEnv(name); ok {
-				return value
-			}
-			return dotenv[name]
-		}))
+		expanded := []byte(os.Expand(string(data), envExpander(dotenv)))
 		switch format {
 		case SourceProcessCompose:
 			// Process Compose resolves paths in every override relative to the
@@ -96,6 +91,19 @@ func loadFile(path, basePath string) (*Config, error) {
 	cfg.dotenvEnv = mergeStringMap(nil, dotenv)
 	cfg.WatchPaths = appendUniqueString(cfg.WatchPaths, dotenvPath)
 	return cfg, nil
+}
+
+// envExpander expands ${VAR} with the process environment taking precedence
+// over an adjacent dotenv file. A base file and an override read through the
+// same helper so they cannot disagree about a variable that only one of them
+// can see.
+func envExpander(dotenv map[string]string) func(string) string {
+	return func(name string) string {
+		if value, ok := os.LookupEnv(name); ok {
+			return value
+		}
+		return dotenv[name]
+	}
 }
 
 func dotenvWithoutHostOverrides(dotenv map[string]string) map[string]string {
@@ -561,20 +569,13 @@ func Discover(directory string) (string, error) {
 	if directory == "" {
 		directory = "."
 	}
-	for _, name := range []string{
-		"kranz.yaml",
-		"kranz.yml",
-		"process-compose.yaml",
-		"process-compose.yml",
-		"Procfile.dev",
-		"Procfile",
-	} {
+	for _, name := range supportedConfigNames() {
 		path := filepath.Join(directory, name)
 		if info, err := os.Stat(path); err == nil && !info.IsDir() {
 			return path, nil
 		}
 	}
-	return "", fmt.Errorf("no supported configuration found in %s (looked for kranz.yaml, kranz.yml, process-compose.yaml, process-compose.yml, Procfile.dev, Procfile)", directory)
+	return "", fmt.Errorf("no supported configuration found in %s (looked for %s)", directory, strings.Join(supportedConfigNames(), ", "))
 }
 
 // DiscoverFiles returns the primary project configuration and the conventional

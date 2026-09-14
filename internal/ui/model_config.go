@@ -105,8 +105,8 @@ func (m *Model) handleConfigReload(msg configReloadMsg) (tea.Model, tea.Cmd) {
 	} else if err := m.applyEffectiveAppearance(); err != nil {
 		m.addNotification("appearance", err.Error(), config.LogWarn)
 	}
-	message := fmt.Sprintf("Configuration reloaded: %d added, %d removed, %d updated, %d restarted, %d pending restart",
-		len(msg.result.Added), len(msg.result.Removed), len(msg.result.Updated), len(msg.result.Restarted), len(msg.result.Pending))
+	message := fmt.Sprintf("Configuration reloaded: %d added, %d removed, %d updated, %d pending restart",
+		len(msg.result.Added), len(msg.result.Removed), len(msg.result.Updated), len(msg.result.Pending))
 	m.addNotification("config", message, config.LogInfo)
 	for _, pending := range msg.result.Pending {
 		detail := pending.Name

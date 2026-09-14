@@ -1,0 +1,13 @@
+# Level 1 of the chain. The root's `max_depth: 1` gives this file a budget of
+# one more include level, so its child (level2) still loads; level2 has no
+# budget left, so level2's own include is truncated.
+
+defaults:
+  shell: /bin/sh
+
+services:
+  level1-service:
+    command: printf 'level1 ready\n'; sleep 3600
+
+include:
+  - path: level2/kranz.yaml

@@ -1,0 +1,32 @@
+# Autonomous repository config: Checkout.
+#
+# Found by the root `discover: repositories` selector.
+#
+# It declares a nested `protected` value for its own `api`. The composition root
+# protects the same service at a higher level, so the root value wins and this
+# rejected value is still recorded in provenance.
+
+project: Checkout Repository
+
+defaults:
+  dir: .
+  shell: /bin/sh
+  env:
+    CHECKOUT_SCOPE: checkout-only
+
+protected:
+  services:
+    api:
+      env:
+        TLS_MODE: opportunistic
+
+services:
+  api:
+    description: Checkout API, collides on "api" with the catalog repository
+    command: printf 'checkout api ready\n'; sleep 3600
+    ports: [18102]
+    env:
+      SERVICE_KIND: api
+  worker:
+    description: Checkout worker
+    command: printf 'checkout worker ready\n'; sleep 3600

@@ -1,0 +1,11 @@
+# Leaf of the recursive include chain: root -> platform/worker -> observability
+# -> logging. It declares no include of its own.
+
+defaults:
+  shell: /bin/sh
+
+services:
+  log-collector:
+    description: Shared log collector
+    command: printf 'log collector ready\n'; sleep 3600
+    tags: [observability]

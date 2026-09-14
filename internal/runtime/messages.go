@@ -16,6 +16,7 @@ const (
 	methodHello                           = "hello"
 	methodClients                         = "clients"
 	methodProject                         = "project"
+	methodProjectComposition              = "projectComposition"
 	methodConfig                          = "config"
 	methodRedactedConfig                  = "redactedConfig"
 	methodReload                          = "reload"
@@ -91,6 +92,17 @@ type clientsResponse struct {
 
 type emptyRequest struct{}
 type emptyResponse struct{}
+
+// compositionResponse carries the composition request across the wire. The
+// app-level CompositionRequest excludes its absolute paths from JSON entirely,
+// so this is the one explicit, local transport that names them, kept out of the
+// user-facing project snapshot.
+type compositionResponse struct {
+	Directory      string   `json:"directory,omitempty"`
+	Sources        []string `json:"sources,omitempty"`
+	Overrides      []string `json:"overrides,omitempty"`
+	FollowSymlinks bool     `json:"follow_symlinks,omitempty"`
+}
 
 type nameRequest struct {
 	Name string `json:"name"`

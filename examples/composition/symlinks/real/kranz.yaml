@@ -1,0 +1,10 @@
+# Reached only through a symlink (explicit-link.yaml -> real/kranz.yaml in the
+# parent). Canonical identity is the real file, so an opt-in discovery of the
+# same file deduplicates instead of loading it twice.
+
+defaults:
+  shell: /bin/sh
+
+services:
+  explicit-service:
+    command: printf 'explicit ready\n'; sleep 3600

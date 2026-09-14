@@ -179,6 +179,27 @@ func BuildInteractiveCommand(action config.Action) *exec.Cmd {
 	return command
 }
 
+// CompositionRequest is the request that produced the effective configuration.
+// A delivery surface that needs the same effective graph — a TUI reloading
+// saved appearance, for example — replays it through the shared composer
+// instead of implementing its own discovery, name resolution, or merge. It
+// carries only the inputs, never a cache: a recomposition starts from disk.
+// Every path is absolute, so the fields stay out of JSON; the runtime carries
+// the request through its own explicit wire shape instead of a snapshot.
+type CompositionRequest struct {
+	Directory      string   `json:"-"`
+	Sources        []string `json:"-"`
+	Overrides      []string `json:"-"`
+	FollowSymlinks bool     `json:"-"`
+}
+
+// Configured reports whether the request names anything the composer can use.
+// A nil or zero request means there is nothing to replay: the runtime recorded
+// neither load options nor config paths.
+func (r *CompositionRequest) Configured() bool {
+	return r != nil && (r.Directory != "" || len(r.Sources) > 0 || len(r.Overrides) > 0 || r.FollowSymlinks)
+}
+
 // ProjectSnapshot describes the currently loaded configuration and the
 // health of its hot-reload pipeline.
 type ProjectSnapshot struct {
@@ -194,6 +215,12 @@ type ProjectSnapshot struct {
 	Sources         []config.ConfigSource          `json:"sources,omitempty"`
 	Diagnostics     []config.CompositionDiagnostic `json:"diagnostics,omitempty"`
 	Pending         []service.PendingChange        `json:"pending,omitempty"`
+	// Composition lets an in-process caller rebuild the exact effective graph
+	// this snapshot describes without guessing at discovery roots or override
+	// order. It is nil only when there is nothing to replay. It is excluded from
+	// the snapshot's JSON because it names absolute paths; wire clients fetch it
+	// explicitly through the API's ProjectComposition accessor.
+	Composition *CompositionRequest `json:"-"`
 }
 
 // ShutdownPlan describes what a full shutdown will do to every active

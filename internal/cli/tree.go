@@ -118,6 +118,10 @@ func DefaultTree() *Command {
 				{Flags: "--all", Summary: "explain every service instead of one"},
 				{Flags: "--format TEMPLATE", Summary: "render each field with a Go template; prefix with 'table ' for headers"},
 			}},
+			{Name: "sources", Summary: "list configuration files in merge order", Usage: "kranz config sources [--by-service] [--format TEMPLATE]", Options: []Option{
+				{Flags: "--by-service", Summary: "list each service with the file that defined it and every later override"},
+				{Flags: "--format TEMPLATE", Summary: "render each source, or each service with --by-service, with a Go template; prefix with 'table ' for headers"},
+			}},
 		}},
 		{Name: "doctor", Summary: "run project preflight checks", Usage: "kranz doctor [--format TEMPLATE]", Options: []Option{
 			{Flags: "--format TEMPLATE", Summary: "render each finding with a Go template; prefix with 'table ' for headers"},

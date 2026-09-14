@@ -170,7 +170,7 @@ func TestConfigReloadMarkerStaysInsideContinuingRun(t *testing.T) {
 	if err := manager.StartServicesContext(ctx, []string{"api"}); err != nil {
 		t.Fatal(err)
 	}
-	manager.RecordConfigReload(2, nil)
+	manager.RecordConfigReload(2)
 	svc, _ := manager.GetService("api")
 	entries := svc.LogEntries()
 	if len(entries) == 0 || entries[len(entries)-1].Run != 1 || entries[len(entries)-1].Raw != "[Kranz] Config reloaded · generation 2 · api#1" {

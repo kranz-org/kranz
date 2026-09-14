@@ -204,7 +204,11 @@ func TestThemePickerReloadsSavedAppearanceFromDisk(t *testing.T) {
 	})
 	defer model.Shutdown()
 	model.openThemePicker()
-	_, _ = model.handleThemeKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	_, reloadCommand := model.handleThemeKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	if reloadCommand == nil {
+		t.Fatal("reload key scheduled no command")
+	}
+	model.Update(reloadCommand())
 
 	if model.mode != ModeThemes || model.cfg.UI.Theme != "forest" || model.userSettings != savedSettings || model.activeTheme.Name != "dracula" {
 		t.Fatalf("reloaded appearance = mode %v / project %#v / settings %#v / active %q",
@@ -575,7 +579,11 @@ func TestMouseControlsCompleteThemePicker(t *testing.T) {
 	}
 
 	model.openThemePicker()
-	clickRenderedText(t, model, "[r] Reload saved")
+	reloadCommand := clickRenderedText(t, model, "[r] Reload saved")
+	if reloadCommand == nil {
+		t.Fatal("reload saved click scheduled no command")
+	}
+	model.Update(reloadCommand())
 	if model.mode != ModeThemes || model.activeTheme.Name != "forest" || model.userSettings != (usersettings.Settings{}) {
 		t.Fatalf("reload saved click left mode/theme/settings %v/%q/%#v", model.mode, model.activeTheme.Name, model.userSettings)
 	}

@@ -16,6 +16,11 @@ import (
 type API interface {
 	// Project describes the currently loaded configuration.
 	Project() ProjectSnapshot
+	// ProjectComposition returns the request that produced the current
+	// effective graph, or nil when there is nothing to replay. It is separate
+	// from Project because the request names absolute paths and must not travel
+	// inside the project snapshot's JSON.
+	ProjectComposition() *CompositionRequest
 	// Config returns the effective configuration. Callers must treat it as
 	// read-only: it is the same value the runtime is using.
 	Config() *config.Config

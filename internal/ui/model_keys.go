@@ -55,6 +55,8 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handlePortConflictKeys(msg)
 	case ModeThemes:
 		return m.handleThemeKeys(msg)
+	case ModeConfigMap:
+		return m.handleConfigMapKeys(msg)
 	case ModeRunList:
 		return m.handleRunListKeys(msg)
 	case ModeRunExport:
@@ -180,6 +182,9 @@ func (m *Model) handleViewKey(msg tea.KeyMsg) bool {
 	case key.Matches(msg, m.keys.Help):
 		m.helpOffset = 0
 		m.mode = ModeHelp
+		return true
+	case key.Matches(msg, m.keys.ConfigMap):
+		m.openConfigMap()
 		return true
 	case key.Matches(msg, m.keys.PinLogs):
 		m.togglePinnedLog()

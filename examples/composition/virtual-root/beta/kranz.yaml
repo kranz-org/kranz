@@ -1,0 +1,10 @@
+# Discovered under the virtual root, alongside alpha.
+
+project: Beta
+
+defaults:
+  shell: /bin/sh
+
+services:
+  beta-worker:
+    command: printf 'beta worker ready\n'; sleep 3600

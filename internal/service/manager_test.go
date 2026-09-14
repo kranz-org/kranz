@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -626,7 +627,7 @@ func TestApplyConfigPreservesUnchangedProcessesAndReconcilesChanges(t *testing.T
 	if _, exists := manager.GetService("removed"); !exists || added.Status() != config.StatusStopped {
 		t.Fatalf("pending removal/safe addition reconciliation failed; result %#v", result)
 	}
-	if len(result.Restarted) != 0 || len(result.Pending) != 2 {
+	if len(result.Pending) != 2 {
 		t.Fatalf("reload result = %#v", result)
 	}
 	if err := manager.RestartServices([]string{"changed", "removed"}); err != nil {
@@ -731,7 +732,7 @@ func TestApplyConfigDoesNotRestartServiceForActionOnlyChanges(t *testing.T) {
 	if after != before || after.PID() != pid {
 		t.Fatalf("action-only reload restarted service: before PID %d after PID %d", pid, after.PID())
 	}
-	if len(result.Updated) != 0 || len(result.Restarted) != 0 {
+	if len(result.Updated) != 0 {
 		t.Fatalf("action-only reload result = %#v", result)
 	}
 	if got := manager.cfg.Services["api"].Actions["migrate"].Command; got != "migrate-v2" {
@@ -795,6 +796,242 @@ func TestApplyConfigCanRemoveObserveOnlyDetachedService(t *testing.T) {
 	if _, exists := manager.GetService("stack"); exists {
 		t.Fatal("explicit restart did not detach removed observe-only service")
 	}
+}
+
+func TestRestartAdoptsRenameAndAddNameCollision(t *testing.T) {
+	current := &config.Config{Project: "Test", Services: map[string]config.Service{
+		"api": {Command: "sleep 60"},
+	}, ServiceMetadata: map[string]config.EffectiveService{
+		"api": {ID: "svc_old", SourceID: "src_old", SourceName: "api", DisplayName: "api"},
+	}}
+	manager := NewManager(current)
+	defer manager.Shutdown()
+	if err := manager.StartService("api"); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := manager.GetService("api")
+	oldPID := before.PID()
+
+	// A reload moves the running api to web/api while a different service takes
+	// the freed api name. Both pending changes share the display name api.
+	next := &config.Config{Project: "Test", Services: map[string]config.Service{
+		"web/api": {Command: "sleep 60"},
+		"api":     {Command: "sleep 60"},
+	}, ServiceMetadata: map[string]config.EffectiveService{
+		"web/api": {ID: "svc_old", SourceID: "src_old", SourceName: "api", DisplayName: "web/api"},
+		"api":     {ID: "svc_new", SourceID: "src_new", SourceName: "api", DisplayName: "api"},
+	}}
+	result, err := manager.ApplyConfig(next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Pending) != 2 {
+		t.Fatalf("collision pending = %#v", result.Pending)
+	}
+	if err := manager.RestartService("api"); err != nil {
+		t.Fatal(err)
+	}
+	renamed, ok := manager.GetService("web/api")
+	if !ok || renamed.Status() != config.StatusRunning || renamed.PID() == 0 || renamed.PID() == oldPID {
+		t.Fatalf("renamed service lost: %#v", renamed)
+	}
+	if got := manager.ServiceIdentity("web/api").ID; got != "svc_old" {
+		t.Fatalf("renamed identity = %q, want svc_old", got)
+	}
+	added, ok := manager.GetService("api")
+	if !ok || added.Status() != config.StatusRunning || added.PID() == 0 || added.PID() == oldPID {
+		t.Fatalf("new service did not take the freed name: %#v", added)
+	}
+	if got := manager.ServiceIdentity("api").ID; got != "svc_new" {
+		t.Fatalf("added identity = %q, want svc_new", got)
+	}
+	if len(manager.PendingChanges()) != 0 {
+		t.Fatalf("collision adoption left pending changes: %#v", manager.PendingChanges())
+	}
+}
+
+func TestApplyConfigHotAppliesDetachedDefinitionWithoutStopCommand(t *testing.T) {
+	directory := t.TempDir()
+	marker := filepath.Join(directory, "running")
+	// The updated start appends a byte to counter instead of touching marker.
+	// touch is idempotent, so a recycled resource would leave the marker check
+	// passing; a counter line is evidence the start command actually ran.
+	counter := filepath.Join(directory, "start-ran")
+	manager := NewManager(&config.Config{Project: "Detached", Services: map[string]config.Service{
+		"stack": {Supervision: config.SupervisionDetached, Lifecycle: config.LifecycleConfig{
+			Start: &config.Action{Command: "touch " + marker, Dir: directory, Shell: "/bin/sh"},
+		}},
+	}})
+	defer manager.Shutdown()
+	if err := manager.StartService("stack"); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := manager.GetService("stack")
+
+	result, err := manager.ApplyConfig(&config.Config{Project: "Detached", Services: map[string]config.Service{
+		"stack": {Supervision: config.SupervisionDetached, Lifecycle: config.LifecycleConfig{
+			Start: &config.Action{Command: "printf x >> " + counter, Dir: directory, Shell: "/bin/sh"},
+		}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, _ := manager.GetService("stack")
+	if after == before || after.Status() != config.StatusRunning {
+		t.Fatalf("detached no-stop reload state = %s", after.Status())
+	}
+	if len(result.Pending) != 0 || len(result.Updated) != 1 || result.Updated[0] != "stack" {
+		t.Fatalf("detached no-stop reload result = %#v", result)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("detached resource disappeared during reload: %v", err)
+	}
+	if data, err := os.ReadFile(counter); err == nil && len(data) > 0 {
+		t.Fatalf("detached resource was cycled during reload: start command ran %d times", len(data))
+	}
+	if after.Config.Lifecycle.Start.Command != "printf x >> "+counter {
+		t.Fatalf("detached definition was not updated: %q", after.Config.Lifecycle.Start.Command)
+	}
+}
+
+// RestartAll must apply the same pending-removal skip as RestartServices.
+// Without it, a running detached resource that declares no stop command aborts
+// the whole restart on "has no stop capability" before its removal is adopted.
+func TestRestartAllSkipsPendingRemovalOfUnstoppableDetachedService(t *testing.T) {
+	directory := t.TempDir()
+	marker := filepath.Join(directory, "running")
+	manager := NewManager(&config.Config{Project: "Detached", Services: map[string]config.Service{
+		"stack": {Supervision: config.SupervisionDetached, Lifecycle: config.LifecycleConfig{
+			Start: &config.Action{Command: "touch " + marker, Dir: directory, Shell: "/bin/sh"},
+		}},
+		"worker": {Command: "sleep 60"},
+	}})
+	defer manager.Shutdown()
+	if err := manager.StartService("stack"); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.StartService("worker"); err != nil {
+		t.Fatal(err)
+	}
+
+	// The reload drops the unstoppable detached resource: it stays running and
+	// becomes a pending removal until an explicit restart adopts it.
+	result, err := manager.ApplyConfig(&config.Config{Project: "Detached", Services: map[string]config.Service{
+		"worker": {Command: "sleep 60"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Pending) != 1 || result.Pending[0].Kind != "remove" {
+		t.Fatalf("pending = %#v", result.Pending)
+	}
+	if err := manager.RestartAll(); err != nil {
+		t.Fatalf("RestartAll aborted on an unstoppable pending removal: %v", err)
+	}
+	if _, exists := manager.GetService("stack"); exists {
+		t.Fatal("RestartAll did not adopt the pending removal")
+	}
+	if len(manager.PendingChanges()) != 0 {
+		t.Fatalf("pending changes left after RestartAll: %#v", manager.PendingChanges())
+	}
+	worker, ok := manager.GetService("worker")
+	if !ok || worker.Status() != config.StatusRunning {
+		t.Fatalf("worker was not restarted: %#v", worker)
+	}
+}
+
+func TestApplyConfigPendingAdoptionDoesNotAliasProvenance(t *testing.T) {
+	current := &config.Config{
+		Project:  "Test",
+		Services: map[string]config.Service{"api": {Command: "sleep 60"}},
+		ServiceMetadata: map[string]config.EffectiveService{
+			"api": {ID: "svc_api", SourceID: "src_api", SourceName: "api", DisplayName: "api"},
+		},
+		Provenance: []config.FieldProvenance{
+			{ServiceID: "svc_api", FieldPath: "command", ValueSourceID: "src_api"},
+			{ServiceID: "svc_other", FieldPath: "ports", ValueSourceID: "src_other"},
+		},
+	}
+	manager := NewManager(current)
+	defer manager.Shutdown()
+	if err := manager.StartService("api"); err != nil {
+		t.Fatal(err)
+	}
+
+	next := &config.Config{
+		Project:         "Test",
+		Services:        map[string]config.Service{"api": {Command: "sleep 61"}},
+		ServiceMetadata: current.ServiceMetadata,
+		Provenance: []config.FieldProvenance{
+			{ServiceID: "svc_api", FieldPath: "command", ValueSourceID: "src_api"},
+			{ServiceID: "svc_api", FieldPath: "ports", ValueSourceID: "src_api"},
+			{ServiceID: "svc_next", FieldPath: "env", ValueSourceID: "src_next"},
+		},
+	}
+	before := append([]config.FieldProvenance(nil), next.Provenance...)
+	if _, err := manager.ApplyConfig(next); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(next.Provenance, before) {
+		t.Fatalf("ApplyConfig rewrote the desired provenance: %#v", next.Provenance)
+	}
+	if err := manager.RestartService("api"); err != nil {
+		t.Fatal(err)
+	}
+	seen := make(map[string]bool)
+	for _, entry := range manager.Config().Provenance {
+		key := entry.ServiceID + "/" + entry.FieldPath
+		if seen[key] {
+			t.Fatalf("duplicate provenance after adoption: %q in %#v", key, manager.Config().Provenance)
+		}
+		seen[key] = true
+	}
+}
+
+func TestPendingRestartForgetsChangedPrerequisite(t *testing.T) {
+	directory := t.TempDir()
+	counter := filepath.Join(directory, "runs")
+	serviceConfig := func(serviceCommand, prepareCommand string) config.Service {
+		return config.Service{
+			Command: serviceCommand,
+			Actions: map[string]config.Action{
+				"prepare": {Command: prepareCommand, Dir: directory, Shell: "/bin/sh"},
+			},
+			BeforeStart: []config.Prerequisite{{Action: "prepare"}},
+		}
+	}
+	manager := NewManager(&config.Config{Project: "Test", Services: map[string]config.Service{
+		"api": serviceConfig("sleep 60", "printf 'a\\n' >> "+counter),
+	}})
+	defer manager.Shutdown()
+	if err := manager.StartService("api"); err != nil {
+		t.Fatal(err)
+	}
+	if got := countFileLines(t, counter); got != 1 {
+		t.Fatalf("prerequisite runs after first start = %d, want 1", got)
+	}
+
+	next := &config.Config{Project: "Test", Services: map[string]config.Service{
+		"api": serviceConfig("sleep 61", "printf 'b\\n' >> "+counter),
+	}}
+	if _, err := manager.ApplyConfig(next); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.RestartService("api"); err != nil {
+		t.Fatal(err)
+	}
+	if got := countFileLines(t, counter); got != 2 {
+		t.Fatalf("changed prerequisite did not run again after adoption: %d runs", got)
+	}
+}
+
+func countFileLines(t *testing.T, path string) int {
+	t.Helper()
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return strings.Count(string(contents), "\n")
 }
 
 func TestExitOnEndRequestsProjectTerminationAndStopsPeers(t *testing.T) {

@@ -1,0 +1,20 @@
+# Picked up by the root glob `services/*/kranz.yaml`.
+#
+# It include()s the same shared observability file as platform/kranz.yaml. The
+# second arrival at the identical canonical path is deduplicated, not loaded
+# twice.
+
+defaults:
+  shell: /bin/sh
+  env:
+    WORKER_LOCAL: "1"
+
+services:
+  worker:
+    description: Background worker gated on the shared log collector
+    command: printf 'worker ready\n'; sleep 3600
+    depends_on: [log-collector]
+    tags: [backend]
+
+include:
+  - path: ../../shared/observability/kranz.yaml

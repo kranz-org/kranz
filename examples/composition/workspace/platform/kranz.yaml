@@ -1,0 +1,20 @@
+# Autonomous platform config, pulled in by an explicit `include: path`.
+#
+# It references `catalog/api` by its display name because a bare `api` is
+# ambiguous across the two repositories. Its nested include of the
+# shared observability stack is one arm of a diamond; the other arm is
+# services/worker, so the shared file is loaded once.
+
+defaults:
+  shell: /bin/sh
+
+services:
+  gateway:
+    description: Edge gateway, depends on an included repository service
+    command: printf 'gateway ready\n'; sleep 3600
+    depends_on: [catalog/api]
+    ports: [18100]
+    tags: [edge]
+
+include:
+  - path: ../shared/observability/kranz.yaml

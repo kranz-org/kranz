@@ -1,0 +1,9 @@
+# Second hop. Because b includes a, and a is still on the active stack, this is
+# reported as a cycle rather than deduplicated.
+
+services:
+  b-service:
+    command: printf 'b\n'; sleep 3600
+
+include:
+  - path: ../a/kranz.yaml

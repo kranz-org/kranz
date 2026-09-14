@@ -1,0 +1,8 @@
+# First hop of the cycle. Its include closes the loop back to a.
+
+services:
+  a-service:
+    command: printf 'a\n'; sleep 3600
+
+include:
+  - path: ../b/kranz.yaml

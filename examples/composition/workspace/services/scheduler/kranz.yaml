@@ -1,0 +1,16 @@
+# Second file matched by the root glob, proving glob results are sorted and
+# every match is composed.
+#
+# `worker` is ambiguous (services/worker and checkout/worker), so the dependency
+# must name the display name `services/worker`. A bare `worker` would be a hard
+# error, not a silent pick.
+
+defaults:
+  shell: /bin/sh
+
+services:
+  scheduler:
+    description: Cron-like scheduler that waits for the worker
+    command: printf 'scheduler ready\n'; sleep 3600
+    depends_on: [services/worker]
+    tags: [backend]

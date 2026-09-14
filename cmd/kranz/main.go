@@ -101,6 +101,11 @@ func execute(args []string, stdout, stderr io.Writer) int {
 			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
 		}
 		return 0
+	case "config sources":
+		if err := runConfigSources(invocation.Globals, invocation.Args, stdout); err != nil {
+			return kranzcli.WriteError(stdout, stderr, invocation.Globals.Output, err)
+		}
+		return 0
 	case "doctor":
 		if err := runDoctor(invocation.Globals, invocation.Args, stdout); err != nil {
 			var requested requestedExitError
@@ -471,7 +476,7 @@ func runTUI(options kranzcli.GlobalOptions) (runErr error) {
 
 	cfg, err := config.Compose(config.LoadOptions{Directory: ".", Sources: options.ConfigPaths, Overrides: options.OverridePaths, FollowSymlinks: options.FollowSymlinks})
 	if err != nil {
-		if len(options.ConfigPaths) == 0 && strings.Contains(err.Error(), "config_not_found") {
+		if len(options.ConfigPaths) == 0 && errors.Is(err, config.ErrConfigNotFound) {
 			// Empty discovery preserves the supervisor picker; a discovered but
 			// invalid source remains a configuration error.
 			return runBareWithoutConfig(options)
@@ -479,14 +484,11 @@ func runTUI(options kranzcli.GlobalOptions) (runErr error) {
 		return &kranzcli.Error{Code: "invalid_config", Message: "load configuration", ExitCode: kranzcli.ExitConfig, Cause: err}
 	}
 	cfgPaths := append([]string(nil), cfg.Paths...)
-	for _, source := range cfg.Sources {
-		if source.Kind == config.SourceVirtualRoot {
-			// Preserve discovery as the runtime's request. Passing the expanded
-			// files would turn the first child into a different explicit root and
-			// would stop future configs from appearing on reload.
-			cfgPaths = nil
-			break
-		}
+	if config.HasVirtualRoot(cfg.Sources) {
+		// Preserve discovery as the runtime's request. Passing the expanded
+		// files would turn the first child into a different explicit root and
+		// would stop future configs from appearing on reload.
+		cfgPaths = nil
 	}
 	directory, err := os.Getwd()
 	if err != nil {

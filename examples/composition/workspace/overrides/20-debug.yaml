@@ -1,0 +1,15 @@
+# Composition-wide ordered override layer (higher priority). Applied after
+# 10-ports.yaml, so FEATURE_FLAG becomes "beta" and DEBUG is added. `null`
+# deletes a key that an earlier layer or the base set.
+
+services:
+  catalog/api:
+    env:
+      FEATURE_FLAG: beta
+      DEBUG: "1"
+  checkout/worker:
+    env:
+      LOG_LEVEL: debug
+  root-task:
+    env:
+      ROOT_LOCAL_OVERRIDE: null

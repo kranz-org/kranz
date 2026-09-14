@@ -1,0 +1,19 @@
+# Missing explicit include (negative example).
+#
+# An explicitly named file that does not exist is an error, unlike an empty
+# glob. The message carries the safely displayed relative path, never the
+# absolute one.
+#
+#     kranz -C examples/composition/negatives/missing-explicit config check
+#
+# Expected: an `explicit config "does-not-exist.yaml"` error with a
+# file-not-found cause.
+
+project: Missing Explicit Lab
+
+services:
+  root-service:
+    command: printf 'root\n'; sleep 3600
+
+include:
+  - path: does-not-exist.yaml

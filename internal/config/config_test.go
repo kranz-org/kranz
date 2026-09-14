@@ -1460,3 +1460,30 @@ func TestValidateRejectsAnActionGroupNamedAfterAService(t *testing.T) {
 		t.Errorf("a distinctly named group was rejected: %v", err)
 	}
 }
+
+// The supported-name predicate is the one membership check shared by discovery
+// and the watcher's discovery stamp. It must accept exactly the discoverable
+// names, in particular both Procfile spellings and both process-compose
+// extensions, while rejecting environment files discovery does not load.
+func TestIsConfigFileNameMatchesDiscoverySet(t *testing.T) {
+	t.Parallel()
+
+	supported := []string{
+		"kranz.yaml",
+		"kranz.yml",
+		"process-compose.yaml",
+		"process-compose.yml",
+		"Procfile.dev",
+		"Procfile",
+	}
+	for _, name := range supported {
+		if !IsConfigFileName(name) {
+			t.Errorf("IsConfigFileName(%q) = false, want true", name)
+		}
+	}
+	for _, name := range []string{".env", ".env.local", "docker-compose.yaml", "kranz.toml", "procfile", ""} {
+		if IsConfigFileName(name) {
+			t.Errorf("IsConfigFileName(%q) = true, want false", name)
+		}
+	}
+}

@@ -72,15 +72,12 @@ func (m *Manager) DeleteRun(target RunTarget, run uint32) (RunSummary, error) {
 }
 
 // RecordConfigReload marks a new configuration generation inside every
-// continuing service run. Services restarted by ApplyConfig get a new run and
-// therefore do not receive a marker that would imply process continuity.
-func (m *Manager) RecordConfigReload(generation uint64, restarted []string) {
-	restartedSet := make(map[string]bool, len(restarted))
-	for _, name := range restarted {
-		restartedSet[name] = true
-	}
+// continuing service run. A reload never cycles a running process, so every
+// service that has a run and is not stopped keeps its process and receives the
+// marker; an explicit restart reports its own lifecycle result instead.
+func (m *Manager) RecordConfigReload(generation uint64) {
 	for _, svc := range m.Services() {
-		if restartedSet[svc.Name] || svc.Run() == 0 || svc.Status() == config.StatusStopped {
+		if svc.Run() == 0 || svc.Status() == config.StatusStopped {
 			continue
 		}
 		svc.AppendLog(fmt.Sprintf("[Kranz] Config reloaded · generation %d · %s#%d", generation, svc.Name, svc.Run()))
@@ -108,12 +105,13 @@ type detachedLogFollower struct {
 }
 
 // ReloadResult summarizes the services changed by a live configuration reload.
+// Under the pending policy ApplyConfig never cycles a running process, so a
+// change to a running service is reported as pending rather than as a restart.
 type ReloadResult struct {
-	Added     []string
-	Removed   []string
-	Restarted []string
-	Updated   []string
-	Pending   []PendingChange
+	Added   []string
+	Removed []string
+	Updated []string
+	Pending []PendingChange
 }
 
 // PendingChange is a desired configuration change that was deliberately not
@@ -231,6 +229,38 @@ func (m *Manager) ApplyConfig(next *config.Config) (ReloadResult, error) {
 		if sameManagedServiceConfig(svc.Config, incoming) && name == nextName {
 			continue
 		}
+		// A detached resource lives outside Kranz. When its accepted definition
+		// declares no stop operation the ordinary restart path cannot cycle it,
+		// so a pending update would never be confirmable. Reload the definition
+		// in place, retaining observed state, instead of leaving dead pending.
+		// The gate is definition-based rather than CanStop: CanStop also encodes
+		// the current status, so a stopped or not-yet-observed resource that
+		// still declares a stop command would hot-apply a change that a restart
+		// could have confirmed.
+		if svc.Config.IsDetached() && incoming.IsDetached() && svc.Config.Lifecycle.Stop == nil {
+			replacement := m.newService(nextName, incoming)
+			replacement.CopyLogHistoryFrom(svc)
+			replacement.HealthHistory = svc.HealthHistory
+			replacement.RestoreState(svc.GetState(), svc.DesiredRunning())
+			m.mu.Lock()
+			delete(m.services, name)
+			m.services[nextName] = replacement
+			m.mu.Unlock()
+			if name != nextName {
+				// The clone already carries the desired definition. Drop the old
+				// display name only when it still refers to this identity, so a
+				// different service reusing that name keeps its own entry.
+				if acceptedIdentity, ok := accepted.ServiceMetadata[name]; ok && acceptedIdentity.ID == identity.ID {
+					delete(accepted.Services, name)
+					delete(accepted.ServiceMetadata, name)
+				}
+				accepted.ServiceOrder = managerAppendUnique(accepted.ServiceOrder, nextName)
+				retainManagerSource(accepted, currentConfig, identity.SourceID)
+				retainManagerProvenance(accepted, currentConfig, identity.ID)
+			}
+			result.Updated = append(result.Updated, nextName)
+			continue
+		}
 		if wasRunning {
 			delete(accepted.Services, nextName)
 			delete(accepted.ServiceMetadata, nextName)
@@ -345,6 +375,13 @@ func cloneManagerConfig(source *config.Config) *config.Config {
 	for name, metadata := range source.ServiceMetadata {
 		clone.ServiceMetadata[name] = metadata
 	}
+	// Copy slice fields that reconciliation rewrites in place. A bare header
+	// copy would let removeManagerProvenance filter through the source's
+	// backing array, silently rewriting the desired configuration it came from.
+	clone.Provenance = append([]config.FieldProvenance(nil), source.Provenance...)
+	clone.Sources = append([]config.ConfigSource(nil), source.Sources...)
+	clone.Diagnostics = append([]string(nil), source.Diagnostics...)
+	clone.CompositionDiagnostics = append([]config.CompositionDiagnostic(nil), source.CompositionDiagnostics...)
 	return &clone
 }
 
@@ -367,7 +404,10 @@ func managerAppendUnique(values []string, value string) []string {
 }
 
 // adoptPendingStopped installs desired definitions only after the ordinary
-// restart plan has stopped every affected process. The caller holds reloadMu.
+// restart plan has stopped every affected process. Adoption is matched by the
+// immutable ServiceID, never by display name: a rename and an add can share one
+// display name, and name-keyed bookkeeping would let either adoption erase the
+// other. The caller holds reloadMu.
 func (m *Manager) adoptPendingStopped(names []string) []string {
 	selected := make(map[string]bool, len(names))
 	for _, name := range names {
@@ -379,18 +419,35 @@ func (m *Manager) adoptPendingStopped(names []string) []string {
 		return names
 	}
 	accepted := cloneManagerConfig(m.cfg)
+	// Resolve running services by identity before any map entry is removed, so
+	// a pending change still finds the process it describes when two services
+	// currently share a display name.
+	servicesByID := make(map[string]*Service, len(m.services))
+	for name := range m.services {
+		servicesByID[serviceIdentity(accepted, name).ID] = m.services[name]
+	}
 	remaining := make([]PendingChange, 0, len(m.pendingReload))
-	translated := make([]string, 0, len(names))
-	translation := make(map[string]string)
+	// adopted groups every desired name produced for one selected runtime slot,
+	// so a rename and an add under the same old name both keep a service.
+	adopted := make(map[string][]string)
+	seenDesired := make(map[string]bool)
 	for _, change := range m.pendingReload {
 		if !selected[change.Name] {
 			remaining = append(remaining, change)
 			continue
 		}
-		old := m.services[change.Name]
-		delete(m.services, change.Name)
-		delete(accepted.Services, change.Name)
-		delete(accepted.ServiceMetadata, change.Name)
+		old := servicesByID[change.ServiceID]
+		oldName := change.Name
+		if old != nil {
+			oldName = old.Name
+		}
+		if old != nil && m.services[oldName] == old {
+			delete(m.services, oldName)
+		}
+		if acceptedIdentity, ok := accepted.ServiceMetadata[oldName]; ok && acceptedIdentity.ID == change.ServiceID {
+			delete(accepted.Services, oldName)
+			delete(accepted.ServiceMetadata, oldName)
+		}
 		removeManagerProvenance(accepted, change.ServiceID)
 		if change.Kind == "remove" {
 			continue
@@ -413,17 +470,29 @@ func (m *Manager) adoptPendingStopped(names []string) []string {
 		desiredIdentity := m.pendingDesired.ServiceMetadata[desiredName]
 		accepted.ServiceMetadata[desiredName] = desiredIdentity
 		retainManagerProvenance(accepted, m.pendingDesired, desiredIdentity.ID)
-		translation[change.Name] = desiredName
+		if !seenDesired[desiredName] {
+			seenDesired[desiredName] = true
+			adopted[change.Name] = append(adopted[change.Name], desiredName)
+		}
 	}
+	translated := make([]string, 0, len(names))
+	seenTranslated := make(map[string]bool)
 	for _, name := range names {
-		if mapped, ok := translation[name]; ok {
-			translated = append(translated, mapped)
-			continue
+		candidates := adopted[name]
+		if len(candidates) == 0 {
+			if _, exists := m.services[name]; exists {
+				candidates = []string{name}
+			}
 		}
-		if _, exists := m.services[name]; exists {
-			translated = append(translated, name)
+		for _, candidate := range candidates {
+			if seenTranslated[candidate] {
+				continue
+			}
+			seenTranslated[candidate] = true
+			translated = append(translated, candidate)
 		}
 	}
+	previous := m.cfg
 	if len(remaining) == 0 {
 		accepted = cloneManagerConfig(m.pendingDesired)
 	} else {
@@ -435,6 +504,7 @@ func (m *Manager) adoptPendingStopped(names []string) []string {
 		m.pendingDesired = nil
 	}
 	m.mu.Unlock()
+	m.forgetChangedPrerequisites(previous, accepted)
 	m.actions.ApplyConfig(accepted)
 	m.reconcileStatusMonitors(accepted)
 	m.reconcileDetachedLogs()
@@ -599,8 +669,6 @@ func (m *Manager) configSnapshot() *config.Config {
 	return m.cfg
 }
 
-// StartService starts one service after validating ports and dependencies.
-
 func (m *Manager) HasRunningServices() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -620,7 +688,6 @@ func (m *Manager) GetAllTags() []string {
 }
 
 // PortConflictError describes the verified owner of a required listening port.
-
 func (e *PortConflictError) Error() string {
 	return fmt.Sprintf("port %d is occupied by PID %d (%s)", e.Port, e.PID, e.Process)
 }

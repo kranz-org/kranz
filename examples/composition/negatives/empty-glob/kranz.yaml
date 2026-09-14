@@ -1,0 +1,17 @@
+# Empty glob (negative example).
+#
+# A glob with no matches is distinct from a missing explicit path: it fails with
+# its own `config_glob_empty` error, so a typo does not read as "nothing to do".
+#
+#     kranz -C examples/composition/negatives/empty-glob config check
+#
+# Expected: `config_glob_empty: pattern "nowhere/*/kranz.yaml" matched no files`.
+
+project: Empty Glob Lab
+
+include:
+  - glob: nowhere/*/kranz.yaml
+
+services:
+  root-service:
+    command: printf 'root\n'; sleep 3600

@@ -1,0 +1,7 @@
+# Deliberately invalid: replaces a mapping with a sequence.
+
+services:
+  api:
+    env:
+      - MODE
+      - base

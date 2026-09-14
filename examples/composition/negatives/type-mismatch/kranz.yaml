@@ -1,0 +1,24 @@
+# Incompatible override type (negative example).
+#
+# `env` is a mapping in the base but the override supplies a sequence. Kranz
+# rejects the structural type change instead of relying on decoder coercion, and
+# names the exact field path.
+#
+#     kranz -C examples/composition/negatives/type-mismatch config check
+#
+# Expected: `services.api.env: override type sequence is incompatible with
+# mapping`.
+
+project: Type Mismatch Lab
+
+defaults:
+  shell: /bin/sh
+
+overrides:
+  - bad-override.yaml
+
+services:
+  api:
+    command: printf 'api\n'; sleep 3600
+    env:
+      MODE: base

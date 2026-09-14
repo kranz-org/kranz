@@ -134,9 +134,6 @@ func orderMapping(mapping *yaml.Node, order []string) {
 	mapping.Content = ordered
 }
 
-// redactEnvironment replaces the value of every secret-looking environment
-// variable anywhere in the document. It walks the whole tree because env
-// mappings appear under defaults, services, action groups, and actions.
 // annotateProvenance writes the file that last set each leaf as a line comment,
 // so `config show --provenance` reads as the effective file plus its sources.
 func annotateProvenance(node *yaml.Node, path []string, sources map[string]string) {
@@ -235,15 +232,11 @@ func runConfigExplain(options kranzcli.GlobalOptions, args []string, stdout io.W
 	}
 	prefix := ""
 	if len(args) == 1 {
-		if _, ok := cfg.Services[args[0]]; !ok {
-			return &kranzcli.Error{
-				Code:     "service_not_found",
-				Message:  fmt.Sprintf("service %q was not found", args[0]),
-				Hint:     "Run `kranz services` to see what this project defines.",
-				ExitCode: kranzcli.ExitNotFound,
-			}
+		name, resolveErr := resolveSingleService(cfg, args[0])
+		if resolveErr != nil {
+			return resolveErr
 		}
-		prefix = "services." + args[0] + "."
+		prefix = "services." + name + "."
 	}
 
 	type entry struct {
@@ -302,12 +295,9 @@ func runConfigExplain(options kranzcli.GlobalOptions, args []string, stdout io.W
 	}
 	// Provenance is a question about layers. With one layer the answer is the
 	// same for every field, and printing it once per field buries that.
-	if len(cfg.Sources) <= 1 && len(paths) == 1 && !all {
-		display := configDisplayPaths(cfg)
-		path := filepath.Base(paths[0])
-		if len(display) == 1 {
-			path = display[0]
-		}
+	display := configDisplayPaths(cfg)
+	if len(display) == 1 && !all {
+		path := display[0]
 		_, _ = fmt.Fprintf(stdout, "This project has one configuration layer, so every field comes from it:\n\n  %s\n\n", path)
 		_, _ = fmt.Fprintf(stdout, "%d fields are set there. Run `kranz config explain --all` to list them,\n", len(entries))
 		_, _ = fmt.Fprintln(stdout, "or `kranz config show` to read the effective configuration.")

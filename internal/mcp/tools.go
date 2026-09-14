@@ -725,7 +725,7 @@ func (s *scope) reloadTool(_ context.Context, raw json.RawMessage) ResultEnvelop
 		return s.errorEnvelope(err)
 	}
 	project := s.api.Project()
-	return s.envelope(map[string]any{"generation": project.Generation, "loaded_at": project.LoadedAt, "added": result.Added, "removed": result.Removed, "updated": result.Updated, "restarted": result.Restarted})
+	return s.envelope(map[string]any{"generation": project.Generation, "loaded_at": project.LoadedAt, "added": result.Added, "removed": result.Removed, "updated": result.Updated})
 }
 
 func (s *scope) doctorTool(_ context.Context, raw json.RawMessage) ResultEnvelope {

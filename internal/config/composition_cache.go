@@ -38,6 +38,11 @@ func NewSourceCache() *SourceCache {
 	return &SourceCache{entries: make(map[string]cachedSource)}
 }
 
+// load returns the parsed configuration at path, reusing a previous parse when
+// the file and its companion dotenv are unchanged. basePath is the file whose
+// directory supplies the adjacent .env that loadFile expands the source with;
+// its stamp is part of the invalidation key so editing that dotenv alone still
+// rebuilds even when the source file itself is untouched.
 func (cache *SourceCache) load(path, basePath string) (*Config, error) {
 	if cache == nil {
 		return loadFile(path, basePath)

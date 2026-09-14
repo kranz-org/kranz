@@ -52,6 +52,8 @@ func (m *Model) View() string {
 		content = m.renderConfirmThemeSaveView()
 	case ModeThemes:
 		content = m.renderThemeView()
+	case ModeConfigMap:
+		content = m.renderConfigMapView()
 	case ModeRunList:
 		content = m.renderRunListView()
 	case ModeRunExport:

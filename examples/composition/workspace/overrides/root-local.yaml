@@ -1,0 +1,9 @@
+# Local override for the root file's own service. `overrides:` patches only the
+# services declared in kranz.yaml itself, before composition. A `null` deletes a
+# key that the base set.
+
+services:
+  root-task:
+    env:
+      ROOT_TASK_ONLY: null
+      ROOT_LOCAL_OVERRIDE: applied

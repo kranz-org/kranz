@@ -17,6 +17,8 @@ type processComposeFile struct {
 	Name        string                    `yaml:"name"`
 	Environment yaml.Node                 `yaml:"environment"`
 	Processes   map[string]processCompose `yaml:"processes"`
+	Include     yaml.Node                 `yaml:"include"`
+	Overrides   yaml.Node                 `yaml:"overrides"`
 }
 
 type processCompose struct {
@@ -87,6 +89,14 @@ func loadProcessCompose(data []byte, path string) (*Config, error) {
 	var source processComposeFile
 	if err := yaml.Unmarshal(data, &source); err != nil {
 		return nil, fmt.Errorf("parse Process Compose YAML: %w", err)
+	}
+	for field, value := range map[string]yaml.Node{
+		"include":   source.Include,
+		"overrides": source.Overrides,
+	} {
+		if nodeConfigured(value) {
+			return nil, fmt.Errorf("process-compose source is a terminal composition leaf and cannot declare %q", field)
+		}
 	}
 	absolutePath, err := filepath.Abs(path)
 	if err != nil {

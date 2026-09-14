@@ -1,0 +1,19 @@
+# Composition-wide ordered override layer (lower priority).
+#
+# These files are NOT referenced by `overrides:` in a config, because they patch
+# services that other sources contribute. Pass them explicitly, in order, with
+# paths relative to the composition root (-C):
+#
+#   kranz -C examples/composition/workspace \
+#     --override overrides/10-ports.yaml \
+#     --override overrides/20-debug.yaml \
+#     config show
+#
+# An override is a pure patch: it cannot declare defaults, includes, overrides,
+# or protected. A sequence replaces the base sequence.
+
+services:
+  catalog/api:
+    ports: [18111]
+    env:
+      FEATURE_FLAG: alpha

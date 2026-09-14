@@ -5,6 +5,7 @@ import (
 	"hash/fnv"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -16,6 +17,12 @@ import (
 // paths by mtime and size, and only re-parse when one of them actually
 // changed. An invalid file leaves the last known good runtime untouched.
 
+// configStamp is one watch target's cheap change signature. Modified and Size
+// have a different meaning per target kind, and the double meaning is
+// deliberate: a file records its modification time and size, while a directory
+// (a discovery scope) cannot answer either, so Modified holds a hash of its
+// relevant config entries and Size holds how many were seen. Both are only ever
+// compared to the same path's previous stamp, never to another target's.
 type configStamp struct {
 	Modified int64
 	Size     int64
@@ -90,16 +97,23 @@ func (l *Local) Reload(force bool) (ReloadResult, error) {
 	// while the newly composed definition is pending. Every surface must expose
 	// that accepted runtime graph, not a different desired graph.
 	l.cfg = l.manager.Config()
-	l.watchPaths = watchedConfigPaths(next.Paths, next.WatchPaths)
+	nextWatchPaths := watchedConfigPaths(next.Paths, next.WatchPaths)
+	l.watchPaths = nextWatchPaths
 	l.generation++
 	generation := l.generation
 	l.loadedAt = time.Now()
 	l.lastReloadErr = ""
 	l.cfgMu.Unlock()
-	l.manager.RecordConfigReload(generation, result.Restarted)
+	l.manager.RecordConfigReload(generation)
 	l.recordReloadTransition(generation, result)
-	if stamps, err := readConfigStamps(l.watchPathsSnapshot()); err == nil {
-		l.recordReloadStamps(stamps)
+	// The stamps read before composing are still current when the watch scope
+	// did not change, which is the ordinary case, so the second scan the reload
+	// used to run on every success is gone. A changed scope alone needs a fresh
+	// scan, and replacing the whole map keeps no stale path to compare against.
+	if !slices.Equal(watchPaths, nextWatchPaths) {
+		if fresh, err := readConfigStamps(nextWatchPaths); err == nil {
+			l.recordReloadStamps(fresh)
+		}
 	}
 	return result, nil
 }
@@ -138,33 +152,68 @@ func readConfigStamps(paths []string) (map[string]configStamp, error) {
 			continue
 		}
 		if err != nil {
-			return result, fmt.Errorf("stat watched path %s: %s", filepath.Base(path), strings.ReplaceAll(err.Error(), path, filepath.Base(path)))
+			return result, fmt.Errorf("stat watched path %s: %w", filepath.Base(path), redactPath(err, path))
 		}
 		if !info.IsDir() {
 			result[path] = configStamp{Modified: info.ModTime().UnixNano(), Size: info.Size()}
 			continue
 		}
-		hash := fnv.New64a()
-		var entries int64
-		err = filepath.WalkDir(path, func(entryPath string, entry os.DirEntry, walkErr error) error {
-			if walkErr != nil {
-				return walkErr
-			}
-			entryInfo, infoErr := entry.Info()
-			if infoErr != nil {
-				return infoErr
-			}
-			relative, _ := filepath.Rel(path, entryPath)
-			_, _ = fmt.Fprintf(hash, "%s\x00%d\x00%d\x00", relative, entryInfo.ModTime().UnixNano(), entryInfo.Size())
-			entries++
-			return nil
-		})
+		hash, entries, err := stampDiscoveryScope(path)
 		if err != nil {
-			return result, fmt.Errorf("scan discovery scope %s: %s", filepath.Base(path), strings.ReplaceAll(err.Error(), path, filepath.Base(path)))
+			return result, fmt.Errorf("scan discovery scope %s: %w", filepath.Base(path), redactPath(err, path))
 		}
-		result[path] = configStamp{Modified: int64(hash.Sum64()), Size: entries}
+		result[path] = configStamp{Modified: hash, Size: entries}
 	}
 	return result, nil
+}
+
+// stampDiscoveryScope hashes only the files discovery can actually load under a
+// scope. Nested directories are still walked, but an entry that is not a
+// supported config name is skipped before any stat, so a directory holding
+// thousands of unrelated files costs one directory read instead of one hash per
+// file.
+func stampDiscoveryScope(path string) (int64, int64, error) {
+	hash := fnv.New64a()
+	var entries int64
+	err := filepath.WalkDir(path, func(entryPath string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || !config.IsConfigFileName(entry.Name()) {
+			return nil
+		}
+		info, infoErr := entry.Info()
+		if infoErr != nil {
+			return infoErr
+		}
+		relative, _ := filepath.Rel(path, entryPath)
+		_, _ = fmt.Fprintf(hash, "%s\x00%d\x00%d\x00", relative, info.ModTime().UnixNano(), info.Size())
+		entries++
+		return nil
+	})
+	if err != nil {
+		return 0, 0, err
+	}
+	return int64(hash.Sum64()), entries, nil
+}
+
+// pathError keeps errors.Is working on the original error while presenting a
+// message with the watch path reduced to its base name, so a diagnostics line
+// never publishes an absolute project location.
+type pathError struct {
+	message string
+	cause   error
+}
+
+func (e *pathError) Error() string { return e.message }
+func (e *pathError) Unwrap() error { return e.cause }
+
+func redactPath(err error, path string) error {
+	if err == nil {
+		return nil
+	}
+	message := strings.ReplaceAll(err.Error(), path, filepath.Base(path))
+	return &pathError{message: message, cause: err}
 }
 
 func watchedConfigPaths(configPaths, auxiliaryPaths []string) []string {

@@ -1,0 +1,17 @@
+# Remote source (negative example).
+#
+# Only local sources are supported. A URL scheme or host is rejected before any
+# file is read, so Kranz never treats a network path as a configuration source.
+#
+#     kranz -C examples/composition/negatives/remote config check
+#
+# Expected: `remote config sources are not supported`.
+
+project: Remote Lab
+
+services:
+  root-service:
+    command: printf 'root\n'; sleep 3600
+
+include:
+  - path: https://example.invalid/team/kranz.yaml

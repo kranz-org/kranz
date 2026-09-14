@@ -1,0 +1,7 @@
+version: "0.5"
+name: Compatible leaf
+
+processes:
+  compose-worker:
+    command: printf 'process-compose leaf ready\n'; sleep 3600
+    working_dir: jobs

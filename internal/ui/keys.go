@@ -38,6 +38,7 @@ type KeyMap struct {
 	Freeze        key.Binding
 	Clear         key.Binding
 	Help          key.Binding
+	ConfigMap     key.Binding
 	ClearSearch   key.Binding
 	Kill          key.Binding
 	Skip          key.Binding
@@ -173,6 +174,10 @@ func DefaultKeyMap() KeyMap {
 		Help: key.NewBinding(
 			key.WithKeys("?"),
 			key.WithHelp("?", "help"),
+		),
+		ConfigMap: key.NewBinding(
+			key.WithKeys("m"),
+			key.WithHelp("m", "configuration map"),
 		),
 		ClearSearch: key.NewBinding(
 			key.WithKeys("esc"),

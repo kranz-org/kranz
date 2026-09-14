@@ -1,0 +1,18 @@
+# Override declaring reserved sections (negative example).
+#
+# An override layer is a pure patch. It may not pull in defaults, more includes,
+# nested overrides, or a protected policy, because those change composition
+# rather than a value. Kranz rejects the layer by name.
+#
+#     kranz -C examples/composition/negatives/forbidden-override config check
+#
+# Expected: `override files cannot declare defaults`.
+
+project: Forbidden Override Lab
+
+overrides:
+  - bad-override.yaml
+
+services:
+  api:
+    command: printf 'api\n'; sleep 3600

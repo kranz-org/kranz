@@ -1,0 +1,12 @@
+# Local override for the catalog source. It is resolved relative to THIS file
+# (repositories/catalog/kranz.yaml) and targets the catalog's own `api` by its
+# raw name, because at this stage only catalog services exist.
+#
+# A composition-wide override, by contrast, would target the display name
+# `catalog/api` and be passed with `--override`.
+
+services:
+  api:
+    ports: [18121]
+    env:
+      FEATURE_FLAG: catalog-local

@@ -55,6 +55,9 @@ func TestReportReloadExposesPendingChanges(t *testing.T) {
 	if !decoded.Changed || len(decoded.Pending) != 1 || decoded.Pending[0].ServiceID != "svc_api" {
 		t.Fatalf("JSON pending reload = %#v", decoded)
 	}
+	if strings.Contains(output.String(), `"restarted"`) {
+		t.Fatalf("reload JSON still advertises the removed restarted field: %s", output.String())
+	}
 	output.Reset()
 	if err := reportReload(&output, kranzcli.GlobalOptions{}, "runtime", result); err != nil {
 		t.Fatal(err)

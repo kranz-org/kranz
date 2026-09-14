@@ -1,0 +1,15 @@
+# Catalog root.
+#
+# This file makes the catalog directory itself loadable. Running Kranz here
+# composes the workspace scenario instead of walking the whole tree with
+# discovery. Discovery has no ignore rules by design, so without this root file
+# it would also pick up the deliberately broken configs under negatives/.
+#
+# Each scenario still stands alone under its own -C path; see README.md.
+
+project: Composition Catalog
+runtime:
+  name: composition-catalog
+
+include:
+  - path: workspace/kranz.yaml

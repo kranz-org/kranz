@@ -62,6 +62,47 @@ const (
 	SourceOverride      ConfigSourceKind = "override"
 )
 
+// Label returns the human-readable name of a source kind. It is defined once
+// so every delivery surface names the same kind identically.
+func (k ConfigSourceKind) Label() string {
+	switch k {
+	case SourceExplicit:
+		return "explicit"
+	case SourceGlob:
+		return "glob"
+	case SourceDiscovery:
+		return "discovered"
+	case SourceNestedInclude:
+		return "include"
+	case SourceVirtualRoot:
+		return "virtual root"
+	case SourceOverride:
+		return "override"
+	default:
+		if k == "" {
+			return "explicit"
+		}
+		return string(k)
+	}
+}
+
+// HasVirtualRoot reports whether a resolved source list came from discovery
+// with no root file, so the sources hang off a synthetic virtual root rather
+// than a real file. It is the one rule behind the CLI's discovery request and
+// the TUI's session paths.
+func HasVirtualRoot(sources []ConfigSource) bool {
+	for _, source := range sources {
+		if source.IsVirtualRoot() {
+			return true
+		}
+	}
+	return false
+}
+
+// IsVirtualRoot reports whether the source is the synthetic root discovery
+// creates when no root file exists.
+func (s ConfigSource) IsVirtualRoot() bool { return s.Kind == SourceVirtualRoot }
+
 // ConfigSource describes one canonical input without exposing its absolute
 // path through normal user-facing serialization.
 type ConfigSource struct {

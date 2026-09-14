@@ -1,0 +1,8 @@
+# Deliberately invalid: an override trying to declare defaults.
+
+defaults:
+  shell: /bin/sh
+
+services:
+  api:
+    command: changed

@@ -56,23 +56,29 @@ func (i Invocation) Command() string { return PathString(i.CommandPath) }
 func Parse(tree *Command, args []string) (Invocation, error) {
 	invocation := Invocation{Globals: globalOptionsFromEnvironment()}
 	configFromEnvironment := len(invocation.Globals.ConfigPaths) > 0
+	overrideFromEnvironment := len(invocation.Globals.OverridePaths) > 0
 	current := tree
 	commandStarted := false
 
 	for index := 0; index < len(args); index++ {
 		arg := args[index]
-		if arg == "--follow-symlinks" {
-			invocation.Globals.FollowSymlinks = true
-			continue
-		}
 		if value, consumed, recognized, err := globalValue(args, index); recognized {
 			if err != nil {
 				return Invocation{}, err
 			}
 			index += consumed
+			// An explicit layer flag replaces the environment list it shares a
+			// meaning with, exactly as -f replaces KRANZ_CONFIG. Supplementing
+			// would make `--override prod.yaml` silently keep the overrides the
+			// environment named, which is not what a caller typing the flag asked
+			// for.
 			if configFromEnvironment && (arg == "-f" || arg == "--config" || strings.HasPrefix(arg, "--config=")) {
 				invocation.Globals.ConfigPaths = nil
 				configFromEnvironment = false
+			}
+			if overrideFromEnvironment && (arg == "--override" || strings.HasPrefix(arg, "--override=")) {
+				invocation.Globals.OverridePaths = nil
+				overrideFromEnvironment = false
 			}
 			if err := applyGlobal(&invocation.Globals, arg, value); err != nil {
 				return Invocation{}, err
@@ -172,8 +178,11 @@ func globalOptionsFromEnvironment() GlobalOptions {
 
 func globalValue(args []string, index int) (value string, consumed int, recognized bool, err error) {
 	arg := args[index]
-	for _, option := range []string{"-f", "--config", "--override", "-C", "--directory", "-p", "--project", "--output"} {
+	for _, option := range []string{"-f", "--config", "--override", "--follow-symlinks", "-C", "--directory", "-p", "--project", "--output"} {
 		if arg == option {
+			if option == "--follow-symlinks" {
+				return "true", 0, true, nil
+			}
 			if index+1 >= len(args) {
 				return "", 0, true, usageError("missing_option_value", fmt.Sprintf("%s requires a value", arg))
 			}
@@ -193,12 +202,32 @@ func globalValue(args []string, index int) (value string, consumed int, recogniz
 	return "", 0, false, nil
 }
 
+// parseBooleanFlagValue accepts only the spellings the --follow-symlinks error
+// message promises. strconv.ParseBool would also take 1/0, t/f, and mixed-case
+// variants, which leaves the message narrower than the real grammar.
+func parseBooleanFlagValue(value string) (bool, bool) {
+	switch value {
+	case "true":
+		return true, true
+	case "false":
+		return false, true
+	default:
+		return false, false
+	}
+}
+
 func applyGlobal(options *GlobalOptions, spelling, value string) error {
 	switch {
 	case spelling == "-f" || spelling == "--config" || strings.HasPrefix(spelling, "--config="):
 		options.ConfigPaths = append(options.ConfigPaths, value)
 	case spelling == "--override" || strings.HasPrefix(spelling, "--override="):
 		options.OverridePaths = append(options.OverridePaths, value)
+	case spelling == "--follow-symlinks" || strings.HasPrefix(spelling, "--follow-symlinks="):
+		enabled, ok := parseBooleanFlagValue(value)
+		if !ok {
+			return usageError("invalid_option_value", fmt.Sprintf("invalid --follow-symlinks value %q (expected a boolean value (true or false))", value))
+		}
+		options.FollowSymlinks = enabled
 	case spelling == "-C" || spelling == "--directory" || strings.HasPrefix(spelling, "--directory="):
 		options.Directory, options.DirectoryExplicit = value, true
 	case spelling == "-p" || spelling == "--project" || strings.HasPrefix(spelling, "--project="):

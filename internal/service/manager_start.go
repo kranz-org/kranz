@@ -12,6 +12,7 @@ import (
 // Starting services: one service, a selection, a tag, or everything, with the
 // dependency graph expanded and prerequisites run before each start.
 
+// StartService starts one service after validating ports and dependencies.
 func (m *Manager) StartService(name string) error {
 	return m.startService(context.Background(), name, false)
 }
@@ -152,7 +153,6 @@ func (m *Manager) startService(ctx context.Context, name string, recovery bool) 
 
 // alreadyRunning reports states in which a detached start is a no-op, so that
 // prerequisites are not run again for a resource that is already up.
-
 func alreadyRunning(status config.ServiceStatus) bool {
 	return status == config.StatusRunning || status == config.StatusUnhealthy
 }
@@ -210,8 +210,7 @@ func (m *Manager) startDetachedService(ctx context.Context, svc *Service) error 
 	return nil
 }
 
-// StopService gracefully stops one service and releases its process group.
-
+// StartAll starts every enabled service in dependency order.
 func (m *Manager) StartAll() error {
 	return m.StartServices(m.enabledServiceNames())
 }
@@ -219,7 +218,6 @@ func (m *Manager) StartAll() error {
 // enabledServiceNames lists the services a "start everything" operation may
 // touch. A disabled service is excluded: it remains startable by name, which is
 // the difference between hidden and manual.
-
 func (m *Manager) enabledServiceNames() []string {
 	cfg := m.configSnapshot()
 	names := make([]string, 0, len(cfg.Services))
@@ -232,14 +230,12 @@ func (m *Manager) enabledServiceNames() []string {
 }
 
 // StartAllContext starts all services and lets callers cancel readiness waits.
-
 func (m *Manager) StartAllContext(ctx context.Context) error {
 	return m.StartServicesContext(ctx, m.enabledServiceNames())
 }
 
 // StartServices starts the requested services and any dependencies they require.
 // Services outside that dependency closure are left untouched.
-
 func (m *Manager) StartServices(names []string) error {
 	return m.StartServicesContext(context.Background(), names)
 }
@@ -247,7 +243,6 @@ func (m *Manager) StartServices(names []string) error {
 // ForceStartServices starts exactly the requested stopped services without
 // expanding or waiting for dependencies. Normal port and process ownership
 // checks still apply.
-
 func (m *Manager) ForceStartServices(names []string) error {
 	return m.ForceStartServicesContext(context.Background(), names)
 }
@@ -283,7 +278,6 @@ func (m *Manager) ForceStartServicesContext(ctx context.Context, names []string)
 
 // StartServicesContext starts a dependency closure and stops launching new
 // processes as soon as the context is canceled.
-
 func (m *Manager) StartServicesContext(ctx context.Context, names []string) error {
 	order, err := m.topologicalSort()
 	if err != nil {
@@ -324,7 +318,6 @@ type pendingStartIntent struct {
 // queuePendingStarts exposes the complete dependency closure before the first
 // dependency gate blocks. DesiredRunning is already the lifecycle source of
 // truth, so the UI can render this intent without inventing another state.
-
 func (m *Manager) queuePendingStarts(selected map[string]bool) []pendingStartIntent {
 	queued := make([]pendingStartIntent, 0, len(selected))
 	for name := range selected {
@@ -394,8 +387,22 @@ func (m *Manager) StartByTags(tags []string) error {
 	return errors.Join(startErrors...)
 }
 
-// StopAll stops every service in reverse dependency order.
+// stoppableDuringRestart reports whether a restart plan should stop the named
+// service before adopting pending changes. A service with a pending removal
+// that cannot be stopped must be left running: StopService would return "has no
+// stop capability" and abort the whole plan before adoption, while adoption is
+// what forgets the removed resource anyway. Both RestartServices and RestartAll
+// share this predicate so the two paths cannot diverge.
+func (m *Manager) stoppableDuringRestart(name string) bool {
+	change, pending := m.PendingChangeFor(name)
+	if !pending || change.Kind != "remove" {
+		return true
+	}
+	svc, ok := m.GetService(name)
+	return !ok || svc.CanStop()
+}
 
+// RestartService restarts a service and all transitive dependents.
 func (m *Manager) RestartService(name string) error {
 	return m.RestartServicesContext(context.Background(), []string{name})
 }
@@ -440,10 +447,8 @@ func (m *Manager) RestartServicesContext(ctx context.Context, names []string) er
 
 	// Stop dependents before their dependencies.
 	for i := len(affected) - 1; i >= 0; i-- {
-		if change, pending := m.PendingChangeFor(affected[i]); pending && change.Kind == "remove" {
-			if svc, ok := m.GetService(affected[i]); ok && !svc.CanStop() {
-				continue
-			}
+		if !m.stoppableDuringRestart(affected[i]) {
+			continue
 		}
 		if err := m.StopService(affected[i]); err != nil {
 			return fmt.Errorf("stop service %q: %w", affected[i], err)
@@ -488,7 +493,6 @@ func (m *Manager) RestartServicesContext(ctx context.Context, names []string) er
 }
 
 // RestartAll restarts only services that were active when the operation began.
-
 func (m *Manager) RestartAll() error {
 	return m.RestartAllContext(context.Background())
 }
@@ -508,10 +512,11 @@ func (m *Manager) RestartAllContext(ctx context.Context) error {
 		}
 	}
 	for i := len(order) - 1; i >= 0; i-- {
-		if running[order[i]] {
-			if err := m.StopService(order[i]); err != nil {
-				return err
-			}
+		if !running[order[i]] || !m.stoppableDuringRestart(order[i]) {
+			continue
+		}
+		if err := m.StopService(order[i]); err != nil {
+			return err
 		}
 	}
 	runningNames := make([]string, 0, len(running))
@@ -546,8 +551,6 @@ func (m *Manager) RestartAllContext(ctx context.Context) error {
 	}
 	return nil
 }
-
-// GetAffectedServices returns the restart target followed by transitive dependents.
 
 func (m *Manager) waitForReadiness(ctx context.Context, name string, timeout time.Duration) bool {
 	svc, ok := m.GetService(name)

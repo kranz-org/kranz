@@ -1,0 +1,29 @@
+# Symlink policy.
+#
+# Discovery does NOT follow symlinks by default; an explicitly named include of
+# a symlink is always honored because the user asked for that exact path. Opt in
+# to following links during discovery with `--follow-symlinks`.
+#
+#     # Default: explicit-link resolves to real/kranz.yaml, the linked directory
+#     # under discover-here is skipped, and explicit-service is the only
+#     # included service (next to root-service).
+#     kranz -C examples/composition/symlinks config check
+#
+#     # Opt-in: discovery also finds real/kranz.yaml through discover-here/linked,
+#     # then canonical-path deduplication keeps it to one load.
+#     kranz -C examples/composition/symlinks --follow-symlinks config check
+
+project: Symlink Lab
+
+defaults:
+  shell: /bin/sh
+
+include:
+  - path: explicit-link.yaml
+  - discover:
+      root: discover-here
+      max_depth: 1
+
+services:
+  root-service:
+    command: printf 'root ready\n'; sleep 3600
