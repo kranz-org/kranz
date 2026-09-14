@@ -14,6 +14,7 @@ Start from the repository root after building or installing Kranz.
   <a class="example-card" href="./examples/lifecycle"><strong>Detached lifecycle</strong>Start, stop, observe, and reconnect external resources safely.</a>
   <a class="example-card" href="./examples/prerequisites"><strong>Prerequisites</strong>Migrations and setup that must finish before a service starts.</a>
   <a class="example-card" href="./examples/process-compose"><strong>Process Compose</strong>Open an existing compatible configuration directly.</a>
+  <a class="example-card" href="./examples/composition"><strong>Configuration composition</strong>Combine autonomous native, Procfile, and Process Compose sources and inspect the result.</a>
   <a class="example-card" href="./examples/full-stack"><strong>Full dependency graph</strong>Two APIs, a gateway, a worker, health gates, and recovery.</a>
   <a class="example-card" href="./examples/runtime-ports"><strong>Runtime ports</strong>See how Kranz discovers listeners from processes and children.</a>
   <a class="example-card" href="./examples/mcp-shared-runtime"><strong>MCP shared runtime</strong>Prove that CLI and MCP operate one live session and one action-run identity.</a>
@@ -29,6 +30,7 @@ Start from the repository root after building or installing Kranz.
 | Docker/SSH-style resources that survive Kranz | [Detached lifecycle](./examples/lifecycle) |
 | Work that must succeed before a service starts | [Prerequisites](./examples/prerequisites) |
 | Whether your existing Process Compose file works | [Process Compose](./examples/process-compose) |
+| How several repositories become one explainable project | [Configuration composition](./examples/composition) |
 | Dependency fan-out, fan-in, health, and recovery | [Full stack](./examples/full-stack) |
 | Declared, detected, stale, and dynamic ports | [Runtime ports](./examples/runtime-ports) |
 | A coding agent joining the runtime you already use | [MCP shared runtime](./examples/mcp-shared-runtime) |

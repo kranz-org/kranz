@@ -84,6 +84,7 @@ export default defineConfig({
           { text: 'Detached lifecycle', link: '/examples/lifecycle' },
           { text: 'Prerequisites', link: '/examples/prerequisites' },
           { text: 'Process Compose', link: '/examples/process-compose' },
+          { text: 'Configuration composition', link: '/examples/composition' },
           { text: 'Full dependency graph', link: '/examples/full-stack' },
           { text: 'Runtime ports', link: '/examples/runtime-ports' },
           { text: 'MCP shared runtime', link: '/examples/mcp-shared-runtime' }

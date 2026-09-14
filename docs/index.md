@@ -72,6 +72,7 @@ Start with [What is Kranz?](./guide/what-is-kranz), then follow the
 | A few shell commands | [Procfile quickstart](./examples/procfile) |
 | Services with dependencies and health checks | [Native YAML example](./examples/native) |
 | A `process-compose.yaml` | [Process Compose example](./examples/process-compose) |
+| Several repositories or configuration formats | [Configuration composition catalog](./examples/composition) |
 | Docker Compose or remote infrastructure | [Detached lifecycle example](./examples/lifecycle) |
 | A larger API/worker graph | [Full-stack example](./examples/full-stack) |
 | Migrations or setup that must run first | [Prerequisites example](./examples/prerequisites) |
