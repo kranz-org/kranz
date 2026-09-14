@@ -103,8 +103,57 @@ protected:
 A service keeps its short name while it is unique. When two files declare the
 same name, both are qualified by the smallest useful directory prefix, for
 example `catalog/api` and `checkout/api`, and `kranz config check` reports a
-`display_name_qualified` diagnostic. Selectors and `depends_on` then use the
-qualified name; a bare `api` fails and lists the choices.
+`display_name_qualified` diagnostic.
+
+Dependencies are resolved after those display names have been allocated. The
+source that declares the reference is part of the lookup:
+
+```yaml
+# repositories/checkout/kranz.yaml
+services:
+  api:
+    command: ./serve
+  worker:
+    command: ./work
+    depends_on: [api]
+```
+
+If another included file also declares `api`, the two services may be displayed
+as `catalog/api` and `checkout/api`. The `worker` dependency above still means
+the `api` from the checkout file. Kranz rewrites it to `checkout/api` in the
+effective graph; the author does not need to predict the name allocator's
+result.
+
+If the declaring source has no local match, a bare reference may cross source
+boundaries only when the original name is globally unique. For example, a
+service in one file may use `depends_on: [log-collector]` when exactly one
+composed source declares `log-collector`. If two external sources declare that
+name, composition fails as ambiguous and lists their qualified display names.
+Kranz never chooses one based on include or discovery order.
+
+An outer source can disambiguate an intentional cross-source dependency with
+the effective qualified name:
+
+```yaml
+services:
+  root-task:
+    command: ./run-task
+    depends_on: [checkout/api]
+```
+
+Qualified display names are derived from the current composition. Adding or
+removing a colliding source can change them, so prefer a same-source short name
+when the dependency belongs to that autonomous configuration. After every
+reload Kranz allocates names and resolves references again; an obsolete or
+newly ambiguous reference rejects the new configuration instead of silently
+retargeting the dependency.
+
+The same rules apply to keys in `dependency_conditions` and to service
+references in `before_start`. Internally, each service also has a stable ID
+derived from its defining source and original key. That ID lets reload
+reconciliation recognize the same running service across a display-name
+change; display names remain the user-facing keys of the resolved dependency
+graph.
 
 ## Check the result
 

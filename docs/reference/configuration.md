@@ -164,6 +164,22 @@ stable internal ID, so later qualification of a display name cannot transfer a
 live process to another service. An ambiguous short selector reports the
 qualified display names; the display name and stable ID are always unambiguous.
 
+Service references are resolved only after display-name allocation. A bare
+`depends_on` name first resolves within the file that declares it, so an
+autonomous file can keep `depends_on: [api]` even when another discovered file
+also exports `api`. With no local match, a bare name resolves to the one global
+service with that original name. Multiple global matches are an error that
+lists the qualified choices; zero matches are reported by dependency
+validation. Kranz does not use source discovery order to break a tie.
+
+The resolver rewrites `depends_on`, `dependency_conditions` keys, and
+`before_start[].service` to effective display names together. A qualified
+display name can explicitly select a cross-source service, but it is derived
+from the current set of sources and can change when a new collision appears.
+Reload therefore resolves the authored references again and rejects an
+ambiguous or missing new graph while stable service IDs preserve process
+identity across display-name changes.
+
 ### Override layers
 
 `overrides` is distinct from composition. Layers apply left to right to the

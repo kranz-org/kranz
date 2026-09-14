@@ -1,0 +1,21 @@
+# Ambiguous cross-source dependency (negative example).
+#
+# The root service has no local `api`. Both discovered child configs export
+# that original name, so Kranz cannot bind this dependency without guessing.
+#
+#     kranz -C examples/composition/negatives/ambiguous-dependency config check
+#
+# Expected: `reference "api" is ambiguous` with `alpha/api` and `beta/api` as
+# the qualified choices. Discovery order never chooses the target.
+
+project: Ambiguous Dependency Lab
+
+include:
+  - discover:
+      root: services
+      max_depth: 2
+
+services:
+  reporter:
+    command: printf 'reporter\n'; sleep 3600
+    depends_on: [api]

@@ -1,0 +1,5 @@
+project: Beta Service
+
+services:
+  api:
+    command: printf 'beta api\n'; sleep 3600

@@ -64,7 +64,11 @@ protected:
 
 services:
   root-task:
-    description: A root-owned service, kept separate from included repositories
+    description: A root-owned service with an explicitly qualified cross-source dependency
     command: printf 'root task ready\n'; sleep 3600
+    # This source has no local `api`, while two included repositories export
+    # one. A bare `api` would be ambiguous, so select the intended effective
+    # service explicitly.
+    depends_on: [checkout/api]
     env:
       ROOT_TASK_ONLY: "yes"

@@ -1,0 +1,5 @@
+project: Alpha Service
+
+services:
+  api:
+    command: printf 'alpha api\n'; sleep 3600

@@ -28,5 +28,8 @@ services:
     env:
       SERVICE_KIND: api
   worker:
-    description: Checkout worker
+    description: Checkout worker using a source-local dependency despite the api name collision
     command: printf 'checkout worker ready\n'; sleep 3600
+    # `api` resolves within this file first. In the composed graph this becomes
+    # `checkout/api`, not the other repository's `catalog/api`.
+    depends_on: [api]

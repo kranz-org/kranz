@@ -95,6 +95,18 @@ func TestCompositionWorkspaceExample(t *testing.T) {
 	if _, leaked := cfg.Services["catalog/api"].Env["WORKER_LOCAL"]; leaked {
 		t.Fatal("worker defaults leaked into the catalog source")
 	}
+	// A short dependency resolves within its declaring source before global
+	// lookup, while a root-level reference can name a qualified effective
+	// service explicitly.
+	if got := cfg.Services["checkout/worker"].DependsOn; len(got) != 1 || got[0] != "checkout/api" {
+		t.Fatalf("checkout local dependency = %v", got)
+	}
+	if got := cfg.Services["root-task"].DependsOn; len(got) != 1 || got[0] != "checkout/api" {
+		t.Fatalf("root qualified dependency = %v", got)
+	}
+	if got := cfg.Services["services/worker"].DependsOn; len(got) != 1 || got[0] != "log-collector" {
+		t.Fatalf("unique cross-source dependency = %v", got)
+	}
 	// The diamond shared by platform and services/worker was deduplicated.
 	foundDedupe := false
 	for _, diagnostic := range cfg.CompositionDiagnostics {
@@ -195,6 +207,7 @@ func TestCompositionNegativeExamples(t *testing.T) {
 		{"missing-explicit", "explicit config"},
 		{"type-mismatch", "incompatible"},
 		{"forbidden-override", "cannot declare defaults"},
+		{"ambiguous-dependency", "reference \"api\" is ambiguous"},
 	}
 	for _, testCase := range cases {
 		_, err := Compose(LoadOptions{Directory: filepath.Join(compositionExamples, "negatives", testCase.name)})
