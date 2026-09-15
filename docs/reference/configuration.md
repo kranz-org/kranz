@@ -101,8 +101,12 @@ defaults:
   env_files: [.env.shared]
 ```
 
-Relative `dir` values resolve against the directory of the configuration file,
-not the directory you started Kranz in.
+If `defaults.dir` is omitted, it acts as `.`: the directory containing this
+configuration file. A service or action group without `dir` inherits that
+directory. Lifecycle commands and actions inherit their owner's directory
+unless they set their own `dir`. Relative `dir` values at every level resolve
+against the file that declares them, including when that file is included in
+another config.
 
 ## Composition
 
@@ -446,8 +450,9 @@ services:
     shell: /bin/bash
 ```
 
-Relative directories resolve against the configuration file. Details shows the
-path relative to where Kranz is running.
+Relative directories resolve against the configuration file. An omitted `dir`
+inherits `defaults.dir`, which is `.` beside that file if also omitted. Details
+shows the path relative to where Kranz is running.
 
 ### env, env_files
 

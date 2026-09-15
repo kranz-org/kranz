@@ -110,6 +110,61 @@ services:
 	}
 }
 
+func TestComposeIncludedSourceWithOmittedDirUsesItsOwnDirectory(t *testing.T) {
+	root := t.TempDir()
+	childDir := filepath.Join(root, "repos", "catalog")
+	writeCompositionFile(t, filepath.Join(root, "kranz.yaml"), `
+project: workspace
+defaults:
+  dir: root-work
+include: [{path: repos/catalog/kranz.yaml}]
+services:
+  gateway: {command: ./serve}
+`)
+	writeCompositionFile(t, filepath.Join(childDir, "kranz.yaml"), `
+project: catalog
+services:
+  docs:
+    command: ./serve
+    actions:
+      install: {command: ./install}
+      build: {command: ./build, dir: output}
+action_groups:
+  maintenance:
+    actions:
+      refresh: {command: ./refresh}
+`)
+
+	cfg, err := Compose(LoadOptions{Directory: root, Sources: []string{filepath.Join(root, "kranz.yaml")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantChildDir := filepath.Join(canonicalRoot, "repos", "catalog")
+	docs := cfg.Services["docs"]
+	if got := docs.Dir; got != wantChildDir {
+		t.Fatalf("included service dir = %q, want %q", got, wantChildDir)
+	}
+	if got := docs.Lifecycle.Start.Dir; got != wantChildDir {
+		t.Fatalf("included start dir = %q, want %q", got, wantChildDir)
+	}
+	if got := docs.Actions["install"].Dir; got != wantChildDir {
+		t.Fatalf("inherited action dir = %q, want %q", got, wantChildDir)
+	}
+	if got, want := docs.Actions["build"].Dir, filepath.Join(wantChildDir, "output"); got != want {
+		t.Fatalf("explicit action dir = %q, want %q", got, want)
+	}
+	if got := cfg.ActionGroups["maintenance"].Actions["refresh"].Dir; got != wantChildDir {
+		t.Fatalf("included group action dir = %q, want %q", got, wantChildDir)
+	}
+	if got, want := cfg.Services["gateway"].Dir, filepath.Join(canonicalRoot, "root-work"); got != want {
+		t.Fatalf("root default dir = %q, want %q", got, want)
+	}
+}
+
 func TestComposeDeduplicatesDiamondAndRejectsCycle(t *testing.T) {
 	root := t.TempDir()
 	writeCompositionFile(t, filepath.Join(root, "kranz.yaml"), `project: root

@@ -1216,6 +1216,11 @@ func resolveConfigPaths(cfg *Config, base string) {
 		}
 		return filepath.Clean(filepath.Join(base, path))
 	}
+	// An autonomous source's omitted directory belongs to that source, not the
+	// composition root. Resolve it before applyDefaults fills service/action dirs.
+	if cfg.Defaults.Dir == "" {
+		cfg.Defaults.Dir = "."
+	}
 	cfg.Defaults.Dir = resolve(cfg.Defaults.Dir)
 	for name, service := range cfg.Services {
 		service.Dir = resolve(service.Dir)

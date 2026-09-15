@@ -19,6 +19,10 @@ kranz -f 'repositories/*/kranz.yaml'
 
 Each file keeps its own `project`, `ui`, `defaults`, adjacent `.env`, and
 relative paths. Only its services and action groups join the project.
+If a file omits `defaults.dir`, Kranz treats it as `.` beside that file. Services
+and action groups without `dir` use that directory, and their actions inherit it
+unless an action sets its own `dir`. The parent config's directory does not
+replace this default for included files.
 
 ## Include other configurations
 
