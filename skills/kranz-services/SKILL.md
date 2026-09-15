@@ -1,6 +1,6 @@
 ---
 name: kranz-services
-description: Use an existing Kranz project runtime before starting a dev server, worker, Docker stack, migration, build, or test; also use it to inspect service state, logs, ports, actions, or an already-running command. If no matching Kranz runtime exists, leave quietly and use the project's normal workflow.
+description: Use existing Kranz runtimes via MCP to inspect services, logs, ports, actions, and plans, or to start, stop, restart, and handle confirmation tokens. Also use before starting a dev server, worker, Docker stack, build, test, or migration. If no matching runtime exists, use the project's normal workflow.
 ---
 
 # Work with services through Kranz
@@ -93,7 +93,10 @@ Before a build, test, migration, or other project command:
 
 Before `action_run`, inspect the action metadata:
 
-- `confirm: true` means the operation is destructive; obtain confirmation.
+- `confirm: true` means the action requires a plan-bound confirmation token.
+  Check that the user has authorized the action and its affected scope, then
+  follow the MCP confirmation flow below. Do not ask for a second approval when
+  the request already authorizes it.
 - `interactive: true` requires a real terminal and should be run by the user in
   the TUI or terminal CLI.
 
@@ -103,6 +106,27 @@ plan or mutation result and report every affected service.
 MCP `up` creates a background runtime with no services and requires explicit
 authorization. It does not happen when the MCP server connects. MCP `down`
 only stops a runtime that the same MCP session created with `up`.
+
+## Confirm the exact MCP operation
+
+`start`, `stop`, and `restart` require a non-empty `selectors` list of explicit
+services or tags. Use the same `runtime` and `selectors` for a preview with
+`plan` and for the mutation. An unscoped `plan` previews every service, but an
+unscoped lifecycle mutation is rejected. For `start`, also keep
+`include_dependencies` identical between preview and execution.
+
+If an authorized mutation returns `confirmation_required`, read its resolved
+plan and one-shot `confirmation_token`, check the affected targets, and repeat
+that same MCP call with the token. A token from an explicit `plan` call can also
+be used with the matching mutation. This protocol confirmation is not a new
+request for user permission when the user has already authorized that scope.
+
+Tokens have no time-based expiry. `confirmation_expired` means the token is
+unknown or already used, or the runtime session or configuration generation
+changed; `confirmation_plan_changed` means the resolved plan differs. In either
+case, get a fresh plan and token, compare the affected targets with the user's
+request, and retry only within the authorized scope. Do not describe either
+error as a token expiring instantly without evidence.
 
 ## Avoid duplicate and destructive operations
 
