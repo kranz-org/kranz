@@ -4,6 +4,16 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.15.1] - 2026-09-15
+
+### Fixed
+
+- An included configuration that omits `defaults.dir` now resolves the working
+  directory for its services, action groups, lifecycle commands, and actions to
+  the directory containing that file.
+  Previously, their implicit `.` could point to the composition root and cause
+  commands to miss files in the included project.
+
 ## [0.15.0] - 2026-09-14
 
 ### Added
@@ -843,7 +853,8 @@ artifacts.
 - Explicit global-user and project-config save destinations in the live theme picker.
 - Native compatibility for common Process Compose configurations.
 
-[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.15.1...HEAD
+[0.15.1]: https://github.com/kranz-org/kranz/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/kranz-org/kranz/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/kranz-org/kranz/compare/v0.13.1...v0.14.0
 [0.13.1]: https://github.com/kranz-org/kranz/compare/v0.13.0...v0.13.1
