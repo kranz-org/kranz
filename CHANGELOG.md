@@ -4,6 +4,18 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.15.2] - 2026-09-16
+
+### Fixed
+
+- Confirmation tokens now survive configuration polling that finds no change,
+  is debounced, or fails before a new configuration is accepted. This restores
+  the documented two-call MCP confirmation flow while the dashboard is attached.
+  A successful reload still invalidates tokens through their session,
+  generation, and resolved-plan binding. Token-backed execution no longer mints
+  a throwaway token, and bounded FIFO pools keep plan previews from evicting
+  pending execution confirmations.
+
 ## [0.15.1] - 2026-09-15
 
 ### Fixed
@@ -853,7 +865,8 @@ artifacts.
 - Explicit global-user and project-config save destinations in the live theme picker.
 - Native compatibility for common Process Compose configurations.
 
-[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.15.1...HEAD
+[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.15.2...HEAD
+[0.15.2]: https://github.com/kranz-org/kranz/compare/v0.15.1...v0.15.2
 [0.15.1]: https://github.com/kranz-org/kranz/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/kranz-org/kranz/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/kranz-org/kranz/compare/v0.13.1...v0.14.0
