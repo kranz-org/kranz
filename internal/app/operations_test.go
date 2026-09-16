@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -19,6 +21,24 @@ func operationTestLocal(t *testing.T) *Local {
 	local := NewLocal(cfg, nil, Options{SessionID: "session-test"})
 	t.Cleanup(func() { _ = local.Shutdown() })
 	return local
+}
+
+func reloadOperationTestLocal(t *testing.T) (*Local, PlanRequest, string) {
+	t.Helper()
+	directory := t.TempDir()
+	path := filepath.Join(directory, "kranz.yaml")
+	data := "project: Operations\nservices:\n  api:\n    command: \"true\"\n    actions:\n      deploy:\n        command: \"true\"\n        confirm: true\n"
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	local := NewLocal(cfg, []string{path}, Options{SessionID: "reload-test"})
+	t.Cleanup(func() { _ = local.Shutdown() })
+	id := config.ActionID{OwnerKind: config.ActionOwnerService, Owner: "api", Name: "deploy"}
+	return local, PlanRequest{Operation: "action", Action: id}, path
 }
 
 func TestPlanUsesSharedSelectorsAndDependencyWaves(t *testing.T) {
@@ -51,6 +71,9 @@ func TestConfirmationTokenIsOneShotAndPlanBound(t *testing.T) {
 	if err != nil || result.ActionResult == nil || result.ActionResult.Run != 1 {
 		t.Fatalf("execute = %#v, %v", result, err)
 	}
+	if local.nextConfirmationSequence != 1 {
+		t.Fatalf("confirmation sequence = %d, want 1 without a throwaway execution token", local.nextConfirmationSequence)
+	}
 	_, err = local.ExecutePlan(context.Background(), request, plan.ConfirmationToken)
 	var confirmation *ConfirmationError
 	if !errors.As(err, &confirmation) || confirmation.Code != "confirmation_expired" {
@@ -71,15 +94,109 @@ func TestConfirmationTokenIsOneShotAndPlanBound(t *testing.T) {
 }
 
 func TestReloadInvalidatesConfirmationToken(t *testing.T) {
-	local := operationTestLocal(t)
-	id := config.ActionID{OwnerKind: config.ActionOwnerService, Owner: "api", Name: "deploy"}
-	request := PlanRequest{Operation: "action", Action: id}
+	local, request, path := reloadOperationTestLocal(t)
 	plan, _ := local.Plan(request)
-	_, _ = local.Reload(true)
+	updated := "project: Operations\nservices:\n  api:\n    command: \"true\"\n    actions:\n      deploy:\n        command: \"true\"\n        description: Updated\n        confirm: true\n"
+	if err := os.WriteFile(path, []byte(updated), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := local.Reload(true); err != nil {
+		t.Fatal(err)
+	}
+	if len(local.confirmations) != 0 {
+		t.Fatalf("confirmations after accepted reload = %d, want 0", len(local.confirmations))
+	}
 	_, err := local.ExecutePlan(context.Background(), request, plan.ConfirmationToken)
 	var confirmation *ConfirmationError
 	if !errors.As(err, &confirmation) || confirmation.Code != "confirmation_expired" {
 		t.Fatalf("reload err = %#v", err)
+	}
+}
+
+func TestNoOpDebouncedAndFailedReloadsPreserveConfirmationTokens(t *testing.T) {
+	t.Run("no-op", func(t *testing.T) {
+		local, request, _ := reloadOperationTestLocal(t)
+		plan, err := local.Plan(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := local.Reload(false); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := local.ExecutePlan(context.Background(), request, plan.ConfirmationToken); err != nil {
+			t.Fatalf("execute after no-op reload: %v", err)
+		}
+	})
+
+	t.Run("debounced", func(t *testing.T) {
+		local, request, _ := reloadOperationTestLocal(t)
+		if _, err := local.Reload(false); err != nil {
+			t.Fatal(err)
+		}
+		plan, err := local.Plan(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := local.Reload(false); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := local.ExecutePlan(context.Background(), request, plan.ConfirmationToken); err != nil {
+			t.Fatalf("execute after debounced reload: %v", err)
+		}
+	})
+
+	t.Run("failed", func(t *testing.T) {
+		local, request, path := reloadOperationTestLocal(t)
+		plan, err := local.Plan(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("project: ["), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := local.Reload(true); err == nil {
+			t.Fatal("invalid configuration reload succeeded")
+		}
+		if _, err := local.ExecutePlan(context.Background(), request, plan.ConfirmationToken); err != nil {
+			t.Fatalf("execute after failed reload: %v", err)
+		}
+	})
+}
+
+func TestPreviewConfirmationPressurePreservesExecutionTokenAndEvictsFIFO(t *testing.T) {
+	local := operationTestLocal(t)
+	id := config.ActionID{OwnerKind: config.ActionOwnerService, Owner: "api", Name: "deploy"}
+	request := PlanRequest{Operation: "action", Action: id}
+
+	result, err := local.ExecutePlan(context.Background(), request, "")
+	var required *ConfirmationRequiredError
+	if !errors.As(err, &required) {
+		t.Fatalf("initial execution = %#v, %v", result, err)
+	}
+	executionToken := required.Plan.ConfirmationToken
+
+	previews := make([]string, 0, maxConfirmationTokensPerPurpose+1)
+	for range maxConfirmationTokensPerPurpose + 1 {
+		plan, err := local.Plan(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		previews = append(previews, plan.ConfirmationToken)
+	}
+	if got, want := len(local.confirmations), maxConfirmationTokensPerPurpose+1; got != want {
+		t.Fatalf("pending confirmations = %d, want bounded execution plus preview pools = %d", got, want)
+	}
+
+	_, err = local.ExecutePlan(context.Background(), request, previews[0])
+	var confirmation *ConfirmationError
+	if !errors.As(err, &confirmation) || confirmation.Code != "confirmation_expired" {
+		t.Fatalf("oldest preview err = %#v, want deterministic FIFO eviction", err)
+	}
+	if _, err := local.ExecutePlan(context.Background(), request, executionToken); err != nil {
+		t.Fatalf("execution token was evicted by previews: %v", err)
+	}
+	if _, err := local.ExecutePlan(context.Background(), request, previews[len(previews)-1]); err != nil {
+		t.Fatalf("newest preview token was evicted before the oldest: %v", err)
 	}
 }
 

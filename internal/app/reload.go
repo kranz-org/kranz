@@ -36,7 +36,6 @@ const reloadDebounce = time.Second
 // it to the running services. A concurrent Reload call while one is already
 // in flight is a no-op, reported as (ReloadResult{}, nil).
 func (l *Local) Reload(force bool) (ReloadResult, error) {
-	l.invalidateConfirmations()
 	l.cfgMu.Lock()
 	if len(l.configPaths) == 0 && l.loadOptions == nil {
 		l.cfgMu.Unlock()
@@ -103,6 +102,10 @@ func (l *Local) Reload(force bool) (ReloadResult, error) {
 	generation := l.generation
 	l.loadedAt = time.Now()
 	l.lastReloadErr = ""
+	// Confirmations are bound to the accepted configuration generation. Clear
+	// them only once a new configuration has been applied; polling, debounce,
+	// and failed reload attempts leave the accepted plan unchanged.
+	l.invalidateConfirmations()
 	l.cfgMu.Unlock()
 	l.manager.RecordConfigReload(generation)
 	l.recordReloadTransition(generation, result)

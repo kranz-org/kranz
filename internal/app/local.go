@@ -36,6 +36,9 @@ type Local struct {
 
 	confirmMu     sync.Mutex
 	confirmations map[string]confirmationRecord
+	// nextConfirmationSequence makes capacity eviction deterministic without
+	// giving confirmation tokens a time-based expiry.
+	nextConfirmationSequence uint64
 
 	portMu      sync.RWMutex
 	portChecker port.Checker

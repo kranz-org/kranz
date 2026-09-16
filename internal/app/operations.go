@@ -17,8 +17,8 @@ import (
 )
 
 const (
-	OperationSchemaVersion = 1
-	maxConfirmationTokens  = 256
+	OperationSchemaVersion          = 1
+	maxConfirmationTokensPerPurpose = 256
 )
 
 type PlanRequest struct {
@@ -68,7 +68,16 @@ type confirmationRecord struct {
 	generation  uint64
 	sessionID   string
 	fingerprint string
+	purpose     confirmationPurpose
+	sequence    uint64
 }
+
+type confirmationPurpose uint8
+
+const (
+	confirmationPreview confirmationPurpose = iota
+	confirmationExecution
+)
 
 type ConfirmationRequiredError struct{ Plan OperationPlan }
 
@@ -131,6 +140,17 @@ func ResolveServiceSelectors(cfg *config.Config, selectors []string) ([]string, 
 }
 
 func (l *Local) Plan(request PlanRequest) (OperationPlan, error) {
+	plan, err := l.resolvePlan(request)
+	if err != nil {
+		return plan, err
+	}
+	if plan.RequiresConfirmation {
+		plan.ConfirmationToken = l.issueConfirmation(plan, confirmationPreview)
+	}
+	return plan, nil
+}
+
+func (l *Local) resolvePlan(request PlanRequest) (OperationPlan, error) {
 	project := l.Project()
 	plan := OperationPlan{SchemaVersion: OperationSchemaVersion, SessionID: project.SessionID, Generation: project.Generation, Operation: request.Operation, Selectors: append([]string(nil), request.Selectors...), IncludeDependencies: request.IncludeDependencies, Targets: []string{}}
 	switch request.Operation {
@@ -199,22 +219,15 @@ func (l *Local) Plan(request PlanRequest) (OperationPlan, error) {
 		return plan, &ConfirmationError{Code: "invalid_operation", Message: fmt.Sprintf("unsupported operation %q", request.Operation)}
 	}
 	plan.Fingerprint = operationFingerprint(plan)
-	if plan.RequiresConfirmation {
-		plan.ConfirmationToken = l.issueConfirmation(plan)
-	}
 	return plan, nil
 }
 
 func (l *Local) ExecutePlan(ctx context.Context, request PlanRequest, token string) (OperationResult, error) {
-	plan, err := l.Plan(request)
+	plan, err := l.resolvePlan(request)
 	if err != nil {
 		return OperationResult{}, err
 	}
 	if token != "" {
-		// Plan issued a fresh token while recomputing the exact current plan;
-		// an execution presenting an older token must not leak that unused one.
-		l.discardConfirmation(plan.ConfirmationToken)
-		plan.ConfirmationToken = ""
 		// A presented token is always validated against the plan that would
 		// run, including when that plan no longer requires confirming: the
 		// caller confirmed a specific resolved plan, and a plan that changed
@@ -223,6 +236,7 @@ func (l *Local) ExecutePlan(ctx context.Context, request PlanRequest, token stri
 			return OperationResult{Plan: plan}, err
 		}
 	} else if plan.RequiresConfirmation {
+		plan.ConfirmationToken = l.issueConfirmation(plan, confirmationExecution)
 		return OperationResult{Plan: plan}, &ConfirmationRequiredError{Plan: plan}
 	}
 	result := OperationResult{Plan: plan}
@@ -248,15 +262,6 @@ func (l *Local) ExecutePlan(ctx context.Context, request PlanRequest, token stri
 	return result, err
 }
 
-func (l *Local) discardConfirmation(token string) {
-	if token == "" {
-		return
-	}
-	l.confirmMu.Lock()
-	delete(l.confirmations, token)
-	l.confirmMu.Unlock()
-}
-
 func operationFingerprint(plan OperationPlan) string {
 	copy := plan
 	copy.Fingerprint, copy.ConfirmationToken = "", ""
@@ -265,22 +270,39 @@ func operationFingerprint(plan OperationPlan) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func (l *Local) issueConfirmation(plan OperationPlan) string {
+func (l *Local) issueConfirmation(plan OperationPlan, purpose confirmationPurpose) string {
 	bytes := make([]byte, 24)
 	if _, err := rand.Read(bytes); err != nil {
 		panic(fmt.Sprintf("generate confirmation token: %v", err))
 	}
 	token := hex.EncodeToString(bytes)
 	l.confirmMu.Lock()
-	if len(l.confirmations) >= maxConfirmationTokens {
-		for oldest := range l.confirmations {
-			delete(l.confirmations, oldest)
-			break
-		}
+	defer l.confirmMu.Unlock()
+	oldest, count := l.oldestConfirmationLocked(purpose)
+	if count >= maxConfirmationTokensPerPurpose {
+		delete(l.confirmations, oldest)
 	}
-	l.confirmations[token] = confirmationRecord{generation: plan.Generation, sessionID: plan.SessionID, fingerprint: plan.Fingerprint}
-	l.confirmMu.Unlock()
+	l.nextConfirmationSequence++
+	l.confirmations[token] = confirmationRecord{generation: plan.Generation, sessionID: plan.SessionID, fingerprint: plan.Fingerprint, purpose: purpose, sequence: l.nextConfirmationSequence}
 	return token
+}
+
+func (l *Local) oldestConfirmationLocked(purpose confirmationPurpose) (string, int) {
+	var oldestToken string
+	var oldestSequence uint64
+	count := 0
+	for token, record := range l.confirmations {
+		if record.purpose != purpose {
+			continue
+		}
+		count++
+		if oldestToken != "" && record.sequence >= oldestSequence {
+			continue
+		}
+		oldestToken = token
+		oldestSequence = record.sequence
+	}
+	return oldestToken, count
 }
 
 func (l *Local) consumeConfirmation(token string, plan OperationPlan) error {
@@ -303,6 +325,7 @@ func (l *Local) consumeConfirmation(token string, plan OperationPlan) error {
 func (l *Local) invalidateConfirmations() {
 	l.confirmMu.Lock()
 	l.confirmations = map[string]confirmationRecord{}
+	l.nextConfirmationSequence = 0
 	l.confirmMu.Unlock()
 }
 
