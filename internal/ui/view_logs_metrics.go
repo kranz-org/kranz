@@ -31,6 +31,9 @@ type logRowMetrics struct {
 	wrap     bool
 	showTime bool
 	counts   map[uint64]int
+	rows     []int // prefix row counts for the unfiltered entry window
+	first    uint64
+	last     uint64
 }
 
 func (m *Model) logRowMetricsFor(slot logPanelSlot, target app.RunTarget, width int) *logRowMetrics {
@@ -61,6 +64,24 @@ func (c *logRowMetrics) rowCount(m *Model, entry config.LogEntry, width int) int
 	count := m.countLogEntryRows(entry, width)
 	c.counts[entry.Sequence] = count
 	return count
+}
+
+// totalRows builds the prefix once for a stable log window. Wheel events and
+// frames can then locate the viewport without scanning the retained history.
+func (c *logRowMetrics) totalRows(m *Model, entries []config.LogEntry, width int) int {
+	if len(entries) == 0 {
+		c.rows = c.rows[:0]
+		return 0
+	}
+	first, last := entries[0].Sequence, entries[len(entries)-1].Sequence
+	if len(c.rows) != len(entries)+1 || c.first != first || c.last != last || first == 0 || last == 0 {
+		c.rows = make([]int, len(entries)+1)
+		for i, entry := range entries {
+			c.rows[i+1] = c.rows[i] + c.rowCount(m, entry, width)
+		}
+		c.first, c.last = first, last
+	}
+	return c.rows[len(entries)]
 }
 
 // forget drops measurements for entries retention has already evicted. It runs

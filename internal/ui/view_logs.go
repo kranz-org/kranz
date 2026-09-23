@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -355,11 +356,12 @@ func (m *Model) renderLogPanelMode(svc *app.ServiceSnapshot, width, height int, 
 	// A nil selection means "every entry, in order". Materialising the identity
 	// slice would allocate one int per retained line on every frame.
 	var sourceIndices []int
-	if hasPattern && mode == searchFilter {
+	filtered := hasPattern && mode == searchFilter
+	if filtered {
 		sourceIndices = searchMatches
 	}
 	selectionLen := len(sourceEntries)
-	if sourceIndices != nil {
+	if filtered {
 		selectionLen = len(sourceIndices)
 	}
 
@@ -369,7 +371,7 @@ func (m *Model) renderLogPanelMode(svc *app.ServiceSnapshot, width, height int, 
 			ContextBarStyle.Render("Output will appear after the service starts"),
 		})
 	}
-	if hasPattern && mode == searchFilter && selectionLen == 0 {
+	if filtered && selectionLen == 0 {
 		return renderTitledPanel(panelStyle, titleStyle, contentWidth, contentHeight, title, []string{
 			"",
 			ContextBarStyle.Render("No log lines match this regex"),
@@ -383,8 +385,12 @@ func (m *Model) renderLogPanelMode(svc *app.ServiceSnapshot, width, height int, 
 	metrics := m.logRowMetricsFor(slot, app.ServiceRunTarget(svc.Name), contentWidth)
 	metrics.forget(sourceEntries)
 	totalRows := 0
-	for position := range selectionLen {
-		totalRows += metrics.rowCount(m, sourceEntries[sourceEntryIndex(sourceIndices, position)], contentWidth)
+	if sourceIndices == nil {
+		totalRows = metrics.totalRows(m, sourceEntries, contentWidth)
+	} else {
+		for _, index := range sourceIndices {
+			totalRows += metrics.rowCount(m, sourceEntries[index], contentWidth)
+		}
 	}
 
 	maxLines := contentHeight
@@ -444,7 +450,14 @@ func (m *Model) styleLogRowWindow(window logRowWindow) []string {
 	}
 	rows := make([]string, 0, window.end-window.start)
 	consumed := 0
-	for position := range window.selection {
+	firstPosition := 0
+	if window.indices == nil && window.selection == len(window.entries) && len(window.metrics.rows) == len(window.entries)+1 {
+		firstPosition = sort.Search(len(window.entries), func(i int) bool {
+			return window.metrics.rows[i+1] > window.start
+		})
+		consumed = window.metrics.rows[firstPosition]
+	}
+	for position := firstPosition; position < window.selection; position++ {
 		if consumed >= window.end {
 			break
 		}
@@ -491,20 +504,18 @@ func (m *Model) scrollLogs(direction int) {
 	pinned := m.panelFocus == panelPinnedLogs && m.hasPinnedRunView()
 	svc := m.FocusedService()
 	panelHeight := m.currentLogPanelHeight()
-	displayLineCount := m.displayedLogLineCount()
 	offset, anchor, follow := m.logOffset, m.logAnchor, m.followMode
+	displayLineCount := 0
 	if pinned {
 		svc = m.PinnedService()
 		panelHeight = m.pinnedLogPanelHeight()
 		displayLineCount = m.displayedPinnedLogLineCount()
 		offset, anchor, follow = m.pinnedOffset, m.pinnedAnchor, m.pinnedFollow
+	} else {
+		displayLineCount = m.displayedLogLineCount()
 	}
 	if !pinned && svc == nil && m.focusedAction == nil {
-		if pinned {
-			m.pinnedOffset = 0
-		} else {
-			m.logOffset = 0
-		}
+		m.logOffset = 0
 		return
 	}
 	maxLines := max(1, panelHeight-2)
@@ -552,6 +563,10 @@ func (m *Model) displayedPinnedLogLineCount() int {
 		return 0
 	}
 	entries := m.pinnedEntries(target)
+	if m.pinnedSearchMode != searchFilter || m.pinnedSearcher == nil || !m.pinnedSearcher.HasPattern() {
+		width := m.currentLogContentWidth()
+		return m.logRowMetricsFor(logSlotPinned, target, width).totalRows(m, entries, width)
+	}
 	if m.pinnedSearchMode == searchFilter && m.pinnedSearcher != nil && m.pinnedSearcher.HasPattern() {
 		matches := m.pinnedSearcher.Search(logEntryLines(entries))
 		filtered := make([]config.LogEntry, 0, len(matches))
@@ -579,6 +594,10 @@ func (m *Model) displayedLogLineCount() int {
 	entries := m.cachedLogEntries(app.ServiceRunTarget(svc.Name))
 	if m.syncRunTarget() && m.runMode == runViewSingle {
 		entries = m.entriesForRun(app.ServiceRunTarget(svc.Name), m.selectedRun)
+	}
+	if m.searchMode != searchFilter || m.logSearcher == nil || !m.logSearcher.HasPattern() {
+		width := m.currentLogContentWidth()
+		return m.logRowMetricsFor(logSlotMain, app.ServiceRunTarget(svc.Name), width).totalRows(m, entries, width)
 	}
 	lines := logEntryLines(entries)
 	indices := make([]int, len(lines))

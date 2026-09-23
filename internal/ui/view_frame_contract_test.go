@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/kranz-org/kranz/internal/app"
 	"github.com/kranz-org/kranz/internal/config"
 )
 
@@ -60,6 +61,80 @@ func TestLogRowMetricsInvalidateOnLayoutChange(t *testing.T) {
 	model.wrapLogs = !model.wrapLogs
 	if wrapped := model.logRowMetricsFor(logSlotMain, target[0], 120); wrapped.wrap != model.wrapLogs {
 		t.Fatal("a wrap change must invalidate the cache")
+	}
+}
+
+func TestLogRowWindowTracksRetainedHistoryAndReversesImmediately(t *testing.T) {
+	model := newTestModel()
+	defer model.Shutdown()
+	model.width, model.height, model.ready = 90, 24, true
+	service := model.FocusedService()
+	target := app.ServiceRunTarget(service.Name)
+	entries := make([]config.LogEntry, 1000)
+	for i := range entries {
+		entries[i] = config.LogEntry{Sequence: uint64(i + 1), Raw: fmt.Sprintf("line %d", i)}
+	}
+	model.logEntries[target] = entries
+	model.panelFocus = panelLogs
+	model.renderLogPanel(service, 60, 12)
+	metrics := model.logRowMetricsFor(logSlotMain, target, 58)
+	if got := metrics.totalRows(model, entries, 58); got != len(entries) {
+		t.Fatalf("initial row count = %d", got)
+	}
+	if got := ansi.Strip(strings.Join(model.styleLogRowWindow(logRowWindow{
+		entries: entries, selection: len(entries), metrics: metrics, width: 58, start: 500, end: 502,
+	}), "\n")); !strings.Contains(got, "line 500") || !strings.Contains(got, "line 501") {
+		t.Fatalf("wrong rows at middle of history: %q", got)
+	}
+	model.scrollLogs(-1)
+	if model.logOffset != 1 || model.followMode {
+		t.Fatalf("upward wheel did not leave follow mode: offset=%d follow=%v", model.logOffset, model.followMode)
+	}
+	model.scrollLogs(1)
+	if model.logOffset != 0 || !model.followMode {
+		t.Fatalf("reverse wheel did not restore follow mode: offset=%d follow=%v", model.logOffset, model.followMode)
+	}
+	model.logEntries[target] = entries[1:]
+	if got := metrics.totalRows(model, entries[1:], 58); got != len(entries)-1 {
+		t.Fatalf("evicted row count = %d", got)
+	}
+}
+
+func TestLogFilterWithNoMatchesShowsEmptyState(t *testing.T) {
+	model := newTestModel()
+	defer model.Shutdown()
+	model.width, model.height, model.ready = 90, 24, true
+	service := model.FocusedService()
+	model.logEntries[app.ServiceRunTarget(service.Name)] = []config.LogEntry{{Sequence: 1, Raw: "ordinary output"}}
+	model.searchMode = searchFilter
+	if err := model.logSearcher.SetPattern("absent-pattern"); err != nil {
+		t.Fatal(err)
+	}
+	panel := ansi.Strip(model.renderLogPanel(service, 60, 12))
+	if !strings.Contains(panel, "No log lines match this regex") || strings.Contains(panel, "ordinary output") {
+		t.Fatalf("incorrect empty filter state: %q", panel)
+	}
+}
+
+func BenchmarkLogWheelWithRetainedHistory(b *testing.B) {
+	model := newTestModel()
+	defer model.Shutdown()
+	model.width, model.height, model.ready = 90, 24, true
+	service := model.FocusedService()
+	target := app.ServiceRunTarget(service.Name)
+	entries := make([]config.LogEntry, 1000)
+	for i := range entries {
+		entries[i] = config.LogEntry{Sequence: uint64(i + 1), Raw: fmt.Sprintf("line %d", i)}
+	}
+	model.logEntries[target] = entries
+	model.panelFocus = panelLogs
+	model.renderLogPanel(service, 60, 12)
+	b.ResetTimer()
+	for range b.N {
+		model.scrollLogs(-1)
+		model.renderLogPanel(service, 60, 12)
+		model.scrollLogs(1)
+		model.renderLogPanel(service, 60, 12)
 	}
 }
 
