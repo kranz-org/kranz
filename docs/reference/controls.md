@@ -198,7 +198,8 @@ appears or disappears without reopening the modal.
 | Key | Action |
 | --- | --- |
 | `↑` / `↓`, `j` / `k` | Move the selection |
-| `Enter` | Connect to the selected runtime |
+| `Enter` | Connect to another compatible runtime, or close the list on the current one |
+| `s` | Review and stop the selected other runtime |
 | `Esc` or `p` | Close the modal and stay on the current runtime |
 
 The table has separate `RUNTIME`, `STATUS`, `CLIENTS`, `SERVICES`, `UPTIME`,
@@ -210,8 +211,8 @@ current row includes the dashboard's own `TUI` connection, so another `MCP` or
 surfaces in the 11-cell column, while
 `SERVICES` shows running/total in the same `3/5` form as `kranz ps`. A runtime
 running an incompatible protocol version, or one the switcher cannot currently
-reach, is shown greyed out and cannot be selected; selecting it spells the
-reason out under the list. In a narrow terminal the directory is dropped
+reach, cannot be attached to; the row explains why and `s` offers a confirmed
+stop. In a narrow terminal the directory is dropped
 first, then the client surfaces shorten, then the runtime name; `UPTIME` and
 `CLIENTS` disappear only after that, and `STATUS` and `SERVICES` are the last
 to give up any width. Mouse clicks move the selection the same way arrow keys

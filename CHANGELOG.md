@@ -19,6 +19,9 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ### Changed
 
+- **Breaking:** local runtime IPC moved from protocol 2 to 3. Clients and
+  running sessions must use the same protocol; restart an older session after
+  upgrading Kranz. See [Upgrading to 0.16.1](docs/releases/0.16.1.md).
 - The TUI detects configuration edits and shows that a reload is available, but
   applies them only after `Ctrl+L`. Explicit reloads are not dropped when a
   configuration check is in progress. Removing a running service asks whether
