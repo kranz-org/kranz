@@ -83,6 +83,42 @@ func TestTheFormEditsValuesAndTheCommandFollows(t *testing.T) {
 	}
 }
 
+func TestFormShowsEveryChoiceWhenOptionsExceedTheRow(t *testing.T) {
+	for _, control := range []string{"radio", "checkbox"} {
+		t.Run(control, func(t *testing.T) {
+			model := NewModel(&config.Config{Project: "Params", ActionGroups: map[string]config.ActionGroup{
+				"g": {Actions: map[string]config.Action{
+					"a": {
+						Params: map[string]config.ActionParam{"target": {
+							Type:     control,
+							Optional: true,
+							Options: config.ActionParamOptions{
+								{Value: "first", Label: "First environment"},
+								{Value: "second", Label: "Second environment with a longer description"},
+								{Value: "third", Label: "Third environment"},
+							},
+						}},
+						ParamOrder: []string{"target"},
+						Run:        config.ArgvList{"/bin/echo"},
+						Dir:        t.TempDir(),
+					},
+				}, ActionOrder: []string{"a"}},
+			}, ActionGroupOrder: []string{"g"}}, "test")
+			t.Cleanup(func() { _ = model.Shutdown() })
+			model.width, model.height, model.ready = 72, 40, true
+			id := config.ActionID{OwnerKind: config.ActionOwnerGroup, Owner: "g", Name: "a"}
+			model.openParamForm(id)
+
+			view := ansi.Strip(model.renderParamFormView())
+			for _, label := range []string{"First environment", "Second environment with a longer description", "Third environment"} {
+				if !strings.Contains(strings.ReplaceAll(view, "\n", ""), label) {
+					t.Fatalf("form lost choice %q:\n%s", label, view)
+				}
+			}
+		})
+	}
+}
+
 func TestTheFormTypesIntoATextFieldAndRuns(t *testing.T) {
 	model := NewModel(&config.Config{Project: "Params", ActionGroups: map[string]config.ActionGroup{
 		"g": {Actions: map[string]config.Action{

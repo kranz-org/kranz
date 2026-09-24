@@ -317,10 +317,10 @@ func (m *Model) renderLogPanelMode(svc *app.ServiceSnapshot, width, height int, 
 		title += " " + StartingBadgeStyle.Render(state)
 	}
 	if m.wrapLogs {
-		title += " " + RunningBadgeStyle.Render("WRAP")
+		title += ContextBarStyle.Render(" · ") + RunningBadgeStyle.Render("WRAP")
 	}
 	if m.showLogTime {
-		title += " " + RunningBadgeStyle.Render("TIME")
+		title += ContextBarStyle.Render(" · ") + RunningBadgeStyle.Render("TIME")
 	}
 
 	sourceEntries := m.cachedLogEntries(app.ServiceRunTarget(svc.Name))

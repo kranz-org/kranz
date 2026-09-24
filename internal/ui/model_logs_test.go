@@ -283,6 +283,9 @@ func TestLogWrappingKeepsPanelAndDashboardGeometry(t *testing.T) {
 	if lipgloss.Height(panel) != 12 || !strings.Contains(ansi.Strip(panel), "WRAP") {
 		t.Fatalf("wrapped panel geometry/state is invalid: height=%d\n%s", lipgloss.Height(panel), ansi.Strip(panel))
 	}
+	if title := strings.Split(ansi.Strip(panel), "\n")[0]; !strings.Contains(title, " · WRAP · ") {
+		t.Fatalf("wrapped log title is missing badge separators: %q", title)
+	}
 	if height := lipgloss.Height(model.View()); height != model.height {
 		t.Fatalf("dashboard grew to %d rows, want %d", height, model.height)
 	}
