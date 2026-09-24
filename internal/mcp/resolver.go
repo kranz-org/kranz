@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -33,12 +34,13 @@ type Launcher func(ctx context.Context, directory string) (kranzruntime.SessionR
 // client. One MCP process serves any number of runtimes, so the binding that
 // used to be made once at launch is made per call here.
 type Resolver struct {
-	version   string
-	registry  Registry
-	dial      Dialer
-	launch    Launcher
-	pin       string
-	directory func() (string, error)
+	version      string
+	registry     Registry
+	dial         Dialer
+	launch       Launcher
+	pin          string
+	pinDirectory string
+	directory    func() (string, error)
 	// projectDirectory is the directory this MCP process was started in, used
 	// as the default target of up. It is a path, not a runtime: nothing here
 	// assumes a runtime exists for it.
@@ -65,6 +67,10 @@ type ResolverOptions struct {
 	// Pin is the runtime reference the process was launched with through -C or
 	// -p. Empty means unbound: the call chooses.
 	Pin string
+	// PinDirectory is the explicitly selected project path for -C, -f, or
+	// --override. It prevents same-name runtimes in another directory from
+	// satisfying the pin.
+	PinDirectory string
 	// Directory resolves the MCP process working directory to a runtime name,
 	// the same way the CLI resolves it without -p. It never creates anything.
 	Directory func() (string, error)
@@ -75,7 +81,7 @@ type ResolverOptions struct {
 func NewResolver(options ResolverOptions) *Resolver {
 	return &Resolver{
 		version: options.Version, registry: options.Registry, dial: options.Dial, launch: options.Launch,
-		pin: options.Pin, directory: options.Directory, projectDirectory: options.ProjectDirectory,
+		pin: options.Pin, pinDirectory: options.PinDirectory, directory: options.Directory, projectDirectory: options.ProjectDirectory,
 		clients: map[string]*runtimeScope{}, created: map[string]bool{},
 	}
 }
@@ -205,6 +211,10 @@ func (r *Resolver) connectReference(ctx context.Context, reference string, sourc
 			return scope, nil
 		}
 		return nil, r.resolveFailure(ctx, reference, source, err)
+	}
+	if r.pinDirectory != "" && !sameProjectDirectory(r.pinDirectory, record.Directory) {
+		return nil, &CausalError{Code: "runtime_pinned", Message: "the selected runtime name belongs to another project directory",
+			Hint: "Start the selected project under a distinct runtime name."}
 	}
 	return r.connectRecord(ctx, record)
 }
@@ -347,6 +357,9 @@ func (r *Resolver) records(ctx context.Context) ([]kranzruntime.SessionRecord, e
 // up tool, and it records the result so down can tell a runtime this process
 // created from one it merely found.
 func (r *Resolver) Launch(ctx context.Context, directory string) (*runtimeScope, bool, *CausalError) {
+	if causal := r.checkLaunchPin(ctx, directory); causal != nil {
+		return nil, false, causal
+	}
 	if r.launch == nil {
 		return nil, false, &CausalError{Code: "unsupported", Message: "this MCP server cannot start runtimes"}
 	}
@@ -359,6 +372,9 @@ func (r *Resolver) Launch(ctx context.Context, directory string) (*runtimeScope,
 		}
 		return nil, false, &CausalError{Code: "runtime_start_failed", Message: err.Error(),
 			Hint: "Run doctor in that project, or start it from a terminal to read the failure.", Details: map[string]any{"directory": directory}}
+	}
+	if r.pinDirectory != "" && !sameProjectDirectory(r.pinDirectory, record.Directory) {
+		return nil, created, &CausalError{Code: "runtime_pinned", Message: "launched runtime belongs to another project directory"}
 	}
 	r.mu.Lock()
 	if created {
@@ -374,6 +390,39 @@ func (r *Resolver) Launch(ctx context.Context, directory string) (*runtimeScope,
 		scope.session.CreatedBy = "mcp"
 	}
 	return scope, created, nil
+}
+
+func (r *Resolver) checkLaunchPin(ctx context.Context, directory string) *CausalError {
+	if r.pin == "" {
+		return nil
+	}
+	allowed := ""
+	if r.pinDirectory != "" {
+		allowed = r.pinDirectory
+	} else if record, err := r.resolveRecord(ctx, r.pin); err == nil {
+		allowed = record.Directory
+	} else {
+		allowed = r.projectDirectory
+	}
+	if allowed != "" && sameProjectDirectory(allowed, directory) {
+		return nil
+	}
+	return &CausalError{Code: "runtime_pinned", Message: "this MCP server is pinned to another project",
+		Hint: "Use the pinned project directory or a separate unpinned MCP server."}
+}
+
+func sameProjectDirectory(left, right string) bool {
+	canonical := func(path string) string {
+		absolute, err := filepath.Abs(path)
+		if err != nil {
+			return filepath.Clean(path)
+		}
+		if resolved, err := filepath.EvalSymlinks(absolute); err == nil {
+			return resolved
+		}
+		return absolute
+	}
+	return canonical(left) == canonical(right)
 }
 
 // CreatedHere reports whether this process started the runtime through up. It

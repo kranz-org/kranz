@@ -121,7 +121,7 @@ func (m *Manager) refreshDetectedPorts(ctx context.Context) string {
 
 	targets := make(map[string]listenerDiscoveryTarget)
 	for _, svc := range m.Services() {
-		if !svc.Config.PortDiscoveryEnabled() {
+		if !svc.PortDiscoveryEnabled() {
 			continue
 		}
 		leaderPID, generation, running := svc.discoveryTarget()

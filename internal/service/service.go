@@ -15,8 +15,9 @@ import (
 
 // Service is the synchronized runtime representation of one configured service.
 type Service struct {
-	Config config.Service
-	Name   string
+	Config     config.Service
+	Name       string
+	portPolicy atomic.Pointer[servicePortPolicy]
 
 	State   config.ServiceState
 	stateMu sync.RWMutex
@@ -43,6 +44,11 @@ type Service struct {
 	detectedPorts       []int
 	desiredRunning      atomic.Bool
 	statusObserved      atomic.Bool
+}
+
+type servicePortPolicy struct {
+	ports  []int
+	detect *bool
 }
 
 func (s *Service) setRuntime(process *ProcessManager, monitorStop chan struct{}) uint64 {
@@ -117,7 +123,7 @@ func formatPorts(ports []int) string {
 func (s *Service) updateDetectedPorts(generation uint64, ports []int) bool {
 	s.runtimeMu.Lock()
 	defer s.runtimeMu.Unlock()
-	if s.process == nil || s.runtimeGeneration != generation {
+	if s.process == nil || s.runtimeGeneration != generation || !s.PortDiscoveryEnabled() {
 		return false
 	}
 
@@ -147,7 +153,7 @@ func NewService(name string, cfg config.Service, logBufSize int) *Service {
 	if cfg.IsDetached() {
 		status = config.StatusUnknown
 	}
-	return &Service{
+	service := &Service{
 		Name:          name,
 		Config:        cfg,
 		stream:        newLogStream(logBufSize),
@@ -156,6 +162,54 @@ func NewService(name string, cfg config.Service, logBufSize int) *Service {
 			Status: status,
 		},
 	}
+	service.SetPortPolicy(cfg)
+	return service
+}
+
+// SetPortPolicy applies port hints without changing the command definition
+// observed by a running process monitor.
+func (s *Service) SetPortPolicy(cfg config.Service) {
+	policy := &servicePortPolicy{ports: append([]int(nil), cfg.Ports...)}
+	if cfg.DetectPorts != nil {
+		value := *cfg.DetectPorts
+		policy.detect = &value
+	}
+	s.runtimeMu.Lock()
+	s.portPolicy.Store(policy)
+	var previous []int
+	if !s.PortDiscoveryEnabled() {
+		previous = append([]int(nil), s.detectedPorts...)
+		s.detectedPorts = nil
+	}
+	s.runtimeMu.Unlock()
+	if len(previous) > 0 {
+		s.journal.Record(Transition{Kind: TransitionServicePorts, Service: s.Name, Run: s.Run(),
+			From: formatPorts(previous), To: formatPorts(nil), Summary: s.Name + " ports " + formatPorts(previous) + " -> none"})
+	}
+}
+
+func (s *Service) PortConfig() ([]int, *bool) {
+	policy := s.portPolicy.Load()
+	if policy == nil {
+		return nil, nil
+	}
+	ports := append([]int(nil), policy.ports...)
+	if policy.detect == nil {
+		return ports, nil
+	}
+	value := *policy.detect
+	return ports, &value
+}
+
+func (s *Service) PortDiscoveryEnabled() bool {
+	policy := s.portPolicy.Load()
+	if policy == nil {
+		return s.Config.PortDiscoveryEnabled()
+	}
+	if policy.detect != nil {
+		return *policy.detect
+	}
+	return !s.Config.IsDetached() && len(policy.ports) == 0
 }
 
 // SetJournal attaches the runtime journal this service records into.
@@ -411,6 +465,9 @@ func (s *Service) AppendLogAtSource(timestamp time.Time, source, line string) {
 
 // LogEntries returns an aligned snapshot of log text and capture timestamps.
 func (s *Service) LogEntries() []config.LogEntry { return s.stream.Entries() }
+
+// LogSnapshot keeps the entries and destructive-change revision consistent.
+func (s *Service) LogSnapshot() ([]config.LogEntry, uint64) { return s.stream.Snapshot() }
 
 // LogLines returns the buffered log text without its capture metadata.
 func (s *Service) LogLines() []string { return s.stream.Lines() }

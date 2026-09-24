@@ -20,6 +20,7 @@ const (
 	methodConfig                          = "config"
 	methodRedactedConfig                  = "redactedConfig"
 	methodReload                          = "reload"
+	methodConfigChanged                   = "configChanged"
 	methodAcknowledgeExternalWrite        = "acknowledgeExternalWrite"
 	methodServices                        = "services"
 	methodService                         = "service"

@@ -32,6 +32,7 @@ type logStream struct {
 	maxBytes      uint64
 	nextSeq       uint64
 	currentRun    uint32
+	revision      uint64 // increments when retained entries are removed without advancing the oldest sequence
 }
 
 func newLogStream(size int) *logStream {
@@ -170,6 +171,12 @@ func splitCapturedLines(text string) []string {
 
 // Entries returns an aligned snapshot of log text and its capture metadata.
 func (s *logStream) Entries() []config.LogEntry {
+	entries, _ := s.Snapshot()
+	return entries
+}
+
+// Snapshot reads the entries and destructive-change revision under one lock.
+func (s *logStream) Snapshot() ([]config.LogEntry, uint64) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	count := s.count
@@ -187,7 +194,7 @@ func (s *logStream) Entries() []config.LogEntry {
 			Raw:       s.lines[metadataIndex],
 		})
 	}
-	return entries
+	return entries, s.revision
 }
 
 // Lines returns the buffered text without its metadata.
@@ -207,6 +214,7 @@ func (s *logStream) Lines() []string {
 // afterwards would make an address point at two different executions.
 func (s *logStream) Clear() {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	clear(s.lines)
 	clear(s.times)
 	clear(s.sources)
@@ -216,9 +224,8 @@ func (s *logStream) Clear() {
 	s.write = 0
 	s.count = 0
 	s.retainedBytes = 0
-	catalog, target := s.catalog, s.target
-	s.mu.Unlock()
-	catalog.ClearOutput(target)
+	s.revision++
+	s.catalog.ClearOutput(s.target)
 }
 
 // DeleteRun atomically removes only entries belonging to one run while
@@ -230,6 +237,7 @@ func (s *logStream) DeleteRun(run uint32) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	previousCount := s.count
 	kept := make([]config.LogEntry, 0, s.count)
 	keptBytes := make([]uint64, 0, s.count)
 	for index := range s.count {
@@ -254,6 +262,9 @@ func (s *logStream) DeleteRun(run uint32) {
 	}
 	s.count = len(kept)
 	s.write = s.count % len(s.lines)
+	if len(kept) != previousCount {
+		s.revision++
+	}
 }
 
 // CopyFrom preserves a logical stream across a hot reload.
@@ -274,6 +285,7 @@ func (s *logStream) CopyFrom(previous *logStream) {
 	s.maxBytes = previous.maxBytes
 	s.nextSeq = previous.nextSeq
 	s.currentRun = previous.currentRun
+	s.revision = previous.revision
 }
 
 // defaultLogBufferSize bounds one stream's history when no size is configured.

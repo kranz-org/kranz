@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -368,6 +369,63 @@ func TestBackgroundRuntimeReadinessConflictAndDown(t *testing.T) {
 			t.Fatalf("background runtime remained after down: %v", err)
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func TestSameNameRuntimeInAnotherDirectoryIsRejected(t *testing.T) {
+	first, name := writeMCPProject(t)
+	startTestRuntime(t, first, name)
+	second := t.TempDir()
+	configPath := filepath.Join(second, "kranz.yaml")
+	if err := os.WriteFile(configPath, []byte("project: "+name+"\nservices: {api: {command: true}}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	options := kranzcli.GlobalOptions{Directory: second}
+	if _, err := resolveSession(options); err == nil {
+		t.Fatal("directory lookup selected another project's runtime")
+	}
+	if _, err := resolveOrStartDashboardRuntime(options, nil, name, second); err == nil {
+		t.Fatal("dashboard selected another project's runtime")
+	}
+}
+
+func TestRuntimeNameResolutionDoesNotChangeProcessDirectory(t *testing.T) {
+	original, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var options []kranzcli.GlobalOptions
+	for _, name := range []string{"alpha", "beta"} {
+		directory := t.TempDir()
+		if err := os.WriteFile(filepath.Join(directory, "kranz.yaml"),
+			[]byte("project: "+name+"\nservices: {api: {command: true}}\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		options = append(options, kranzcli.GlobalOptions{Directory: directory})
+	}
+	var wg sync.WaitGroup
+	errors := make(chan error, 40)
+	for index, option := range options {
+		for range 20 {
+			wg.Add(1)
+			go func(index int, option kranzcli.GlobalOptions) {
+				defer wg.Done()
+				name, err := runtimeNameFromDirectory(option)
+				if err != nil {
+					errors <- err
+				} else if name != []string{"alpha", "beta"}[index] {
+					errors <- fmt.Errorf("resolved unexpected runtime name %q", name)
+				}
+			}(index, option)
+		}
+	}
+	wg.Wait()
+	close(errors)
+	for err := range errors {
+		t.Fatal(err)
+	}
+	if current, err := os.Getwd(); err != nil || current != original {
+		t.Fatal("runtime name resolution changed the process directory")
 	}
 }
 

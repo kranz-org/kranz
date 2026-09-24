@@ -169,6 +169,10 @@ func (m *Manager) applyObservedStatus(svc *Service, observed config.ServiceStatu
 	if previous == observed {
 		return
 	}
+	if observed == config.StatusStopped && svc.Run() != 0 && !svc.GetState().Completed {
+		// A probe can observe an external stop without a process exit callback.
+		svc.RecordExit(0, nil)
+	}
 	svc.SetStatus(observed)
 	svc.SetDesiredRunning(observed == config.StatusRunning)
 	svc.AppendLog("[Kranz] Status observed: " + observed.String())

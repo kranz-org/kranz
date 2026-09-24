@@ -133,7 +133,7 @@ for every command, option, output contract, and exit code.
 - Bounded per-service and per-action run history with provenance, exact output
   retention state, navigation, deletion, and export
 - Procfile, native YAML, and conservative Process Compose loading
-- Live configuration reload with last-known-good fallback
+- Detected configuration changes with explicit reload and last-known-good fallback
 - Exact CLI filters, bounded live watch, stable JSON, and Docker-style row
   templates for automation
 - Draft-based configuration authoring with editable services, actions,

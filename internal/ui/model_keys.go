@@ -41,6 +41,8 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleConfirmQuitKeys(msg)
 	case ModeConfirmRestart:
 		return m.handleConfirmRestartKeys(msg)
+	case ModeConfirmConfigReload:
+		return m.handleConfirmConfigReloadKeys(msg)
 	case ModeConfirmClearLogs:
 		return m.handleConfirmClearLogsKeys(msg)
 	case ModeConfirmAction:

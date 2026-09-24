@@ -113,7 +113,7 @@ func TestQueryLogsRunRunsSinceAndActionDefault(t *testing.T) {
 		}
 	}
 	second, err := local.QueryLogs(LogQuery{Selectors: []string{"api/migrate"}, Run: -2})
-	if err != nil || len(second.Events) == 0 {
+	if err != nil || len(second.Events) == 0 || second.Truncated {
 		t.Fatalf("run -2 = %#v, %v", second, err)
 	}
 	for _, event := range second.Events {
@@ -122,7 +122,7 @@ func TestQueryLogsRunRunsSinceAndActionDefault(t *testing.T) {
 		}
 	}
 	lastTwo, err := local.QueryLogs(LogQuery{Selectors: []string{"api/migrate"}, Runs: 2})
-	if err != nil || len(lastTwo.Events) == 0 {
+	if err != nil || len(lastTwo.Events) == 0 || lastTwo.Truncated {
 		t.Fatalf("runs 2 = %#v, %v", lastTwo, err)
 	}
 	for _, event := range lastTwo.Events {
@@ -131,7 +131,7 @@ func TestQueryLogsRunRunsSinceAndActionDefault(t *testing.T) {
 		}
 	}
 	latest, err := local.QueryLogs(LogQuery{Selectors: []string{"api/migrate"}, DefaultTail: 200})
-	if err != nil || len(latest.Events) == 0 {
+	if err != nil || len(latest.Events) == 0 || latest.Truncated {
 		t.Fatalf("default = %#v, %v", latest, err)
 	}
 	for _, event := range latest.Events {
@@ -148,6 +148,39 @@ func TestQueryLogsRunRunsSinceAndActionDefault(t *testing.T) {
 		if event.Timestamp.Before(cutoff) {
 			t.Fatalf("since returned %s before %s", event.Timestamp, cutoff)
 		}
+	}
+}
+
+func TestQueryLogsRelativeRunsSkipDeletedMiddleRun(t *testing.T) {
+	local := logQueryTestLocal(t)
+	id, _ := findActionID(local.Config(), "api/migrate")
+	for range 3 {
+		if _, err := local.RunAction(context.Background(), id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := local.DeleteRun(ActionRunTarget(id), 2); err != nil {
+		t.Fatal(err)
+	}
+	previous, err := local.QueryLogs(LogQuery{Selectors: []string{"api/migrate"}, Run: -2})
+	if err != nil || len(previous.Events) == 0 {
+		t.Fatalf("previous retained run = %#v, %v", previous, err)
+	}
+	for _, event := range previous.Events {
+		if event.Run != 1 {
+			t.Fatalf("relative -2 selected run #%d, want #1", event.Run)
+		}
+	}
+	lastTwo, err := local.QueryLogs(LogQuery{Selectors: []string{"api/migrate"}, Runs: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[uint32]bool{}
+	for _, event := range lastTwo.Events {
+		seen[event.Run] = true
+	}
+	if !seen[1] || !seen[3] || seen[2] {
+		t.Fatalf("last two retained runs = %#v, want #1 and #3", seen)
 	}
 }
 
@@ -219,7 +252,7 @@ func TestQueryLogsFailsOnAnUnaddressableExplicitRun(t *testing.T) {
 	// A run that was never assigned, and an offset past the retained history,
 	// must both be reported. Returning an empty success made a typo, a deleted
 	// run, and a silent run indistinguishable.
-	for _, run := range []int{99, -9} {
+	for _, run := range []int{99, -9, int(uint64(^uint32(0)) + 2)} {
 		result, err := local.QueryLogs(LogQuery{Selectors: []string{"api/migrate"}, Run: run})
 		var queryErr *LogQueryError
 		if !errors.As(err, &queryErr) || queryErr.Code != "run_not_retained" {

@@ -247,6 +247,10 @@ func (r *ActionRunner) Run(ctx context.Context, id config.ActionID) (ActionResul
 // operations use reserved IDs while sharing owner serialization, cancellation,
 // timeout handling, output capture, and process reaping with user actions.
 func (r *ActionRunner) RunDefinition(ctx context.Context, id config.ActionID, action config.Action) (ActionResult, error) {
+	return r.runDefinition(ctx, id, action, nil)
+}
+
+func (r *ActionRunner) runDefinition(ctx context.Context, id config.ActionID, action config.Action, onOutput func(CapturedOutput)) (ActionResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -286,7 +290,7 @@ func (r *ActionRunner) RunDefinition(ctx context.Context, id config.ActionID, ac
 		stream.Append(started, "kranz", fmt.Sprintf("[Kranz] %s/%s #%d started", id.Owner, id.Name, run))
 	}
 	r.recordActionTransition(id, run, ActionReady, ActionRunning, 0, fmt.Sprintf("%s/%s #%d started", id.Owner, id.Name, run))
-	result, runErr := r.execute(runCtx, id, action, run, started, stream)
+	result, runErr := r.execute(runCtx, id, action, run, started, stream, onOutput)
 	if stream != nil {
 		stream.Append(time.Now(), "kranz", fmt.Sprintf("[Kranz] %s/%s #%d %s · exit %d · %s",
 			id.Owner, id.Name, run, result.Status, result.ExitCode, result.Duration.Round(time.Millisecond)))
@@ -304,7 +308,7 @@ func (r *ActionRunner) RunDefinition(ctx context.Context, id config.ActionID, ac
 	return result, runErr
 }
 
-func (r *ActionRunner) execute(ctx context.Context, id config.ActionID, action config.Action, run uint32, started time.Time, stream *logStream) (ActionResult, error) {
+func (r *ActionRunner) execute(ctx context.Context, id config.ActionID, action config.Action, run uint32, started time.Time, stream *logStream, onOutput func(CapturedOutput)) (ActionResult, error) {
 	result := ActionResult{ID: id, Run: run, Status: ActionFailed, ExitCode: -1, StartedAt: started, Params: cloneAnyMap(action.ParamValues), CommandPreview: action.CommandPreview}
 	if err := ctx.Err(); err != nil {
 		return finishActionResult(result, ActionCancelled, nil, err)
@@ -329,7 +333,7 @@ func (r *ActionRunner) execute(ctx context.Context, id config.ActionID, action c
 	// The pump copies output into the addressable stream while the action runs,
 	// so `kranz logs owner/action --follow` sees lines as they land instead of
 	// only at exit. Its final sweep runs on every return path.
-	defer startOutputPump(stream, process)()
+	defer startOutputPump(stream, process, onOutput)()
 
 	waitCh := make(chan error, 1)
 	go func() { waitCh <- process.Wait() }()
@@ -457,12 +461,16 @@ func (r *ActionRunner) Result(id config.ActionID, requested int) (ActionResult, 
 		if state, ok := r.states[id]; ok && state.Status == ActionRunning {
 			available = append(available, state.Run)
 		}
-		offset := -requested
-		if offset > len(available) {
+		// Compare before negating: the minimum int cannot be made positive.
+		if requested < -len(available) {
 			return ActionResult{}, fmt.Errorf("%w: %s/%s run offset %d", ErrActionRunNotFound, id.Owner, id.Name, requested)
 		}
+		offset := -requested
 		wanted = available[len(available)-offset]
 	} else {
+		if uint64(requested) > uint64(^uint32(0)) {
+			return ActionResult{}, fmt.Errorf("%w: %s/%s run %d", ErrActionRunNotFound, id.Owner, id.Name, requested)
+		}
 		wanted = uint32(requested)
 		if wanted > latest {
 			return ActionResult{}, fmt.Errorf("%w: %s/%s run %d", ErrActionRunNotFound, id.Owner, id.Name, requested)
@@ -641,13 +649,18 @@ func (r *ActionRunner) logStreamFor(id config.ActionID) *logStream {
 
 // ActionLogEntries returns the buffered history of one action.
 func (r *ActionRunner) ActionLogEntries(id config.ActionID) []config.LogEntry {
+	entries, _ := r.ActionLogSnapshot(id)
+	return entries
+}
+
+func (r *ActionRunner) ActionLogSnapshot(id config.ActionID) ([]config.LogEntry, uint64) {
 	r.logsMu.RLock()
 	stream := r.logs[id]
 	r.logsMu.RUnlock()
 	if stream == nil {
-		return nil
+		return nil, 0
 	}
-	return stream.Entries()
+	return stream.Snapshot()
 }
 
 // ClearActionLogs discards one action's buffered history.
@@ -699,13 +712,18 @@ func (r *ActionRunner) DeleteRun(id config.ActionID, run uint32) {
 // returned stop function is called, which sweeps whatever arrived last. It
 // drains only the canonical capture queue; per-source buffers remain intact for
 // the ActionResult snapshot the caller builds at completion.
-func startOutputPump(stream *logStream, process *ProcessManager) func() {
-	if stream == nil || process == nil {
+func startOutputPump(stream *logStream, process *ProcessManager, onOutput func(CapturedOutput)) func() {
+	if process == nil || (stream == nil && onOutput == nil) {
 		return func() {}
 	}
 	sweep := func() {
 		for _, entry := range process.DrainCapturedOutput() {
-			stream.Append(entry.CapturedAt, entry.Source, entry.Text)
+			if stream != nil {
+				stream.Append(entry.CapturedAt, entry.Source, entry.Text)
+			}
+			if onOutput != nil {
+				onOutput(entry)
+			}
 		}
 	}
 	done, finished := make(chan struct{}), make(chan struct{})
@@ -734,6 +752,10 @@ func startOutputPump(stream *logStream, process *ProcessManager) func() {
 // ActionLogs returns the buffered history of one action.
 func (m *Manager) ActionLogs(id config.ActionID) []config.LogEntry {
 	return m.actions.ActionLogEntries(id)
+}
+
+func (m *Manager) ActionLogSnapshot(id config.ActionID) ([]config.LogEntry, uint64) {
+	return m.actions.ActionLogSnapshot(id)
 }
 
 // ClearActionLogs discards one action's buffered history.

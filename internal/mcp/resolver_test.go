@@ -115,6 +115,40 @@ func TestPinnedServerRefusesAnotherAddress(t *testing.T) {
 	}
 }
 
+func TestPinnedUpRejectsAnotherDirectoryBeforeLaunch(t *testing.T) {
+	launched := false
+	server := resolverServer(t, ResolverOptions{Pin: "alpha", Launch: func(context.Context, string) (kranzruntime.SessionRecord, bool, error) {
+		launched = true
+		return fakeRecord("id-beta", "beta"), true, nil
+	}}, fakeRecord("id-alpha", "alpha"))
+	envelope := testTool(t, server, "up", `{"directory":"/tmp/beta","confirm":true}`)
+	if envelope.Error == nil || envelope.Error.Code != "runtime_pinned" || launched {
+		t.Fatalf("pinned up crossed projects: error=%#v launched=%v", envelope.Error, launched)
+	}
+}
+
+func TestDirectoryPinRejectsSameNameRuntimeElsewhere(t *testing.T) {
+	server := resolverServer(t, ResolverOptions{Pin: "alpha", PinDirectory: "/workspace/shop"}, fakeRecord("id-alpha", "alpha"))
+	envelope := testTool(t, server, "status", `{}`)
+	if envelope.Error == nil || envelope.Error.Code != "runtime_pinned" {
+		t.Fatalf("same-name runtime bypassed directory pin: %#v", envelope.Error)
+	}
+}
+
+func TestStoppedNamePinCanLaunchItsProjectDirectory(t *testing.T) {
+	server := resolverServer(t, ResolverOptions{Pin: "custom", ProjectDirectory: "/workspace/shop",
+		Launch: func(_ context.Context, directory string) (kranzruntime.SessionRecord, bool, error) {
+			record := fakeRecord("id-custom", "custom")
+			record.Directory = directory
+			return record, true, nil
+		}},
+	)
+	envelope := testTool(t, server, "up", `{"directory":"/workspace/shop","confirm":true}`)
+	if envelope.Error != nil {
+		t.Fatalf("stopped name pin rejected its project: %#v", envelope.Error)
+	}
+}
+
 func TestUnavailablePinStillRefusesAnotherAddress(t *testing.T) {
 	server := resolverServer(t, ResolverOptions{Pin: "alpha"}, fakeRecord("id-beta", "beta"))
 

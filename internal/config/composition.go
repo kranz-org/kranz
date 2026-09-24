@@ -210,6 +210,11 @@ func (c *composer) topLevelRequests(options LoadOptions) ([]sourceRequest, bool,
 	if len(options.Sources) > 0 {
 		var requests []sourceRequest
 		for _, expression := range options.Sources {
+			watchPath := expression
+			if !filepath.IsAbs(watchPath) {
+				watchPath = filepath.Join(c.root, watchPath)
+			}
+			c.watchPaths = appendUniqueString(c.watchPaths, watchPath)
 			matches, kind, err := resolveExpression(c.root, c.root, expression)
 			if err != nil {
 				return nil, false, err
@@ -221,6 +226,7 @@ func (c *composer) topLevelRequests(options LoadOptions) ([]sourceRequest, bool,
 		return requests, false, nil
 	}
 	if primary, err := Discover(c.root); err == nil {
+		c.scopes = append(c.scopes, DiscoveryScope{Path: c.root, DisplayPath: ".", MaxDepth: intPointer(0), FollowSymlinks: options.FollowSymlinks})
 		return []sourceRequest{{path: primary, kind: SourceExplicit}}, false, nil
 	}
 	var maxDepth *int
@@ -279,6 +285,7 @@ func resolveExpression(base, displayRoot, expression string) ([]string, ConfigSo
 }
 
 func (c *composer) visit(request sourceRequest) error {
+	c.watchPaths = appendUniqueString(c.watchPaths, request.path)
 	canonical, err := filepath.EvalSymlinks(request.path)
 	if err != nil {
 		return fmt.Errorf("resolve config %s: %w", displayBase(c.root, request.path), sanitizePathError(c.root, request.path, err))

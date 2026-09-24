@@ -483,13 +483,9 @@ func runTUI(options kranzcli.GlobalOptions) (runErr error) {
 		}
 		return &kranzcli.Error{Code: "invalid_config", Message: "load configuration", ExitCode: kranzcli.ExitConfig, Cause: err}
 	}
-	cfgPaths := append([]string(nil), cfg.Paths...)
-	if config.HasVirtualRoot(cfg.Sources) {
-		// Preserve discovery as the runtime's request. Passing the expanded
-		// files would turn the first child into a different explicit root and
-		// would stop future configs from appearing on reload.
-		cfgPaths = nil
-	}
+	// The runtime must replay the user's source request. Included files are
+	// outputs of composition, not additional top-level sources.
+	cfgPaths := append([]string(nil), options.ConfigPaths...)
 	directory, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("resolve runtime directory: %w", err)
@@ -540,6 +536,9 @@ func resolveOrStartDashboardRuntime(options kranzcli.GlobalOptions, cfgPaths []s
 	}
 	record, lookupErr := resolve()
 	if lookupErr == nil {
+		if options.Project == "" && !sameLaunchDirectory(record.Directory, directory) {
+			return kranzruntime.SessionRecord{}, wrongProjectRuntime(runtimeName)
+		}
 		return record, nil
 	}
 	var missingRuntime *kranzruntime.SessionNotFoundError
@@ -557,6 +556,9 @@ func resolveOrStartDashboardRuntime(options kranzcli.GlobalOptions, cfgPaths []s
 	record, err = resolve()
 	if err != nil {
 		return kranzruntime.SessionRecord{}, classifyRuntimeError(err)
+	}
+	if options.Project == "" && !sameLaunchDirectory(record.Directory, directory) {
+		return kranzruntime.SessionRecord{}, wrongProjectRuntime(runtimeName)
 	}
 	return record, nil
 }

@@ -123,6 +123,36 @@ func (c *RunCatalog) SetOutputLimits(target RunTarget, maxEntries int, maxBytes 
 	c.mu.Unlock()
 }
 
+// MoveTarget preserves run addresses when a service keeps its identity under
+// a new display name. The replacement stream already owns the copied output.
+func (c *RunCatalog) MoveTarget(from, to RunTarget) {
+	if c == nil || from == to {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	history := c.runs[from]
+	if len(history) > 0 {
+		for index := range history {
+			history[index].Target = to
+		}
+		c.runs[to] = history
+	}
+	delete(c.runs, from)
+	if boundary, exists := c.boundaries[from]; exists {
+		limits := c.boundaries[to]
+		boundary.Target = to
+		if limits.MaxEntries != 0 {
+			boundary.MaxEntries = limits.MaxEntries
+		}
+		if limits.MaxBytes != 0 {
+			boundary.MaxBytes = limits.MaxBytes
+		}
+		c.boundaries[to] = boundary
+		delete(c.boundaries, from)
+	}
+}
+
 func (c *RunCatalog) Begin(summary RunSummary) {
 	if c == nil || summary.Run == 0 {
 		return

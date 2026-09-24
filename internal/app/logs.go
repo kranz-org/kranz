@@ -104,6 +104,7 @@ type logCursor struct {
 	Generation uint64            `json:"generation"`
 	Signature  string            `json:"signature"`
 	After      map[string]uint64 `json:"after"`
+	Revisions  map[string]uint64 `json:"revisions,omitempty"`
 }
 
 var knownLogSources = []string{"stdout", "stderr", "kranz"}
@@ -141,13 +142,16 @@ func queryLogs(local *Local, query LogQuery) (LogResult, error) {
 		return result, &LogQueryError{Code: "no_run_streams", Message: "run and runs address executions, and nothing was selected", Hint: "Name a service, or an action as OWNER/ACTION."}
 	}
 	signature := logQuerySignature(query, targets)
-	cursor := logCursor{SessionID: project.SessionID, Generation: project.Generation, Signature: signature, After: map[string]uint64{}}
+	cursor := logCursor{SessionID: project.SessionID, Generation: project.Generation, Signature: signature, After: map[string]uint64{}, Revisions: map[string]uint64{}}
 	if query.Cursor != "" {
 		decoded, decodeErr := decodeLogCursor(query.Cursor)
 		if decodeErr != nil || decoded.SessionID != project.SessionID || decoded.Generation != project.Generation || decoded.Signature != signature {
 			return result, &LogQueryError{Code: "invalid_cursor", Message: "log cursor does not belong to this session generation and query", Hint: "Start a new logs query without cursor."}
 		}
 		cursor = decoded
+		if cursor.Revisions == nil {
+			cursor.Revisions = make(map[string]uint64)
+		}
 	}
 
 	events := make([]LogEvent, 0)
@@ -158,10 +162,11 @@ func queryLogs(local *Local, query LogQuery) (LogResult, error) {
 	runAddressed := explicitRun == 0
 	retained := make([]string, 0, len(targets))
 	for _, target := range targets {
-		entries := local.Logs(target.service)
-		if target.isAction() {
-			entries = local.ActionLogs(target.action)
+		entries, revision := local.logSnapshot(target)
+		if query.Cursor != "" && cursor.Revisions[target.address] != revision {
+			result.Truncated = true
 		}
+		cursor.Revisions[target.address] = revision
 		runTarget := serviceRunTargetForLogTarget(target)
 		summaries := local.manager.RunSummaries(runTarget)
 		low, high, selected := selectedRunRange(summaries, query.Run, query.Runs)
@@ -191,10 +196,10 @@ func queryLogs(local *Local, query LogQuery) (LogResult, error) {
 		if len(entries) > 0 {
 			window.OldestSequence = entries[0].Sequence
 			window.LatestSequence = entries[len(entries)-1].Sequence
-			if query.Cursor == "" && window.OldestSequence > 1 {
+			if query.Cursor == "" && query.Run == 0 && query.Runs == 0 && window.OldestSequence > 1 {
 				result.Truncated = true
 			}
-			if after := cursor.After[target.address]; after != 0 && after+1 < window.OldestSequence {
+			if after := cursor.After[target.address]; query.Run == 0 && query.Runs == 0 && after != 0 && after+1 < window.OldestSequence {
 				result.Truncated = true
 			}
 		}
@@ -382,28 +387,30 @@ func selectedRunRange(summaries []RunSummary, run, runs int) (low, high uint32, 
 	if run == 0 && runs == 0 {
 		return 0, 0, false
 	}
-	var latest uint32
+	retained := make([]uint32, 0, len(summaries))
 	for _, summary := range summaries {
-		latest = max(latest, summary.Run)
+		retained = append(retained, summary.Run)
 	}
-	if latest == 0 {
+	if len(retained) == 0 {
 		return 0, 0, false
 	}
+	slices.Sort(retained)
+	retained = slices.Compact(retained)
+	latest := retained[len(retained)-1]
 	if run > 0 {
-		low, high = uint32(run), uint32(run)
-	} else if run < 0 {
-		offset := uint32(-run) - 1
-		if offset >= latest {
+		if uint64(run) > uint64(^uint32(0)) {
 			return 0, 0, false
 		}
-		low, high = latest-offset, latest-offset
+		low, high = uint32(run), uint32(run)
+	} else if run < 0 {
+		offset := -(run + 1)
+		if offset >= len(retained) {
+			return 0, 0, false
+		}
+		low, high = retained[len(retained)-1-offset], retained[len(retained)-1-offset]
 	} else {
 		high = latest
-		if uint32(runs) >= latest {
-			low = 1
-		} else {
-			low = latest - uint32(runs) + 1
-		}
+		low = retained[max(0, len(retained)-runs)]
 	}
 	return low, high, true
 }

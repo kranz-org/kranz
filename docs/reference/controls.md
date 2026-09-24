@@ -145,7 +145,7 @@ accent-coloured shortcuts.
 | Key | Action |
 | --- | --- |
 | `Ctrl+T` | Theme and appearance picker |
-| `Ctrl+L` | Reload configuration and terminal appearance |
+| `Ctrl+L` | Apply detected configuration changes and reload terminal appearance |
 | `Ctrl+O` | Hand terminal to a shell; press again to return |
 | `m` | Open the configuration map |
 | `p` | Switch to another local Kranz runtime |

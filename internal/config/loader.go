@@ -610,6 +610,21 @@ func Discover(directory string) (string, error) {
 	return "", fmt.Errorf("no supported configuration found in %s (looked for %s)", directory, strings.Join(supportedConfigNames(), ", "))
 }
 
+// PreferredConfigName selects the same per-directory source that discovery
+// would choose from the available supported file names.
+func PreferredConfigName(names []string) string {
+	available := make(map[string]bool, len(names))
+	for _, name := range names {
+		available[name] = true
+	}
+	for _, name := range supportedConfigNames() {
+		if available[name] {
+			return name
+		}
+	}
+	return ""
+}
+
 // DiscoverFiles returns the primary project configuration and the conventional
 // Process Compose override file when one is present.
 func DiscoverFiles(directory string) ([]string, error) {

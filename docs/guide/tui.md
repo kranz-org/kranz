@@ -75,6 +75,10 @@ move elsewhere. Search with `/`, then use `Tab` to switch between filtering and
 highlighting; `n` and `Shift+N` move between highlighted matches. Toggle wrap
 with `w`, captured-at timestamps with `i`, and following with `f`.
 
+`WRAP` and `TIME` appear in the log header when enabled. The panel keeps its
+selected row while output arrives, including wrapped, filtered, and pinned
+views.
+
 Service output survives a crash or stop for as long as the runtime exists.
 Every service start and action execution has a run number, so logs remain
 attributable across restarts instead of becoming one ambiguous stream.
@@ -85,6 +89,10 @@ Actions live below their service or project action group. Run a focused action
 with `s`; confirmation is shown when its configuration requests it. Completed
 actions remain available by their `OWNER/ACTION#run` identity, including their
 captured output and exit status.
+
+Press `c` on a parameterized action to open its form. When radio or checkbox
+choices exceed the available width, the form puts every choice on its own
+aligned line; long labels wrap without hiding options.
 
 Press `n` outside an active log-highlight search to open notifications. Press
 `h` from Logs for recorded health transitions. Both views explain what changed

@@ -726,12 +726,98 @@ func TestThemePickerSavesAppearanceToProjectConfig(t *testing.T) {
 	if savedConfig.UI != want {
 		t.Fatalf("project appearance = %#v, want %#v", savedConfig.UI, want)
 	}
+	if !model.configChanged {
+		t.Fatal("project appearance save did not mark the config as pending")
+	}
+	if model.app.Config().UI == want {
+		t.Fatal("project appearance was applied to the runtime before Ctrl+L")
+	}
+	if changed, err := model.app.ConfigChanged(); err != nil || !changed {
+		t.Fatalf("saved appearance is not pending in the runtime: %v, %v", changed, err)
+	}
 	savedSettings, err := usersettings.Load(settingsPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if savedSettings != (usersettings.Settings{}) {
 		t.Fatalf("user overrides were not cleared: %#v", savedSettings)
+	}
+}
+
+func TestProjectAppearanceTargetsRootSource(t *testing.T) {
+	directory := t.TempDir()
+	root := filepath.Join(directory, "kranz.yaml")
+	child := filepath.Join(directory, "child", "kranz.yaml")
+	if err := os.MkdirAll(filepath.Dir(child), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(root, []byte("project: Root\nui: {theme: forest}\ninclude: [{path: child/kranz.yaml}]\nservices: {api: {command: true}}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(child, []byte("project: Child\nui: {theme: nord}\nservices: {worker: {command: true}}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	options := config.LoadOptions{Directory: directory}
+	cfg, err := config.Compose(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	model := NewModelWithOptions(cfg, "test", ModelOptions{ConfigPaths: cfg.Paths})
+	defer model.Shutdown()
+	selectedInfo, err := os.Stat(model.themeProjectConfigPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootInfo, err := os.Stat(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(selectedInfo, rootInfo) {
+		t.Fatal("appearance did not target the root source")
+	}
+	if err := config.SaveUIAppearance(model.themeProjectConfigPath(), config.UIConfig{Theme: "dracula"}); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := config.Compose(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.UI.Theme != "dracula" {
+		t.Fatalf("effective appearance after save = %#v", loaded.UI)
+	}
+}
+
+func TestVirtualRootCannotSaveProjectAppearance(t *testing.T) {
+	directory := t.TempDir()
+	child := filepath.Join(directory, "child", "kranz.yaml")
+	if err := os.MkdirAll(filepath.Dir(child), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(child, []byte("project: Child\nservices: {api: {command: true}}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Compose(config.LoadOptions{Directory: directory})
+	if err != nil {
+		t.Fatal(err)
+	}
+	model := NewModel(cfg, "test")
+	defer model.Shutdown()
+	if path := model.themeProjectConfigPath(); path != "" {
+		t.Fatalf("virtual root exposed appearance target %q", filepath.Base(path))
+	}
+}
+
+func TestAppearancePreviewDoesNotMutateLocalRuntimeConfig(t *testing.T) {
+	cfg := &config.Config{Project: "Preview", UI: config.UIConfig{Theme: "forest"},
+		Services: map[string]config.Service{"api": {Command: "true"}}}
+	model := NewModel(cfg, "test")
+	defer model.Shutdown()
+	model.applyReloadedAppearance(appearanceReloadMsg{projectUI: config.UIConfig{Theme: "nord"}})
+	if model.cfg.UI.Theme != "nord" {
+		t.Fatal("appearance preview did not update the TUI")
+	}
+	if model.app.Config().UI.Theme != "forest" {
+		t.Fatal("appearance preview changed the runtime config")
 	}
 }
 

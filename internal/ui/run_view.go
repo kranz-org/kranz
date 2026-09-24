@@ -278,50 +278,91 @@ func (m *Model) renderPinnedActionRunPanel(target app.RunTarget, width, height i
 		return renderTitledPanel(m.panelStyle(panelPinnedLogs), m.panelTitleStyle(panelPinnedLogs), contentWidth, contentHeight, title,
 			[]string{"", ContextBarStyle.Render("No retained output for this snapshot")})
 	}
-	indices := make([]int, len(entries))
-	for index := range indices {
-		indices[index] = index
-	}
-	lines := logEntryLines(entries)
+	var indices []int
 	matches := []int(nil)
 	if m.pinnedSearcher != nil && m.pinnedSearcher.HasPattern() {
-		matches = m.pinnedSearcher.Search(lines)
+		matches = m.pinnedSearcher.Search(logEntryLines(entries))
 		if m.pinnedSearchMode == searchFilter {
-			indices = append([]int(nil), matches...)
+			indices = matches
 		}
 		title += SearchInputStyle.Render(fmt.Sprintf("  /%s/ · %d", m.pinnedSearcher.Pattern(), len(matches)))
+	}
+	filtered := m.pinnedSearcher != nil && m.pinnedSearcher.HasPattern() && m.pinnedSearchMode == searchFilter
+	selectionLen := len(entries)
+	if filtered {
+		selectionLen = len(matches)
 	}
 	matchSet := make(map[int]bool, len(matches))
 	for _, index := range matches {
 		matchSet[index] = true
 	}
-	rows := make([]string, 0, len(indices))
-	for _, index := range indices {
-		entry := entries[index]
-		line := m.displayLogEntry(entry)
-		if entry.Source == "stderr" {
-			line = "[stderr] " + line
+	metrics := m.logRowMetricsFor(logSlotPinned, target, contentWidth)
+	metrics.forget(entries)
+	totalRows := 0
+	if !filtered {
+		totalRows = metrics.totalPinnedActionRows(m, entries, contentWidth)
+	} else {
+		for _, index := range matches {
+			totalRows += metrics.pinnedActionRowCount(m, entries[index], contentWidth)
 		}
-		styled := styleLogLine(line)
-		visual := []string{ansi.Truncate(styled, contentWidth, "…")}
-		if m.wrapLogs {
-			visual = strings.Split(ansi.Hardwrap(styled, contentWidth, true), "\n")
-		}
-		if m.pinnedSearchMode == searchHighlight && matchSet[index] {
-			for visualIndex := range visual {
-				visual[visualIndex] = SearchHighlightStyle.Render(preserveStyleAfterReset(visual[visualIndex], SearchHighlightStyle))
-			}
-		}
-		rows = append(rows, visual...)
 	}
-	maxStart := max(0, len(rows)-contentHeight)
+	maxStart := max(0, totalRows-contentHeight)
 	start := maxStart
+	limit := totalRows
 	if !m.pinnedFollow {
-		anchor := min(len(rows), max(0, m.pinnedAnchor))
+		anchor := min(totalRows, max(0, m.pinnedAnchor))
 		start = max(0, max(0, anchor-contentHeight)-m.pinnedOffset)
+		limit = anchor
 	}
-	end := min(len(rows), start+contentHeight)
-	return renderTitledPanel(m.panelStyle(panelPinnedLogs), m.panelTitleStyle(panelPinnedLogs), contentWidth, contentHeight, title, rows[start:end])
+	end := min(limit, start+contentHeight)
+	rows := m.stylePinnedActionRowWindow(entries, indices, selectionLen, metrics, contentWidth, start, end, m.pinnedSearchMode == searchHighlight, matchSet)
+	return renderTitledPanel(m.panelStyle(panelPinnedLogs), m.panelTitleStyle(panelPinnedLogs), contentWidth, contentHeight, title, rows)
+}
+
+func (m *Model) stylePinnedActionRowWindow(entries []config.LogEntry, indices []int, selectionLen int, metrics *logRowMetrics, width, start, end int, highlight bool, matches map[int]bool) []string {
+	if end <= start {
+		return nil
+	}
+	rows := make([]string, 0, end-start)
+	first, consumed := 0, 0
+	if indices == nil && selectionLen == len(entries) && len(metrics.rows) == len(entries)+1 {
+		first = sort.Search(len(entries), func(index int) bool { return metrics.rows[index+1] > start })
+		consumed = metrics.rows[first]
+	}
+	for position := first; position < selectionLen && consumed < end; position++ {
+		index := sourceEntryIndex(indices, position)
+		entry := entries[index]
+		count := metrics.pinnedActionRowCount(m, entry, width)
+		if consumed+count <= start {
+			consumed += count
+			continue
+		}
+		styled := styleLogLine(m.pinnedActionDisplayLine(entry))
+		visual := []string{ansi.Truncate(styled, width, "…")}
+		if m.wrapLogs {
+			visual = strings.Split(ansi.Hardwrap(styled, width, true), "\n")
+		}
+		for offset, row := range visual {
+			absolute := consumed + offset
+			if absolute < start || absolute >= end {
+				continue
+			}
+			if highlight && matches[index] {
+				row = SearchHighlightStyle.Render(preserveStyleAfterReset(row, SearchHighlightStyle))
+			}
+			rows = append(rows, row)
+		}
+		consumed += count
+	}
+	return rows
+}
+
+func (m *Model) pinnedActionDisplayLine(entry config.LogEntry) string {
+	line := m.displayLogEntry(entry)
+	if entry.Source == "stderr" {
+		return "[stderr] " + line
+	}
+	return line
 }
 
 func (m *Model) openRunList() {

@@ -109,18 +109,23 @@ func (m *Manager) handleNaturalExit(name string, svc *Service, exitCode int) {
 }
 
 func (m *Manager) requestProjectExit(code int) {
-	if !m.exitRequested.CompareAndSwap(false, true) {
+	if !m.exitRequest.CompareAndSwap(nil, &projectExitRequest{code: code}) {
 		return
 	}
-	m.exitCode.Store(int64(code))
 	go func() { _ = m.StopAll() }()
 }
+
+type projectExitRequest struct{ code int }
 
 // ProjectExitRequested reports whether an availability policy requested the
 // whole Kranz session to terminate, together with its intended exit code.
 
 func (m *Manager) ProjectExitRequested() (bool, int) {
-	return m.exitRequested.Load(), int(m.exitCode.Load())
+	request := m.exitRequest.Load()
+	if request == nil {
+		return false, 0
+	}
+	return true, request.code
 }
 
 func (m *Manager) drainProcessLogs(svc *Service, pm *ProcessManager) {

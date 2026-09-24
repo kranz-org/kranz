@@ -77,6 +77,13 @@ func TestActionResultRunIdentityAndBoundedHistory(t *testing.T) {
 	if !errors.Is(err, ErrActionRunNotFound) {
 		t.Fatalf("unknown run = %#v", err)
 	}
+	minimumInt := -int(^uint(0)>>1) - 1
+	for _, requested := range []int{minimumInt, int(uint64(^uint32(0)) + 2)} {
+		_, err = runner.Result(id, requested)
+		if !errors.Is(err, ErrActionRunNotFound) {
+			t.Fatalf("out-of-range run %d = %v", requested, err)
+		}
+	}
 }
 
 func TestActionRunnerExposesOutputWhileRunning(t *testing.T) {

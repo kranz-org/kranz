@@ -317,6 +317,7 @@ func (m *Model) resetRuntimeDataCaches() {
 	m.actionLogLines = make(map[app.RunTarget][]cachedActionLogLine)
 	m.actionRunLogLines = make(map[app.RunTarget]map[uint32][]cachedActionLogLine)
 	m.logCursors = make(map[app.RunTarget]string)
+	m.logRowCache = [logSlotCount]*logRowMetrics{}
 	m.portDetails = make(map[int]*config.PortInfo)
 	m.portError = nil
 }

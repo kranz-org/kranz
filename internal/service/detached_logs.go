@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/kranz-org/kranz/internal/config"
 )
@@ -29,39 +28,20 @@ func (m *Manager) followDetachedLogs(ctx context.Context, svc *Service, action c
 	id := config.ActionID{OwnerKind: config.ActionOwnerLifecycle, Owner: svc.Name, Name: "logs"}
 	resultCh := make(chan ActionResult, 1)
 	go func() {
-		result, _ := m.actions.RunDefinition(ctx, id, action)
+		result, _ := m.actions.runDefinition(ctx, id, action, func(entry CapturedOutput) {
+			svc.AppendLogAtSource(entry.CapturedAt, entry.Source, entry.Text)
+		})
 		resultCh <- result
 	}()
-	ticker := time.NewTicker(200 * time.Millisecond)
-	defer ticker.Stop()
-	stdoutOffset, stderrOffset := 0, 0
-	appendSnapshot := func(result ActionResult) {
-		for ; stdoutOffset < len(result.Stdout); stdoutOffset++ {
-			svc.AppendLogAtSource(time.Now(), "stdout", result.Stdout[stdoutOffset])
-		}
-		for ; stderrOffset < len(result.Stderr); stderrOffset++ {
-			svc.AppendLogAtSource(time.Now(), "stderr", result.Stderr[stderrOffset])
-		}
+	result := <-resultCh
+	if ctx.Err() == nil {
+		svc.AppendLog(fmt.Sprintf("[Kranz] Detached log follower %s · exit %d", result.Status.String(), result.ExitCode))
 	}
-	for {
-		select {
-		case result := <-resultCh:
-			appendSnapshot(result)
-			if ctx.Err() == nil {
-				svc.AppendLog(fmt.Sprintf("[Kranz] Detached log follower %s · exit %d", result.Status.String(), result.ExitCode))
-			}
-			m.logsMu.Lock()
-			if m.detachedLogs[svc.Name] == follower {
-				delete(m.detachedLogs, svc.Name)
-			}
-			m.logsMu.Unlock()
-			return
-		case <-ticker.C:
-			if result, exists := m.actions.State(id); exists {
-				appendSnapshot(result)
-			}
-		}
+	m.logsMu.Lock()
+	if m.detachedLogs[svc.Name] == follower {
+		delete(m.detachedLogs, svc.Name)
 	}
+	m.logsMu.Unlock()
 }
 
 func (m *Manager) stopDetachedLogs(name string) {

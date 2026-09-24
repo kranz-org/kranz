@@ -26,11 +26,21 @@ const (
 // log entry never changes after it is emitted, so its sequence is a sound cache
 // key; everything that would change the answer instead invalidates the cache.
 type logRowMetrics struct {
-	target   app.RunTarget
-	width    int
-	wrap     bool
-	showTime bool
-	counts   map[uint64]int
+	target        app.RunTarget
+	width         int
+	wrap          bool
+	showTime      bool
+	counts        map[uint64]int
+	rows          []int // prefix row counts for the unfiltered entry window
+	first         uint64
+	last          uint64
+	actionRows    []int // prefix row counts for a wrapped action view
+	actionFirst   uint64
+	actionLast    uint64
+	actionRun     uint32
+	actionPrefix  string
+	actionMarker  string
+	actionRunning bool
 }
 
 func (m *Model) logRowMetricsFor(slot logPanelSlot, target app.RunTarget, width int) *logRowMetrics {
@@ -63,6 +73,76 @@ func (c *logRowMetrics) rowCount(m *Model, entry config.LogEntry, width int) int
 	return count
 }
 
+// totalRows builds the prefix once for a stable log window. Wheel events and
+// frames can then locate the viewport without scanning the retained history.
+func (c *logRowMetrics) totalRows(m *Model, entries []config.LogEntry, width int) int {
+	if len(entries) == 0 {
+		c.rows = c.rows[:0]
+		return 0
+	}
+	first, last := entries[0].Sequence, entries[len(entries)-1].Sequence
+	if len(c.rows) != len(entries)+1 || c.first != first || c.last != last || first == 0 || last == 0 {
+		c.rows = make([]int, len(entries)+1)
+		for i, entry := range entries {
+			c.rows[i+1] = c.rows[i] + c.rowCount(m, entry, width)
+		}
+		c.first, c.last = first, last
+	}
+	return c.rows[len(entries)]
+}
+
+func (c *logRowMetrics) totalActionRows(view actionLogView, width int) int {
+	first, last := uint64(0), uint64(0)
+	if len(view.output) > 0 {
+		first = view.output[0].sequence
+		last = view.output[len(view.output)-1].sequence
+	}
+	prefix := strings.Join(view.prefix, "\n")
+	if len(c.actionRows) != view.len()+1 || c.actionFirst != first || c.actionLast != last ||
+		c.actionRun != view.selectedRun || c.actionPrefix != prefix || c.actionMarker != view.marker ||
+		c.actionRunning != view.running || (len(view.output) > 0 && (first == 0 || last == 0)) {
+		c.actionRows = make([]int, view.len()+1)
+		for index := 0; index < view.len(); index++ {
+			c.actionRows[index+1] = c.actionRows[index] + strings.Count(ansi.Hardwrap(styleLogLine(view.line(index)), width, true), "\n") + 1
+		}
+		c.actionFirst, c.actionLast, c.actionRun = first, last, view.selectedRun
+		c.actionPrefix, c.actionMarker, c.actionRunning = prefix, view.marker, view.running
+	}
+	return c.actionRows[view.len()]
+}
+
+func (c *logRowMetrics) pinnedActionRowCount(m *Model, entry config.LogEntry, width int) int {
+	if entry.Sequence > 0 {
+		if count, ok := c.counts[entry.Sequence]; ok {
+			return count
+		}
+	}
+	count := 1
+	if m.wrapLogs {
+		count += strings.Count(ansi.Hardwrap(styleLogLine(m.pinnedActionDisplayLine(entry)), width, true), "\n")
+	}
+	if entry.Sequence > 0 {
+		c.counts[entry.Sequence] = count
+	}
+	return count
+}
+
+func (c *logRowMetrics) totalPinnedActionRows(m *Model, entries []config.LogEntry, width int) int {
+	if len(entries) == 0 {
+		c.rows = c.rows[:0]
+		return 0
+	}
+	first, last := entries[0].Sequence, entries[len(entries)-1].Sequence
+	if len(c.rows) != len(entries)+1 || c.first != first || c.last != last || first == 0 || last == 0 {
+		c.rows = make([]int, len(entries)+1)
+		for index, entry := range entries {
+			c.rows[index+1] = c.rows[index] + c.pinnedActionRowCount(m, entry, width)
+		}
+		c.first, c.last = first, last
+	}
+	return c.rows[len(entries)]
+}
+
 // forget drops measurements for entries retention has already evicted. It runs
 // only once the cache has outgrown the history it describes, so the sweep costs
 // nothing on an ordinary frame.
@@ -71,11 +151,14 @@ func (c *logRowMetrics) forget(entries []config.LogEntry) {
 		return
 	}
 	oldest := uint64(0)
-	if len(entries) > 0 {
-		oldest = entries[0].Sequence
+	for _, entry := range entries {
+		if entry.Sequence > 0 {
+			oldest = entry.Sequence
+			break
+		}
 	}
 	for sequence := range c.counts {
-		if sequence < oldest {
+		if oldest == 0 || sequence < oldest {
 			delete(c.counts, sequence)
 		}
 	}

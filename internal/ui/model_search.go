@@ -5,7 +5,6 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/kranz-org/kranz/internal/app"
 	"github.com/kranz-org/kranz/internal/config"
 	kranzlog "github.com/kranz-org/kranz/internal/log"
 )
@@ -74,11 +73,10 @@ func (m *Model) activeSearchLines() []string {
 		return nil
 	}
 	if m.focusedAction != nil {
-		run := uint32(0)
-		if m.runMode == runViewSingle {
-			run = m.selectedRun
+		if id, action, state, exists := m.focusedActionDefinition(); exists {
+			return m.actionLogContentView(id, action, state).lines()
 		}
-		return m.cachedActionOutputLines(app.ActionRunTarget(*m.focusedAction), run)
+		return nil
 	}
 	return m.serviceLogLines(m.FocusedService())
 }

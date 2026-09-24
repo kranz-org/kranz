@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -73,47 +74,113 @@ func (m *Model) renderActionLogPanel(width, height int) string {
 	if word := actionStatusWord(state.Status); word != "" {
 		title += ContextBarStyle.Render(" · ") + word
 	}
+	var matches []int
+	hasPattern := m.logSearcher != nil && m.logSearcher.HasPattern()
+	if hasPattern {
+		matches = m.logSearcher.Search(content.lines())
+		modeLabel := "FILTER"
+		if m.searchMode == searchHighlight {
+			modeLabel = "HIGHLIGHT"
+		}
+		title += SearchInputStyle.Render(fmt.Sprintf("  %s /%s/ · %d", modeLabel, m.logSearcher.Pattern(), len(matches)))
+	}
+	filtered := hasPattern && m.searchMode == searchFilter
+	var indices []int
+	selectionLen := content.len()
+	if filtered {
+		indices = matches
+		selectionLen = len(matches)
+	}
+	matchSet := make(map[int]bool, len(matches))
+	for _, index := range matches {
+		matchSet[index] = true
+	}
 	if content.len() == 0 {
 		return renderTitledPanel(m.panelStyle(panelLogs), m.panelTitleStyle(panelLogs), contentWidth, contentHeight, title, []string{"", ContextBarStyle.Render("Press s to run this action")})
+	}
+	if filtered && selectionLen == 0 {
+		return renderTitledPanel(m.panelStyle(panelLogs), m.panelTitleStyle(panelLogs), contentWidth, contentHeight, title, []string{"", ContextBarStyle.Render("No action output matches this regex")})
 	}
 	// In the normal (unwrapped) mode, determine the viewport before styling.
 	// This keeps rendering proportional to terminal height instead of retained
 	// history size; a long-lived action can therefore retain thousands of lines
 	// without every key press restyling all of them.
 	if !m.wrapLogs {
-		totalLines := content.len()
+		totalLines := selectionLen
 		maxStart := max(0, totalLines-contentHeight)
-		start := maxStart
-		if !m.followMode {
-			start = max(0, maxStart-m.logOffset)
-		}
-		end := min(totalLines, start+contentHeight)
+		start, end := actionLogViewport(totalLines, contentHeight, m.followMode, m.logAnchor, m.logOffset)
 		if maxStart > 0 {
 			title += ContextBarStyle.Render(fmt.Sprintf("  %d–%d/%d  ↑/↓", start+1, end, totalLines))
 		}
 		rows := make([]string, 0, end-start)
-		for index := start; index < end; index++ {
-			rows = append(rows, ansi.Truncate(styleLogLine(content.line(index)), contentWidth, "…"))
+		for position := start; position < end; position++ {
+			index := sourceEntryIndex(indices, position)
+			row := ansi.Truncate(styleLogLine(content.line(index)), contentWidth, "…")
+			if m.searchMode == searchHighlight && matchSet[index] {
+				row = SearchHighlightStyle.Render(preserveStyleAfterReset(row, SearchHighlightStyle))
+			}
+			rows = append(rows, row)
 		}
 		return renderTitledPanel(m.panelStyle(panelLogs), m.panelTitleStyle(panelLogs), contentWidth, contentHeight, title, rows)
 	}
 
-	lines := content.lines()
-	rows := make([]string, 0, len(lines))
-	for _, line := range lines {
-		styled := styleLogLine(line)
-		rows = append(rows, strings.Split(ansi.Hardwrap(styled, contentWidth, true), "\n")...)
+	metrics := m.logRowMetricsFor(logSlotMain, app.ActionRunTarget(id), contentWidth)
+	totalRows := metrics.totalActionRows(content, contentWidth)
+	if filtered {
+		totalRows = 0
+		for _, index := range matches {
+			totalRows += metrics.actionRows[index+1] - metrics.actionRows[index]
+		}
 	}
-	maxStart := max(0, len(rows)-contentHeight)
-	start := maxStart
-	if !m.followMode {
-		start = max(0, maxStart-m.logOffset)
-	}
-	end := min(len(rows), start+contentHeight)
+	maxStart := max(0, totalRows-contentHeight)
+	start, end := actionLogViewport(totalRows, contentHeight, m.followMode, m.logAnchor, m.logOffset)
 	if maxStart > 0 {
-		title += ContextBarStyle.Render(fmt.Sprintf("  %d–%d/%d  ↑/↓", start+1, end, len(rows)))
+		title += ContextBarStyle.Render(fmt.Sprintf("  %d–%d/%d  ↑/↓", start+1, end, totalRows))
 	}
-	return renderTitledPanel(m.panelStyle(panelLogs), m.panelTitleStyle(panelLogs), contentWidth, contentHeight, title, rows[start:end])
+	rows := styleActionRowWindow(content, metrics.actionRows, indices, selectionLen, contentWidth, start, end, m.searchMode == searchHighlight, matchSet)
+	return renderTitledPanel(m.panelStyle(panelLogs), m.panelTitleStyle(panelLogs), contentWidth, contentHeight, title, rows)
+}
+
+func actionLogViewport(total, height int, follow bool, anchor, offset int) (start, end int) {
+	start = max(0, total-height)
+	limit := total
+	if !follow {
+		limit = min(total, max(0, anchor))
+		start = max(0, max(0, limit-height)-offset)
+	}
+	return start, min(limit, start+height)
+}
+
+func styleActionRowWindow(view actionLogView, prefixRows, indices []int, selectionLen, width, start, end int, highlight bool, matches map[int]bool) []string {
+	if end <= start {
+		return nil
+	}
+	rows := make([]string, 0, end-start)
+	first, consumed := 0, 0
+	if indices == nil && selectionLen == view.len() {
+		first = sort.Search(view.len(), func(index int) bool { return prefixRows[index+1] > start })
+		consumed = prefixRows[first]
+	}
+	for position := first; position < selectionLen && consumed < end; position++ {
+		index := sourceEntryIndex(indices, position)
+		count := prefixRows[index+1] - prefixRows[index]
+		if consumed+count <= start {
+			consumed += count
+			continue
+		}
+		visual := strings.Split(ansi.Hardwrap(styleLogLine(view.line(index)), width, true), "\n")
+		for offset, row := range visual {
+			absolute := consumed + offset
+			if absolute >= start && absolute < end {
+				if highlight && matches[index] {
+					row = SearchHighlightStyle.Render(preserveStyleAfterReset(row, SearchHighlightStyle))
+				}
+				rows = append(rows, row)
+			}
+		}
+		consumed += count
+	}
+	return rows
 }
 
 type actionLogView struct {
@@ -184,7 +251,7 @@ func (m *Model) actionLogContentView(id config.ActionID, action config.Action, s
 		outputRun = selectedRun
 	}
 	view := actionLogView{selectedRun: selectedRun, state: state, output: m.cachedActionLogRecords(target, outputRun)}
-	if state.Status != app.ActionReady {
+	if state.Status != app.ActionReady && action.Command != "" {
 		view.prefix = appendSafeActionOutput(nil, action.Command, "$ ")
 	}
 	if outputRun > 0 {
@@ -194,11 +261,6 @@ func (m *Model) actionLogContentView(id config.ActionID, action config.Action, s
 	}
 	view.running = state.Status == app.ActionRunning && len(view.output) == 0
 	return view
-}
-
-func (m *Model) actionLogContent(id config.ActionID, action config.Action, state app.ActionResult) (uint32, app.ActionResult, []string) {
-	view := m.actionLogContentView(id, action, state)
-	return view.selectedRun, view.state, view.lines()
 }
 
 func actionStatusFromRun(status string) app.ActionStatus {
@@ -231,7 +293,7 @@ func actionOutputLines(state app.ActionResult) []string {
 
 func appendSafeActionOutput(lines []string, output, prefix string) []string {
 	if output == "" {
-		return lines
+		return append(lines, prefix)
 	}
 	output = ansi.Strip(output)
 	output = strings.ReplaceAll(output, "\r\n", "\n")
@@ -317,10 +379,10 @@ func (m *Model) renderLogPanelMode(svc *app.ServiceSnapshot, width, height int, 
 		title += " " + StartingBadgeStyle.Render(state)
 	}
 	if m.wrapLogs {
-		title += " " + RunningBadgeStyle.Render("WRAP")
+		title += ContextBarStyle.Render(" · ") + RunningBadgeStyle.Render("WRAP")
 	}
 	if m.showLogTime {
-		title += " " + RunningBadgeStyle.Render("TIME")
+		title += ContextBarStyle.Render(" · ") + RunningBadgeStyle.Render("TIME")
 	}
 
 	sourceEntries := m.cachedLogEntries(app.ServiceRunTarget(svc.Name))
@@ -355,11 +417,12 @@ func (m *Model) renderLogPanelMode(svc *app.ServiceSnapshot, width, height int, 
 	// A nil selection means "every entry, in order". Materialising the identity
 	// slice would allocate one int per retained line on every frame.
 	var sourceIndices []int
-	if hasPattern && mode == searchFilter {
+	filtered := hasPattern && mode == searchFilter
+	if filtered {
 		sourceIndices = searchMatches
 	}
 	selectionLen := len(sourceEntries)
-	if sourceIndices != nil {
+	if filtered {
 		selectionLen = len(sourceIndices)
 	}
 
@@ -369,7 +432,7 @@ func (m *Model) renderLogPanelMode(svc *app.ServiceSnapshot, width, height int, 
 			ContextBarStyle.Render("Output will appear after the service starts"),
 		})
 	}
-	if hasPattern && mode == searchFilter && selectionLen == 0 {
+	if filtered && selectionLen == 0 {
 		return renderTitledPanel(panelStyle, titleStyle, contentWidth, contentHeight, title, []string{
 			"",
 			ContextBarStyle.Render("No log lines match this regex"),
@@ -383,8 +446,12 @@ func (m *Model) renderLogPanelMode(svc *app.ServiceSnapshot, width, height int, 
 	metrics := m.logRowMetricsFor(slot, app.ServiceRunTarget(svc.Name), contentWidth)
 	metrics.forget(sourceEntries)
 	totalRows := 0
-	for position := range selectionLen {
-		totalRows += metrics.rowCount(m, sourceEntries[sourceEntryIndex(sourceIndices, position)], contentWidth)
+	if sourceIndices == nil {
+		totalRows = metrics.totalRows(m, sourceEntries, contentWidth)
+	} else {
+		for _, index := range sourceIndices {
+			totalRows += metrics.rowCount(m, sourceEntries[index], contentWidth)
+		}
 	}
 
 	maxLines := contentHeight
@@ -444,7 +511,14 @@ func (m *Model) styleLogRowWindow(window logRowWindow) []string {
 	}
 	rows := make([]string, 0, window.end-window.start)
 	consumed := 0
-	for position := range window.selection {
+	firstPosition := 0
+	if window.indices == nil && window.selection == len(window.entries) && len(window.metrics.rows) == len(window.entries)+1 {
+		firstPosition = sort.Search(len(window.entries), func(i int) bool {
+			return window.metrics.rows[i+1] > window.start
+		})
+		consumed = window.metrics.rows[firstPosition]
+	}
+	for position := firstPosition; position < window.selection; position++ {
 		if consumed >= window.end {
 			break
 		}
@@ -491,20 +565,18 @@ func (m *Model) scrollLogs(direction int) {
 	pinned := m.panelFocus == panelPinnedLogs && m.hasPinnedRunView()
 	svc := m.FocusedService()
 	panelHeight := m.currentLogPanelHeight()
-	displayLineCount := m.displayedLogLineCount()
 	offset, anchor, follow := m.logOffset, m.logAnchor, m.followMode
+	displayLineCount := 0
 	if pinned {
 		svc = m.PinnedService()
 		panelHeight = m.pinnedLogPanelHeight()
 		displayLineCount = m.displayedPinnedLogLineCount()
 		offset, anchor, follow = m.pinnedOffset, m.pinnedAnchor, m.pinnedFollow
+	} else {
+		displayLineCount = m.displayedLogLineCount()
 	}
 	if !pinned && svc == nil && m.focusedAction == nil {
-		if pinned {
-			m.pinnedOffset = 0
-		} else {
-			m.logOffset = 0
-		}
+		m.logOffset = 0
 		return
 	}
 	maxLines := max(1, panelHeight-2)
@@ -552,25 +624,54 @@ func (m *Model) displayedPinnedLogLineCount() int {
 		return 0
 	}
 	entries := m.pinnedEntries(target)
-	if m.pinnedSearchMode == searchFilter && m.pinnedSearcher != nil && m.pinnedSearcher.HasPattern() {
-		matches := m.pinnedSearcher.Search(logEntryLines(entries))
-		filtered := make([]config.LogEntry, 0, len(matches))
-		for _, index := range matches {
-			filtered = append(filtered, entries[index])
+	width := m.currentLogContentWidth()
+	if m.pinnedSearchMode != searchFilter || m.pinnedSearcher == nil || !m.pinnedSearcher.HasPattern() {
+		metrics := m.logRowMetricsFor(logSlotPinned, target, width)
+		if target.Kind == app.RunKindAction {
+			return metrics.totalPinnedActionRows(m, entries, width)
 		}
-		entries = filtered
+		return metrics.totalRows(m, entries, width)
 	}
-	lines := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		lines = append(lines, m.displayLogEntry(entry))
+	matches := m.pinnedSearcher.Search(logEntryLines(entries))
+	metrics := m.logRowMetricsFor(logSlotPinned, target, width)
+	if target.Kind == app.RunKindAction {
+		count := 0
+		for _, index := range matches {
+			count += metrics.pinnedActionRowCount(m, entries[index], width)
+		}
+		return count
 	}
-	return visualLogRowCount(lines, m.currentLogContentWidth(), m.wrapLogs)
+	count := 0
+	for _, index := range matches {
+		count += metrics.rowCount(m, entries[index], width)
+	}
+	return count
 }
 
 func (m *Model) displayedLogLineCount() int {
 	if id, action, state, exists := m.focusedActionDefinition(); exists {
-		_, _, lines := m.actionLogContent(id, action, state)
-		return visualLogRowCount(lines, m.currentLogContentWidth(), m.wrapLogs)
+		view := m.actionLogContentView(id, action, state)
+		filtered := m.searchMode == searchFilter && m.logSearcher != nil && m.logSearcher.HasPattern()
+		var matches []int
+		if filtered {
+			matches = m.logSearcher.Search(view.lines())
+		}
+		if !m.wrapLogs {
+			if filtered {
+				return len(matches)
+			}
+			return view.len()
+		}
+		width := m.currentLogContentWidth()
+		metrics := m.logRowMetricsFor(logSlotMain, app.ActionRunTarget(id), width)
+		total := metrics.totalActionRows(view, width)
+		if filtered {
+			total = 0
+			for _, index := range matches {
+				total += metrics.actionRows[index+1] - metrics.actionRows[index]
+			}
+		}
+		return total
 	}
 	svc := m.FocusedService()
 	if svc == nil {
@@ -579,6 +680,10 @@ func (m *Model) displayedLogLineCount() int {
 	entries := m.cachedLogEntries(app.ServiceRunTarget(svc.Name))
 	if m.syncRunTarget() && m.runMode == runViewSingle {
 		entries = m.entriesForRun(app.ServiceRunTarget(svc.Name), m.selectedRun)
+	}
+	if m.searchMode != searchFilter || m.logSearcher == nil || !m.logSearcher.HasPattern() {
+		width := m.currentLogContentWidth()
+		return m.logRowMetricsFor(logSlotMain, app.ServiceRunTarget(svc.Name), width).totalRows(m, entries, width)
 	}
 	lines := logEntryLines(entries)
 	indices := make([]int, len(lines))
@@ -618,6 +723,9 @@ func (m *Model) focusLogMatch(match int) {
 		return
 	}
 	entries := m.cachedLogEntries(app.ServiceRunTarget(svc.Name))
+	if m.syncRunTarget() && m.runMode == runViewSingle {
+		entries = m.entriesForRun(app.ServiceRunTarget(svc.Name), m.selectedRun)
+	}
 	maxLines := max(1, m.currentLogPanelHeight()-2)
 	displayLines := make([]string, 0, min(match, len(entries)))
 	for _, entry := range entries[:min(match, len(entries))] {
@@ -641,16 +749,50 @@ func (m *Model) focusLogMatch(match int) {
 
 func (m *Model) focusActiveLogMatch(match int) {
 	if m.panelFocus != panelPinnedLogs {
+		if id, action, state, exists := m.focusedActionDefinition(); exists {
+			view := m.actionLogContentView(id, action, state)
+			if match < 0 || match >= view.len() {
+				return
+			}
+			width := m.currentLogContentWidth()
+			totalRows, row := view.len(), match
+			if m.wrapLogs {
+				metrics := m.logRowMetricsFor(logSlotMain, app.ActionRunTarget(id), width)
+				totalRows = metrics.totalActionRows(view, width)
+				row = metrics.actionRows[match]
+			}
+			maxLines := max(1, m.currentLogPanelHeight()-2)
+			maxStart := max(0, totalRows-maxLines)
+			desiredStart := min(maxStart, max(0, row-maxLines/2))
+			m.logOffset = maxStart - desiredStart
+			m.logAnchor, m.followMode = totalRows, false
+			if desiredStart == maxStart {
+				m.logAnchor, m.followMode = 0, true
+			}
+			m.logPaused = false
+			return
+		}
 		m.focusLogMatch(match)
 		return
 	}
-	lines := m.activeSearchLines()
-	if match < 0 || match >= len(lines) {
+	target, ok := m.pinnedRunTarget()
+	if !ok {
+		return
+	}
+	entries := m.pinnedEntries(target)
+	if match < 0 || match >= len(entries) {
 		return
 	}
 	maxLines := max(1, m.pinnedLogPanelHeight()-2)
-	row := visualLogRowCount(lines[:match], m.currentLogContentWidth(), m.wrapLogs)
-	totalRows := visualLogRowCount(lines, m.currentLogContentWidth(), m.wrapLogs)
+	width := m.currentLogContentWidth()
+	metrics := m.logRowMetricsFor(logSlotPinned, target, width)
+	totalRows := 0
+	if target.Kind == app.RunKindAction {
+		totalRows = metrics.totalPinnedActionRows(m, entries, width)
+	} else {
+		totalRows = metrics.totalRows(m, entries, width)
+	}
+	row := metrics.rows[match]
 	maxStart := max(0, totalRows-maxLines)
 	desiredStart := min(maxStart, max(0, row-maxLines/2))
 	m.pinnedOffset = maxStart - desiredStart

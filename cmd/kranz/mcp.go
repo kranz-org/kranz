@@ -55,7 +55,15 @@ func newMCPResolver(options kranzcli.GlobalOptions) (*kranzmcp.Resolver, error) 
 		return nil, err
 	}
 	pin := options.Project
-	if pin == "" && optionsPinDirectory(options) {
+	if len(options.ConfigPaths) > 0 || len(options.OverridePaths) > 0 {
+		name, nameErr := runtimeNameFromDirectory(options)
+		if nameErr != nil {
+			return nil, nameErr
+		}
+		if pin == "" {
+			pin = name
+		}
+	} else if pin == "" && options.DirectoryExplicit {
 		// -C names a project explicitly, so it pins even though the reference
 		// has to be discovered from that directory's configuration. A -C that
 		// holds no configuration is not an error: starting outside a project
@@ -68,10 +76,15 @@ func newMCPResolver(options kranzcli.GlobalOptions) (*kranzmcp.Resolver, error) 
 	if absolute, absErr := filepath.Abs(directory); absErr == nil {
 		directory = absolute
 	}
+	pinDirectory := ""
+	if pin != "" && options.Project == "" && optionsPinDirectory(options) {
+		pinDirectory = directory
+	}
 	return kranzmcp.NewResolver(kranzmcp.ResolverOptions{
 		Version:          version,
 		Registry:         registry,
 		Pin:              pin,
+		PinDirectory:     pinDirectory,
 		ProjectDirectory: directory,
 		Directory: func() (string, error) {
 			return runtimeNameFromDirectory(options)
@@ -90,11 +103,11 @@ func newMCPResolver(options kranzcli.GlobalOptions) (*kranzmcp.Resolver, error) 
 	}), nil
 }
 
-// optionsPinDirectory reports whether -C or -f was given explicitly. Without
+// optionsPinDirectory reports whether -C, -f, or --override was given explicitly. Without
 // either, the working directory is a default rather than a statement about
 // which project this server speaks for, and it must not pin.
 func optionsPinDirectory(options kranzcli.GlobalOptions) bool {
-	return options.DirectoryExplicit || len(options.ConfigPaths) > 0
+	return options.DirectoryExplicit || len(options.ConfigPaths) > 0 || len(options.OverridePaths) > 0
 }
 
 // mcpClientLabel names this process in `kranz clients`. The launcher that
@@ -117,20 +130,52 @@ func launchDetachedRuntime(ctx context.Context, options kranzcli.GlobalOptions, 
 	if err != nil {
 		return kranzruntime.SessionRecord{}, false, err
 	}
-	target := options
-	target.Directory = directory
-	target.ConfigPaths = nil
-	target.Project = ""
-	name, err := runtimeNameFromDirectory(target)
-	if err != nil {
-		return kranzruntime.SessionRecord{}, false, err
+	target := launchOptionsForDirectory(options, directory)
+	name := target.Project
+	if name == "" {
+		name, err = runtimeNameFromDirectory(target)
+		if err != nil {
+			return kranzruntime.SessionRecord{}, false, err
+		}
 	}
 	if record, resolveErr := registry.Resolve(ctx, name, version); resolveErr == nil && record.State == kranzruntime.SessionRunning {
+		if !sameLaunchDirectory(record.Directory, directory) {
+			return kranzruntime.SessionRecord{}, false, &kranzruntime.SessionConflictError{Name: name}
+		}
 		return record, false, nil
 	}
 	if err := spawnBackground(target, nil, false, io.Discard); err != nil {
 		return kranzruntime.SessionRecord{}, false, err
 	}
 	record, err := registry.Resolve(ctx, name, version)
+	if err == nil && !sameLaunchDirectory(record.Directory, directory) {
+		return kranzruntime.SessionRecord{}, false, &kranzruntime.SessionConflictError{Name: name}
+	}
 	return record, err == nil, err
+}
+
+func launchOptionsForDirectory(options kranzcli.GlobalOptions, directory string) kranzcli.GlobalOptions {
+	target := options
+	target.Directory = directory
+	if !sameLaunchDirectory(options.Directory, directory) {
+		target.ConfigPaths = nil
+		target.OverridePaths = nil
+		target.Project = ""
+	}
+	return target
+}
+
+func sameLaunchDirectory(left, right string) bool {
+	leftAbs, leftErr := filepath.Abs(left)
+	rightAbs, rightErr := filepath.Abs(right)
+	if leftErr != nil || rightErr != nil {
+		return false
+	}
+	if resolved, err := filepath.EvalSymlinks(leftAbs); err == nil {
+		leftAbs = resolved
+	}
+	if resolved, err := filepath.EvalSymlinks(rightAbs); err == nil {
+		rightAbs = resolved
+	}
+	return leftAbs == rightAbs
 }

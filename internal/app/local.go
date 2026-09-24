@@ -46,17 +46,17 @@ type Local struct {
 	// cfgMu guards every field a config reload replaces atomically: the
 	// effective configuration, the reload bookkeeping, and the watched-file
 	// stamps used to detect a change cheaply.
-	cfgMu          sync.RWMutex
-	cfg            *config.Config
-	configPaths    []string
-	watchPaths     []string
-	generation     uint64
-	loadedAt       time.Time
-	lastReloadErr  string
-	reloadBusy     bool
-	lastConfigScan time.Time
-	stamps         map[string]configStamp
-	loadOptions    *config.LoadOptions
+	cfgMu         sync.RWMutex
+	cfg           *config.Config
+	configPaths   []string
+	watchPaths    []string
+	watchPolicies map[string][]discoveryWatchPolicy
+	generation    uint64
+	loadedAt      time.Time
+	lastReloadErr string
+	reloadBusy    bool
+	stamps        map[string]configStamp
+	loadOptions   *config.LoadOptions
 }
 
 // NewLocal constructs the runtime for one project and starts it observing
@@ -92,7 +92,8 @@ func NewLocal(cfg *config.Config, configPaths []string, opts Options) *Local {
 		paths = append([]string(nil), cfg.Paths...)
 	}
 	watchPaths := watchedConfigPaths(cfg.Paths, cfg.WatchPaths)
-	stamps, stampErr := readConfigStamps(watchPaths)
+	watchPolicies := discoveryWatchPolicies(cfg)
+	stamps, stampErr := readConfigStampsWithPolicies(watchPaths, watchPolicies)
 	initialReloadError := ""
 	if stampErr != nil {
 		// A watch-path scan that fails at construction is surfaced rather than
@@ -115,6 +116,7 @@ func NewLocal(cfg *config.Config, configPaths []string, opts Options) *Local {
 		cfg:           cfg,
 		configPaths:   paths,
 		watchPaths:    watchPaths,
+		watchPolicies: watchPolicies,
 		generation:    1,
 		loadedAt:      time.Now(),
 		lastReloadErr: initialReloadError,
@@ -222,6 +224,8 @@ func (l *Local) snapshotOf(svc *service.Service) *ServiceSnapshot {
 			runtimeRevision = fmt.Sprintf("%d", generationNumber-1)
 		}
 	}
+	visibleConfig := svc.Config
+	visibleConfig.Ports, visibleConfig.DetectPorts = svc.PortConfig()
 	snapshot := &ServiceSnapshot{
 		ID:              identity.ID,
 		Name:            svc.Name,
@@ -232,7 +236,7 @@ func (l *Local) snapshotOf(svc *service.Service) *ServiceSnapshot {
 		DesiredRevision: generation,
 		ReloadState:     reloadState,
 		ReloadReason:    reloadReason,
-		Config:          svc.Config,
+		Config:          visibleConfig,
 		State:           svc.GetState(),
 		DetectedPorts:   svc.DetectedPorts(),
 		DesiredRunning:  svc.DesiredRunning(),
@@ -528,6 +532,17 @@ func (l *Local) Logs(name string) []config.LogEntry {
 
 func (l *Local) ActionLogs(id config.ActionID) []config.LogEntry {
 	return l.manager.ActionLogs(id)
+}
+
+func (l *Local) logSnapshot(target logTarget) ([]config.LogEntry, uint64) {
+	if target.isAction() {
+		return l.manager.ActionLogSnapshot(target.action)
+	}
+	svc, ok := l.manager.GetService(target.service)
+	if !ok {
+		return nil, 0
+	}
+	return svc.LogSnapshot()
 }
 
 func (l *Local) QueryLogs(query LogQuery) (LogResult, error) {

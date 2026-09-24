@@ -12,7 +12,7 @@ import (
 // only has one build to negotiate between right now; a later stream that
 // changes the wire format widens the range instead of just bumping this
 // constant.
-const protocolVersion = 2
+const protocolVersion = 3
 
 // messageType identifies what an envelope carries. The envelope shape itself
 // (v, type, id, method, body) is deliberately small and stable so a peer can

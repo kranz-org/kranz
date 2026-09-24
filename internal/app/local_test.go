@@ -37,6 +37,26 @@ func TestServicesSnapshotReflectsConfigAndRuntimeState(t *testing.T) {
 	}
 }
 
+func TestServiceSnapshotShowsHotReloadedPorts(t *testing.T) {
+	cfg := &config.Config{Project: "Test", Services: map[string]config.Service{
+		"api": {Command: "sleep 60", Ports: []int{45000}},
+	}}
+	local := NewLocal(cfg, nil, Options{})
+	defer func() { _ = local.Shutdown() }()
+	if err := local.StartServicesContext(context.Background(), []string{"api"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := local.manager.ApplyConfig(&config.Config{Project: "Test", Services: map[string]config.Service{
+		"api": {Command: "sleep 60"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, _ := local.Service("api")
+	if len(snapshot.Config.Ports) != 0 {
+		t.Fatalf("snapshot still declares ports: %v", snapshot.Config.Ports)
+	}
+}
+
 func TestStartConfirmationNamesIncludesConfirmedDependencies(t *testing.T) {
 	confirm := true
 	cfg := &config.Config{Project: "Test", Services: map[string]config.Service{
@@ -162,9 +182,43 @@ func TestReloadRaisesGenerationAndKeepsLastKnownGoodOnInvalidFile(t *testing.T) 
 	if local.Project().LastReloadError == "" {
 		t.Fatal("failed reload did not record an error")
 	}
+	if changed, err := local.ConfigChanged(); err != nil || !changed {
+		t.Fatalf("failed reload hid pending change: %v, %v", changed, err)
+	}
 }
 
-func TestReloadDebouncesWithinOneSecondUnlessForced(t *testing.T) {
+func TestConfigChangedDoesNotApplyOrAcknowledgeFile(t *testing.T) {
+	directory := t.TempDir()
+	path := filepath.Join(directory, "kranz.yaml")
+	writeConfig(t, path, "project: Test\nservices:\n  api:\n    command: true\n")
+	cfg, err := config.LoadFiles([]string{path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	local := NewLocal(cfg, []string{path}, Options{})
+	defer local.Shutdown()
+	if changed, err := local.ConfigChanged(); err != nil || changed {
+		t.Fatalf("unchanged config = %v, %v", changed, err)
+	}
+	writeConfig(t, path, "project: Test\nservices:\n  api:\n    command: true\n  worker:\n    command: true\n")
+	touchLater(t, path)
+	for range 2 {
+		if changed, err := local.ConfigChanged(); err != nil || !changed {
+			t.Fatalf("pending config = %v, %v", changed, err)
+		}
+	}
+	if local.Project().Generation != 1 {
+		t.Fatal("change check applied the config")
+	}
+	if _, err := local.Reload(true); err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := local.ConfigChanged(); err != nil || changed {
+		t.Fatalf("applied config still appears changed: %v, %v", changed, err)
+	}
+}
+
+func TestExplicitReloadAppliesSecondEditImmediately(t *testing.T) {
 	directory := t.TempDir()
 	path := filepath.Join(directory, "kranz.yaml")
 	writeConfig(t, path, "project: Test\nservices:\n  api:\n    command: \"true\"\n")
@@ -187,10 +241,10 @@ func TestReloadDebouncesWithinOneSecondUnlessForced(t *testing.T) {
 	writeConfig(t, path, "project: Test\nservices:\n  api:\n    command: \"true\"\n")
 	touchLater(t, path)
 	if _, err := local.Reload(false); err != nil {
-		t.Fatalf("debounced reload: %v", err)
+		t.Fatalf("second reload: %v", err)
 	}
-	if got := local.Project().Generation; got != 2 {
-		t.Fatalf("generation after debounced reload = %d, want still 2", got)
+	if got := local.Project().Generation; got != 3 {
+		t.Fatalf("generation after second reload = %d, want 3", got)
 	}
 }
 

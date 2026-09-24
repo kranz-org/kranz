@@ -277,7 +277,8 @@ func (m *Model) paramFormField(spec paramUISpec, index, labelWidth, width int) [
 	id := m.paramForm.ID
 	focused := index == m.paramForm.Field
 	label := padParamName(spec.Name, labelWidth)
-	value := m.paramFormFieldValue(spec, index)
+	valueIndent := "  " + strings.Repeat(" ", labelWidth+2)
+	values := m.paramFormFieldValues(spec, index, max(1, width-len([]rune(valueIndent))))
 
 	// The note says what the field accepts, and turns into what is wrong with
 	// it the moment the value stops satisfying that.
@@ -300,7 +301,11 @@ func (m *Model) paramFormField(spec paramUISpec, index, labelWidth, width int) [
 		notes = []string{""}
 	}
 
-	rows := append([]string{"  " + m.paramLabelStyle(id, spec.Name).Render(label) + "  " + value}, notes...)
+	rows := []string{"  " + m.paramLabelStyle(id, spec.Name).Render(label) + "  " + values[0]}
+	for _, value := range values[1:] {
+		rows = append(rows, valueIndent+value)
+	}
+	rows = append(rows, notes...)
 	for rowIndex, row := range rows {
 		if focused {
 			// Disabled text has its own muted foreground while idle. Under the
@@ -380,12 +385,13 @@ func padParamName(name string, width int) string {
 	return name
 }
 
-// paramFormFieldValue draws one field: its values in a row, a box, or an input.
-func (m *Model) paramFormFieldValue(spec paramUISpec, index int) string {
+// paramFormFieldValues keeps options together when they fit and puts each one
+// on its own aligned line when the whole choice list exceeds the form width.
+func (m *Model) paramFormFieldValues(spec paramUISpec, index, width int) []string {
 	id := m.paramForm.ID
 	focused := index == m.paramForm.Field
 	if focused && m.paramForm.Editing {
-		return SearchInputStyle.Render(preserveStyleAfterReset(m.paramInput.View(), SearchInputStyle))
+		return []string{SearchInputStyle.Render(preserveStyleAfterReset(m.paramInput.View(), SearchInputStyle))}
 	}
 	if len(spec.Options) > 0 {
 		parts := make([]string, 0, len(spec.Options)+1)
@@ -409,11 +415,19 @@ func (m *Model) paramFormFieldValue(spec paramUISpec, index int) string {
 			}
 			parts = append(parts, part)
 		}
-		return strings.Join(parts, "   ")
+		joined := strings.Join(parts, "   ")
+		if lipgloss.Width(joined) <= width {
+			return []string{joined}
+		}
+		var rows []string
+		for _, part := range parts {
+			rows = append(rows, wrapDetailValue(part, width)...)
+		}
+		return rows
 	}
 	value := m.paramRowText(id, spec.Name)
 	if m.paramRowBlocked(id, spec.Name) {
-		return ParamErrorStyle.Render(ansi.Strip(value))
+		return []string{ParamErrorStyle.Render(ansi.Strip(value))}
 	}
-	return value
+	return []string{value}
 }

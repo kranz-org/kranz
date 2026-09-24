@@ -30,6 +30,7 @@ const (
 	ModeConfirmQuit
 	ModePortConflict
 	ModeConfirmRestart
+	ModeConfirmConfigReload
 	ModeConfirmClearLogs
 	ModeConfirmAction
 	ModeConfirmServiceStart
@@ -189,8 +190,9 @@ type releasePortResultMsg struct {
 type tickMsg time.Time
 
 type configReloadMsg struct {
-	result app.ReloadResult
-	err    error
+	result   app.ReloadResult
+	err      error
+	external bool
 	// generation is the *configuration* generation (app.ProjectSnapshot.
 	// Generation), used to detect whether the project itself changed.
 	generation uint64
@@ -199,6 +201,20 @@ type configReloadMsg struct {
 	// was dispatched, guarding against a reload begun before a switch being
 	// applied to the dashboard of a different runtime after it.
 	sessionGen uint64
+}
+
+type configReloadPreviewMsg struct {
+	removed     []string
+	fingerprint string
+	sessionGen  uint64
+}
+
+type configChangedMsg struct {
+	changed           bool
+	err               error
+	baseGeneration    uint64
+	projectGeneration uint64
+	sessionGen        uint64
 }
 
 type portDetailsMsg struct {
@@ -319,19 +335,21 @@ type Model struct {
 	// pendingParamRequest and pendingParamToken keep the exact confirmed
 	// parameterized invocation so the confirmation modal can execute the same
 	// rendered plan the form previewed.
-	pendingParamRequest *app.PlanRequest
-	pendingParamToken   string
-	pendingStartNames   []string
-	pendingStartTarget  string
-	pendingStartForce   bool
-	pendingStopNames    []string
-	pendingStopTarget   string
-	pendingStopForce    bool
-	pendingStopAll      bool
-	themeSaveScope      themeSaveScope
-	clearTarget         string
-	clearAction         *config.ActionID
-	clearPinned         bool
+	pendingParamRequest      *app.PlanRequest
+	pendingParamToken        string
+	pendingStartNames        []string
+	pendingStartTarget       string
+	pendingStartForce        bool
+	pendingStopNames         []string
+	pendingStopTarget        string
+	pendingStopForce         bool
+	pendingStopAll           bool
+	pendingReloadRemoved     []string
+	pendingReloadFingerprint string
+	themeSaveScope           themeSaveScope
+	clearTarget              string
+	clearAction              *config.ActionID
+	clearPinned              bool
 
 	conflictService  string
 	conflictPorts    map[int]*config.PortInfo
@@ -351,8 +369,11 @@ type Model struct {
 	backgroundProbeBusy bool
 	lastBackgroundProbe time.Time
 	configGeneration    uint64
+	configChanged       bool
+	configCheckError    string
 	lastConfigCheck     time.Time
 	configReloadBusy    atomic.Bool
+	reloadRequested     bool
 	mousePressSequence  uint64
 	lastListClickOwner  string
 	lastListClickSeq    uint64
@@ -733,7 +754,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(
 			m.pollServices(),
 			m.scanFocusedPorts(false),
-			m.reloadConfig(false),
+			m.checkConfigChanges(),
 			m.refreshRuntimeListIfVisible(),
 		)
 	case searchNudgeMsg:
@@ -750,7 +771,32 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.sessionGen != m.sessionGeneration {
 			return m, nil
 		}
-		return m.handleConfigReload(msg)
+		_, command := m.handleConfigReload(msg)
+		return m, tea.Batch(command, m.resumeQueuedConfigReload())
+	case configReloadPreviewMsg:
+		if msg.sessionGen != m.sessionGeneration {
+			return m, nil
+		}
+		return m.handleConfigReloadPreview(msg)
+	case configChangedMsg:
+		if msg.sessionGen != m.sessionGeneration || msg.baseGeneration != m.configGeneration {
+			return m, m.resumeQueuedConfigReload()
+		}
+		var command tea.Cmd
+		if msg.projectGeneration != m.configGeneration {
+			_, command = m.handleConfigReload(configReloadMsg{generation: msg.projectGeneration, changed: true,
+				external: true, sessionGen: msg.sessionGen})
+		}
+		if msg.err != nil {
+			if message := msg.err.Error(); message != m.configCheckError {
+				m.configCheckError = message
+				m.addNotification("config", "Cannot check config changes: "+message, config.LogWarn)
+			}
+			return m, tea.Batch(command, m.resumeQueuedConfigReload())
+		}
+		m.configCheckError = ""
+		m.configChanged = msg.changed
+		return m, tea.Batch(command, m.resumeQueuedConfigReload())
 	case appearanceReloadMsg:
 		if msg.sessionGen != m.sessionGeneration {
 			return m, nil
@@ -790,8 +836,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) refreshServices() {
-	m.allServices = m.app.Services()
+	m.allServices = visibleServices(m.app.Services(), m.app.Project().Pending)
 	m.services = m.allServices
+	visible := make(map[string]bool, len(m.allServices))
+	for _, svc := range m.allServices {
+		visible[svc.Name] = true
+	}
+	for name := range m.selected {
+		if !visible[name] {
+			delete(m.selected, name)
+		}
+	}
 	m.refreshRunSummaries()
 	m.refreshActionStates()
 	m.refreshVisibleLogCaches()
@@ -803,6 +858,27 @@ func (m *Model) refreshServices() {
 		m.focused = len(m.services) - 1
 	}
 	m.markFocusedRead()
+}
+
+// A running service removed from the configuration remains in the supervisor
+// until it stops, but it no longer belongs in the configured service list.
+func visibleServices(services []*app.ServiceSnapshot, pending []app.PendingChange) []*app.ServiceSnapshot {
+	removed := make(map[string]bool)
+	for _, change := range pending {
+		if change.Kind == "remove" {
+			removed[change.Name] = true
+		}
+	}
+	if len(removed) == 0 {
+		return services
+	}
+	visible := make([]*app.ServiceSnapshot, 0, len(services))
+	for _, svc := range services {
+		if !removed[svc.Name] {
+			visible = append(visible, svc)
+		}
+	}
+	return visible
 }
 
 func (m *Model) expireToast() {

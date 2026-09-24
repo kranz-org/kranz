@@ -290,8 +290,11 @@ func appendQuitServiceNames(lines []string, heading string, names []string) []st
 }
 
 func appendQuitRetainedResources(lines []string, names []string) []string {
-	heading := StartingBadgeStyle.Render("⚠ WILL REMAIN RUNNING AFTER KRANZ EXITS")
-	lines = append(lines, heading)
+	return appendHighlightedServiceNames(lines, "⚠ WILL REMAIN RUNNING AFTER KRANZ EXITS", names)
+}
+
+func appendHighlightedServiceNames(lines []string, heading string, names []string) []string {
+	lines = append(lines, StartingBadgeStyle.Render(heading))
 	wrapped := strings.Split(ansi.Wordwrap(strings.Join(names, ", "), 58, ",/"), "\n")
 	for _, line := range wrapped {
 		lines = append(lines, "  "+ServiceNameStyle.Render(line))
@@ -342,6 +345,16 @@ func (m *Model) renderConfirmRestartView() string {
 		body,
 		"[Enter/y] Continue  [Esc/n] Cancel",
 	)
+	return m.placeOverlay(content)
+}
+
+func (m *Model) renderConfirmConfigReloadView() string {
+	body := appendHighlightedServiceNames(nil, "⚠ WILL REMAIN RUNNING AFTER CONFIG RELOAD", m.pendingReloadRemoved)
+	body = append(body, "", "These services will disappear from the list but continue running.")
+	content := renderConfirmationModal("Apply changed configuration?", body,
+		"  [Enter/s] Stop listed services, then apply config",
+		"  [k]       Keep listed services running and apply config",
+		"", "  [Esc/n]   Keep current config")
 	return m.placeOverlay(content)
 }
 

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"sync"
@@ -50,9 +51,9 @@ func TestProcessManagerCapturesStdoutAndStderrInOneSequence(t *testing.T) {
 	pm := NewProcessManager(32)
 	stdout := processOutputWriter{process: pm, buffer: pm.stdout, source: "stdout"}
 	stderr := processOutputWriter{process: pm, buffer: pm.stderr, source: "stderr"}
-	_, _ = stdout.Write([]byte("out one"))
-	_, _ = stderr.Write([]byte("err one"))
-	_, _ = stdout.Write([]byte("out two"))
+	_, _ = stdout.Write([]byte("out one\n"))
+	_, _ = stderr.Write([]byte("err one\n"))
+	_, _ = stdout.Write([]byte("out two\n"))
 
 	entries := pm.DrainCapturedOutput()
 	if len(entries) != 3 {
@@ -67,8 +68,72 @@ func TestProcessManagerCapturesStdoutAndStderrInOneSequence(t *testing.T) {
 	if remaining := pm.DrainCapturedOutput(); len(remaining) != 0 {
 		t.Fatalf("second drain = %#v", remaining)
 	}
-	if got := strings.Join(pm.Stdout().Lines(), ""); got != "out oneout two" {
+	if got := strings.Join(pm.Stdout().Lines(), ""); got != "out one\nout two\n" {
 		t.Fatalf("stdout snapshot = %q", got)
+	}
+}
+
+func TestProcessManagerReassemblesLinesAcrossPipeWrites(t *testing.T) {
+	pm := NewProcessManager(8)
+	stdout := processOutputWriter{process: pm, buffer: pm.stdout, source: "stdout"}
+	stderr := processOutputWriter{process: pm, buffer: pm.stderr, source: "stderr"}
+	_, _ = stdout.Write([]byte("hel"))
+	_, _ = stderr.Write([]byte("err"))
+	if entries := pm.DrainCapturedOutput(); len(entries) != 0 {
+		t.Fatalf("incomplete lines were published: %#v", entries)
+	}
+	_, _ = stdout.Write([]byte("lo\nnext"))
+	_, _ = stderr.Write([]byte("or\n"))
+	pm.flushCapturedOutput()
+	entries := pm.DrainCapturedOutput()
+	if len(entries) != 3 || entries[0].Text != "hello\n" || entries[1].Text != "error\n" || entries[2].Text != "next" {
+		t.Fatalf("reassembled lines = %#v", entries)
+	}
+	if got := strings.Join(pm.Stdout().Lines(), ""); got != "hello\nnext" {
+		t.Fatalf("stdout snapshot = %q", got)
+	}
+}
+
+func TestProcessManagerBoundsOutputWithoutNewlines(t *testing.T) {
+	pm := NewProcessManager(8)
+	stdout := processOutputWriter{process: pm, buffer: pm.stdout, source: "stdout"}
+	_, _ = stdout.Write([]byte(strings.Repeat("x", maxPendingOutputBytes+7)))
+	if len(pm.stdoutPending) > maxPendingOutputBytes {
+		t.Fatalf("pending bytes = %d", len(pm.stdoutPending))
+	}
+	entries := pm.DrainCapturedOutput()
+	if len(entries) != 1 || len(entries[0].Text) != maxPendingOutputBytes {
+		t.Fatalf("bounded fragment = %#v", entries)
+	}
+	_, _ = stdout.Write([]byte("tail\n"))
+	entries = pm.DrainCapturedOutput()
+	if len(entries) != 1 || entries[0].Text != "xxxxxxxtail\n" {
+		t.Fatalf("remaining line = %#v", entries)
+	}
+}
+
+func TestProcessManagerBoundsCapturedOutputBacklog(t *testing.T) {
+	pm := NewProcessManager(3)
+	pm.outputMaxEntries = 3
+	pm.outputMaxBytes = 32
+	stdout := processOutputWriter{process: pm, buffer: pm.stdout, source: "stdout"}
+	for index := range 10 {
+		_, _ = fmt.Fprintf(stdout, "line-%d\n", index)
+	}
+	entries := pm.DrainCapturedOutput()
+	if len(entries) != 4 || entries[0].Source != "kranz" || !strings.Contains(entries[0].Text, "7 captured lines omitted") {
+		t.Fatalf("bounded backlog = %#v", entries)
+	}
+	if entries[1].Text != "line-7\n" || entries[3].Text != "line-9\n" {
+		t.Fatalf("recent output was lost: %#v", entries)
+	}
+	pm = NewProcessManager(10)
+	pm.outputMaxBytes = 8
+	stdout = processOutputWriter{process: pm, buffer: pm.stdout, source: "stdout"}
+	_, _ = stdout.Write([]byte("hello\nworld\n"))
+	entries = pm.DrainCapturedOutput()
+	if len(entries) != 2 || entries[1].Text != "world\n" {
+		t.Fatalf("byte-bounded backlog = %#v", entries)
 	}
 }
 

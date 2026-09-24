@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -30,8 +31,7 @@ type Manager struct {
 	discoveryCancel      context.CancelFunc
 	discoveryDone        chan struct{}
 	shuttingDown         atomic.Bool
-	exitRequested        atomic.Bool
-	exitCode             atomic.Int64
+	exitRequest          atomic.Pointer[projectExitRequest]
 	reloadMu             sync.Mutex
 	pendingReload        []PendingChange
 	pendingDesired       *config.Config
@@ -87,7 +87,7 @@ func (m *Manager) RecordConfigReload(generation uint64) {
 // newService constructs a service already attached to this manager's journal,
 // so no construction path can produce a service whose changes go unrecorded.
 func (m *Manager) newService(name string, cfg config.Service) *Service {
-	svc := NewService(name, cfg, 1000)
+	svc := NewService(name, cfg, defaultLogBufferSize)
 	svc.SetJournal(m.journal)
 	svc.SetRunCatalog(m.runs)
 	return svc
@@ -182,8 +182,10 @@ func (m *Manager) ApplyConfig(next *config.Config) (ReloadResult, error) {
 
 	m.mu.RLock()
 	currentNames := make([]string, 0, len(m.services))
+	originalServices := make(map[string]*Service, len(m.services))
 	for name := range m.services {
 		currentNames = append(currentNames, name)
+		originalServices[name] = m.services[name]
 	}
 	m.mu.RUnlock()
 	sort.Strings(currentNames)
@@ -198,9 +200,12 @@ func (m *Manager) ApplyConfig(next *config.Config) (ReloadResult, error) {
 	}
 	handled := make(map[string]bool, len(next.Services))
 	pending := make([]PendingChange, 0)
+	replacements := make(map[string]*Service)
+	replacedNames := make(map[string]bool)
+	portPolicyChanged := false
 
 	for _, name := range currentNames {
-		svc, _ := m.GetService(name)
+		svc := originalServices[name]
 		identity := serviceIdentity(currentConfig, name)
 		nextName, exists := nextByID[identity.ID]
 		// Name matching is only a compatibility path for legacy, uncomposed
@@ -227,7 +232,23 @@ func (m *Manager) ApplyConfig(next *config.Config) (ReloadResult, error) {
 		}
 		handled[nextName] = true
 		if sameManagedServiceConfig(svc.Config, incoming) && name == nextName {
+			currentPorts, currentDetect := svc.PortConfig()
+			if !slices.Equal(currentPorts, incoming.Ports) || !reflect.DeepEqual(currentDetect, incoming.DetectPorts) {
+				svc.SetPortPolicy(incoming)
+				portPolicyChanged = true
+			}
 			continue
+		}
+		if name != nextName {
+			if occupant := originalServices[nextName]; occupant != nil && occupant != svc && (occupant.Status() != config.StatusStopped || occupant.DesiredRunning()) {
+				accepted.Services[name] = svc.Config
+				accepted.ServiceMetadata[name] = identity
+				accepted.ServiceOrder = managerAppendUnique(accepted.ServiceOrder, name)
+				retainManagerSource(accepted, currentConfig, identity.SourceID)
+				retainManagerProvenance(accepted, currentConfig, identity.ID)
+				pending = append(pending, PendingChange{ServiceID: identity.ID, Name: name, DesiredName: nextName, Kind: "rename", Reason: "desired name is held by a running service"})
+				continue
+			}
 		}
 		// A detached resource lives outside Kranz. When its accepted definition
 		// declares no stop operation the ordinary restart path cannot cycle it,
@@ -240,12 +261,11 @@ func (m *Manager) ApplyConfig(next *config.Config) (ReloadResult, error) {
 		if svc.Config.IsDetached() && incoming.IsDetached() && svc.Config.Lifecycle.Stop == nil {
 			replacement := m.newService(nextName, incoming)
 			replacement.CopyLogHistoryFrom(svc)
+			m.runs.MoveTarget(ServiceRunTarget(name), ServiceRunTarget(nextName))
 			replacement.HealthHistory = svc.HealthHistory
 			replacement.RestoreState(svc.GetState(), svc.DesiredRunning())
-			m.mu.Lock()
-			delete(m.services, name)
-			m.services[nextName] = replacement
-			m.mu.Unlock()
+			replacements[nextName] = replacement
+			replacedNames[name] = true
 			if name != nextName {
 				// The clone already carries the desired definition. Drop the old
 				// display name only when it still refers to this identity, so a
@@ -264,7 +284,15 @@ func (m *Manager) ApplyConfig(next *config.Config) (ReloadResult, error) {
 		if wasRunning {
 			delete(accepted.Services, nextName)
 			delete(accepted.ServiceMetadata, nextName)
-			accepted.Services[name] = svc.Config
+			acceptedRuntime := svc.Config
+			acceptedRuntime.Ports = append([]int(nil), incoming.Ports...)
+			acceptedRuntime.DetectPorts = incoming.DetectPorts
+			accepted.Services[name] = acceptedRuntime
+			currentPorts, currentDetect := svc.PortConfig()
+			if !slices.Equal(currentPorts, incoming.Ports) || !reflect.DeepEqual(currentDetect, incoming.DetectPorts) {
+				svc.SetPortPolicy(incoming)
+				portPolicyChanged = true
+			}
 			accepted.ServiceMetadata[name] = identity
 			retainManagerSource(accepted, currentConfig, identity.SourceID)
 			retainManagerProvenance(accepted, currentConfig, identity.ID)
@@ -280,17 +308,22 @@ func (m *Manager) ApplyConfig(next *config.Config) (ReloadResult, error) {
 		// Keep the visible history across a hot reload without mutating the
 		// configuration object observed by process-monitor goroutines.
 		replacement.CopyLogHistoryFrom(svc)
+		m.runs.MoveTarget(ServiceRunTarget(name), ServiceRunTarget(nextName))
 		replacement.HealthHistory = svc.HealthHistory
-		m.mu.Lock()
-		delete(m.services, name)
-		m.services[nextName] = replacement
-		m.mu.Unlock()
+		replacements[nextName] = replacement
+		replacedNames[name] = true
 		result.Updated = append(result.Updated, nextName)
 	}
 
 	m.mu.Lock()
+	for name := range replacedNames {
+		delete(m.services, name)
+	}
 	for _, name := range result.Removed {
 		delete(m.services, name)
+	}
+	for name, replacement := range replacements {
+		m.services[name] = replacement
 	}
 	for _, name := range next.ServiceNames() {
 		if handled[name] {
@@ -315,6 +348,9 @@ func (m *Manager) ApplyConfig(next *config.Config) (ReloadResult, error) {
 		m.pendingDesired = nil
 	}
 	m.mu.Unlock()
+	if portPolicyChanged {
+		m.ensureListenerDiscovery()
+	}
 	m.forgetChangedPrerequisites(previous, accepted)
 	m.actions.ApplyConfig(accepted)
 	m.reconcileStatusMonitors(accepted)
@@ -441,6 +477,16 @@ func (m *Manager) adoptPendingStopped(names []string) []string {
 		if old != nil {
 			oldName = old.Name
 		}
+		desiredName := change.DesiredName
+		if desiredName == "" {
+			desiredName = change.Name
+		}
+		if change.Kind != "remove" {
+			if occupant := m.services[desiredName]; occupant != nil && occupant != old {
+				remaining = append(remaining, change)
+				continue
+			}
+		}
 		if old != nil && m.services[oldName] == old {
 			delete(m.services, oldName)
 		}
@@ -452,10 +498,6 @@ func (m *Manager) adoptPendingStopped(names []string) []string {
 		if change.Kind == "remove" {
 			continue
 		}
-		desiredName := change.DesiredName
-		if desiredName == "" {
-			desiredName = change.Name
-		}
 		desiredService, exists := m.pendingDesired.Services[desiredName]
 		if !exists {
 			continue
@@ -463,6 +505,7 @@ func (m *Manager) adoptPendingStopped(names []string) []string {
 		replacement := m.newService(desiredName, desiredService)
 		if old != nil {
 			replacement.CopyLogHistoryFrom(old)
+			m.runs.MoveTarget(ServiceRunTarget(oldName), ServiceRunTarget(desiredName))
 			replacement.HealthHistory = old.HealthHistory
 		}
 		m.services[desiredName] = replacement
@@ -572,6 +615,8 @@ func reconcileManagerOrder(preferred []string, services map[string]config.Servic
 func sameManagedServiceConfig(current, incoming config.Service) bool {
 	current.Actions = nil
 	incoming.Actions = nil
+	current.Ports, incoming.Ports = nil, nil
+	current.DetectPorts, incoming.DetectPorts = nil, nil
 	return reflect.DeepEqual(current, incoming)
 }
 

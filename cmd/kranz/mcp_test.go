@@ -333,6 +333,40 @@ func TestMCPReadToolsNeverStartARuntime(t *testing.T) {
 	}
 }
 
+func TestMCPLaunchKeepsPinnedConfigSources(t *testing.T) {
+	directory := t.TempDir()
+	options := kranzcli.GlobalOptions{Directory: directory, ConfigPaths: []string{"custom.yaml"},
+		OverridePaths: []string{"local.yaml"}, Project: "shop"}
+	if !optionsPinDirectory(kranzcli.GlobalOptions{OverridePaths: []string{"local.yaml"}}) {
+		t.Fatal("explicit override did not pin the MCP server")
+	}
+	same := launchOptionsForDirectory(options, directory)
+	if len(same.ConfigPaths) != 1 || same.ConfigPaths[0] != "custom.yaml" ||
+		len(same.OverridePaths) != 1 || same.Project != "shop" {
+		t.Fatal("pinned launch lost source selection")
+	}
+	other := launchOptionsForDirectory(options, t.TempDir())
+	if len(other.ConfigPaths) != 0 || len(other.OverridePaths) != 0 || other.Project != "" {
+		t.Fatal("unpinned target inherited another project's config selection")
+	}
+}
+
+func TestMCPRejectsInvalidExplicitPinSource(t *testing.T) {
+	directory := t.TempDir()
+	for _, options := range []kranzcli.GlobalOptions{
+		{Directory: directory, ConfigPaths: []string{"missing.yaml"}},
+		{Directory: directory, OverridePaths: []string{"missing.yaml"}},
+	} {
+		resolver, err := newMCPResolver(options)
+		if resolver != nil {
+			_ = resolver.Close()
+		}
+		if err == nil {
+			t.Fatal("invalid explicit source silently left MCP unpinned")
+		}
+	}
+}
+
 func TestMCPPinRefusesAnyOtherRuntime(t *testing.T) {
 	pinned, pinnedName := writeMCPProject(t)
 	other, otherName := writeMCPProject(t)

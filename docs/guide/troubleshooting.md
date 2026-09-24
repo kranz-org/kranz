@@ -116,8 +116,10 @@ ui:
 
 ## Configuration changes have no effect
 
-Kranz watches the configuration file and every referenced dotenv file, and
-reloads valid changes without restarting running services.
+Kranz watches the selected configuration and referenced dotenv files. The TUI
+shows when they change; press `Ctrl+L` to apply a valid change. A CLI or MCP
+client can request a reload explicitly. Running services with changed settings
+keep their accepted snapshot until they are restarted.
 
 - **The change was invalid.** The previous configuration keeps running and the
   error is reported. Fix the error and save again.
@@ -137,7 +139,9 @@ reloads valid changes without restarting running services.
   service another file contributes, pass `--override` and use its display name
   (`catalog/api`).
 
-`Ctrl+L` forces an immediate reload.
+If a reload removes a running service, choose whether to stop it or keep it
+running outside the configured list. A service that cannot be stopped leaves
+the accepted configuration in place and produces an error.
 
 ## An environment variable is not what I expect
 

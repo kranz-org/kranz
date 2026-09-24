@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -16,26 +17,35 @@ import (
 
 // ProcessManager owns one child process and its bounded stdout/stderr buffers.
 type ProcessManager struct {
-	mu        sync.RWMutex
-	stopMu    sync.Mutex
-	outputMu  sync.Mutex
-	cmd       *exec.Cmd
-	stdout    *ringbuffer.RingBuffer
-	stderr    *ringbuffer.RingBuffer
-	output    []CapturedOutput
-	outputSeq uint64
-	waitDone  chan struct{}
-	waitErr   error
+	mu               sync.RWMutex
+	stopMu           sync.Mutex
+	outputMu         sync.Mutex
+	cmd              *exec.Cmd
+	stdout           *ringbuffer.RingBuffer
+	stderr           *ringbuffer.RingBuffer
+	output           []CapturedOutput
+	outputSeq        uint64
+	outputStart      int
+	outputBytes      uint64
+	outputDropped    uint64
+	outputMaxEntries int
+	outputMaxBytes   uint64
+	stdoutPending    string
+	stderrPending    string
+	waitDone         chan struct{}
+	waitErr          error
 }
 
-// CapturedOutput is one stdout/stderr write ordered at the instant Kranz
-// receives it. Consumers split Text into lines only after preserving Sequence.
+// CapturedOutput is one completed line or bounded fragment, ordered when Kranz
+// receives it. Consumers preserve Sequence across stdout and stderr.
 type CapturedOutput struct {
 	Sequence   uint64
 	CapturedAt time.Time
 	Source     string
 	Text       string
 }
+
+const maxPendingOutputBytes = 64 * 1024
 
 type processOutputWriter struct {
 	process *ProcessManager
@@ -51,24 +61,90 @@ func (w processOutputWriter) Write(data []byte) (int, error) {
 
 func (pm *ProcessManager) captureOutput(buffer *ringbuffer.RingBuffer, source, text string) {
 	pm.outputMu.Lock()
-	// The same lock serializes both per-source retention and canonical capture,
-	// so a goroutine cannot publish its stdout chunk and then lose the sequence
-	// race to a later stderr chunk before recording the shared order.
+	defer pm.outputMu.Unlock()
+	if text == "" {
+		return
+	}
+	// Pipe writes need not end at line boundaries. Retain each source's suffix
+	// until its newline arrives, while sequencing completed lines together.
+	pending := &pm.stdoutPending
+	if source == "stderr" {
+		pending = &pm.stderrPending
+	}
+	text = *pending + text
+	for end := strings.IndexByte(text, '\n'); end >= 0; end = strings.IndexByte(text, '\n') {
+		pm.recordOutputLocked(buffer, source, text[:end+1])
+		text = text[end+1:]
+	}
+	// A process can stream forever without a newline. Publish bounded fragments
+	// so the unfinished suffix cannot consume memory without limit.
+	for len(text) > maxPendingOutputBytes {
+		pm.recordOutputLocked(buffer, source, text[:maxPendingOutputBytes])
+		text = text[maxPendingOutputBytes:]
+	}
+	*pending = text
+}
+
+func (pm *ProcessManager) recordOutputLocked(buffer *ringbuffer.RingBuffer, source, text string) {
 	buffer.Write(text)
 	pm.outputSeq++
 	pm.output = append(pm.output, CapturedOutput{
 		Sequence: pm.outputSeq, CapturedAt: time.Now(), Source: source, Text: text,
 	})
-	pm.outputMu.Unlock()
+	pm.outputBytes += uint64(len(text))
+	for len(pm.output)-pm.outputStart > pm.outputMaxEntries || pm.outputBytes > pm.outputMaxBytes {
+		oldest := &pm.output[pm.outputStart]
+		pm.outputBytes -= uint64(len(oldest.Text))
+		*oldest = CapturedOutput{}
+		pm.outputStart++
+		pm.outputDropped++
+	}
+	if pm.outputStart > len(pm.output)/2 {
+		copy(pm.output, pm.output[pm.outputStart:])
+		pm.output = pm.output[:len(pm.output)-pm.outputStart]
+		pm.outputStart = 0
+	}
 }
 
-// DrainCapturedOutput returns stdout and stderr writes in canonical capture
+func (pm *ProcessManager) flushCapturedOutput() {
+	pm.outputMu.Lock()
+	defer pm.outputMu.Unlock()
+	if pm.stdoutPending != "" {
+		pm.recordOutputLocked(pm.stdout, "stdout", pm.stdoutPending)
+		pm.stdoutPending = ""
+	}
+	if pm.stderrPending != "" {
+		pm.recordOutputLocked(pm.stderr, "stderr", pm.stderrPending)
+		pm.stderrPending = ""
+	}
+}
+
+// pendingOutput exposes unfinished lines for readiness checks without adding
+// fragments to the public log before their line boundary arrives.
+func (pm *ProcessManager) pendingOutput() (stdout, stderr string) {
+	pm.outputMu.Lock()
+	defer pm.outputMu.Unlock()
+	return pm.stdoutPending, pm.stderrPending
+}
+
+// DrainCapturedOutput returns completed lines and bounded fragments in capture
 // order. The per-source buffers remain intact for action result snapshots.
 func (pm *ProcessManager) DrainCapturedOutput() []CapturedOutput {
 	pm.outputMu.Lock()
 	defer pm.outputMu.Unlock()
-	entries := append([]CapturedOutput(nil), pm.output...)
-	pm.output = pm.output[:0]
+	entries := append([]CapturedOutput(nil), pm.output[pm.outputStart:]...)
+	if pm.outputDropped > 0 {
+		marker := CapturedOutput{CapturedAt: time.Now(), Source: "kranz",
+			Text: fmt.Sprintf("[Kranz] %d captured lines omitted due to output backlog", pm.outputDropped)}
+		if len(entries) > 0 {
+			marker.Sequence = entries[0].Sequence - 1
+		}
+		entries = append([]CapturedOutput{marker}, entries...)
+	}
+	pm.output = nil
+	pm.outputStart = 0
+	pm.outputBytes = 0
+	pm.outputDropped = 0
 	return entries
 }
 
@@ -85,9 +161,14 @@ type StopOptions struct {
 
 // NewProcessManager creates a stopped process manager with bounded log buffers.
 func NewProcessManager(logBufSize int) *ProcessManager {
+	if logBufSize <= 0 {
+		logBufSize = 1000
+	}
 	return &ProcessManager{
-		stdout: ringbuffer.New(logBufSize),
-		stderr: ringbuffer.New(logBufSize),
+		stdout:           ringbuffer.New(logBufSize),
+		stderr:           ringbuffer.New(logBufSize),
+		outputMaxEntries: max(logBufSize, defaultLogBufferSize),
+		outputMaxBytes:   defaultLogBufferBytes,
 	}
 }
 
@@ -170,6 +251,7 @@ func (pm *ProcessManager) launch(cmd *exec.Cmd, env map[string]string) (int, err
 // reap owns the only exec.Cmd.Wait call and always releases the OS process handle.
 func (pm *ProcessManager) reap(cmd *exec.Cmd, done chan struct{}) {
 	err := cmd.Wait()
+	pm.flushCapturedOutput()
 	pm.mu.Lock()
 	if pm.cmd == cmd {
 		pm.waitErr = err

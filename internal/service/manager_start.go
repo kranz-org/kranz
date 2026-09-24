@@ -73,10 +73,11 @@ func (m *Manager) startService(ctx context.Context, name string, recovery bool) 
 	m.mu.RLock()
 	pc := m.portChecker
 	m.mu.RUnlock()
-	if pc != nil && len(svc.Config.Ports) > 0 {
-		portsInfo, err := pc.CheckPorts(svc.Config.Ports)
+	declaredPorts, _ := svc.PortConfig()
+	if pc != nil && len(declaredPorts) > 0 {
+		portsInfo, err := pc.CheckPorts(declaredPorts)
 		if err == nil {
-			for _, port := range svc.Config.Ports {
+			for _, port := range declaredPorts {
 				if info, ok := portsInfo[port]; ok && info != nil {
 					owner := m.ManagedServiceForPID(info.PID)
 					svc.SetDesiredRunning(false)
@@ -134,7 +135,7 @@ func (m *Manager) startService(ctx context.Context, name string, recovery bool) 
 
 	monitorStop := make(chan struct{})
 	svc.setRuntime(pm, monitorStop)
-	if svc.Config.PortDiscoveryEnabled() {
+	if svc.PortDiscoveryEnabled() {
 		m.ensureListenerDiscovery()
 	}
 

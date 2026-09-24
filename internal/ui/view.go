@@ -40,6 +40,8 @@ func (m *Model) View() string {
 		content = m.renderPortConflictView()
 	case ModeConfirmRestart:
 		content = m.renderConfirmRestartView()
+	case ModeConfirmConfigReload:
+		content = m.renderConfirmConfigReloadView()
 	case ModeConfirmClearLogs:
 		content = m.renderConfirmClearLogsView()
 	case ModeConfirmAction:
@@ -220,6 +222,9 @@ func (m *Model) renderHeader() string {
 		StoppedBadgeStyle.Render(fmt.Sprintf("%d stopped", stopped))
 	version := displayVersion(m.version)
 	rightText := summary + "   " + ContextBarStyle.Render(version) + "   " + HelpKeyStyle.Render("[?] help") + " "
+	if m.configChanged {
+		rightText = StartingBadgeStyle.Render("CONFIG CHANGED") + "  " + HelpKeyStyle.Render("[Ctrl+L] apply") + "   " + rightText
+	}
 	if m.width < 90 {
 		rightText = ContextBarStyle.Render(version) + "  " + HelpKeyStyle.Render("[?] help") + " "
 	}
@@ -433,6 +438,9 @@ func (m *Model) actionAt(x int) string {
 func (m *Model) contextMessage() string {
 	if m.operation != "" {
 		return "◐ " + m.operation + " "
+	}
+	if m.configChanged {
+		return "Config changed · Ctrl+L to apply "
 	}
 	m.notifMu.RLock()
 	toast := m.toastMessage

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -521,7 +522,9 @@ func (m *Model) applyReloadedAppearance(msg appearanceReloadMsg) {
 		m.addNotification("appearance", "Could not apply saved appearance: "+err.Error(), config.LogError)
 		return
 	}
-	m.cfg.UI = msg.projectUI
+	updated := *m.cfg
+	updated.UI = msg.projectUI
+	m.cfg = &updated
 	m.userSettings = msg.userSettings
 	m.activeTheme = theme
 	m.themeBefore = theme
@@ -598,10 +601,12 @@ func (m *Model) saveThemePickerToProject() {
 		m.addNotification("settings", err.Error(), config.LogError)
 		return
 	}
-	// The project file is already authoritative at this point, even if clearing
-	// the personal overrides below fails. Keep the in-memory config aligned with
-	// disk and then reapply any overrides that could not be removed.
-	m.cfg.UI = appearance
+	// Keep this TUI's appearance aligned with the saved file. The supervisor
+	// adopts the changed configuration only after Ctrl+L.
+	updated := *m.cfg
+	updated.UI = appearance
+	m.cfg = &updated
+	m.configChanged = true
 
 	previousSettings := m.userSettings
 	m.userSettings.Theme = ""
@@ -623,9 +628,8 @@ func (m *Model) saveThemePickerToProject() {
 		if appearance.Accent != "" {
 			m.themeAccentSource = themeAccentSourceProject
 		}
-		m.addNotification("appearance", "Project appearance saved to "+path, config.LogInfo)
+		m.addNotification("appearance", "Project appearance saved. Press Ctrl+L to apply the configuration", config.LogInfo)
 	}
-	m.app.AcknowledgeExternalWrite()
 	m.mode = ModeNormal
 }
 
@@ -715,10 +719,24 @@ func (m *Model) applyEffectiveAppearance() error {
 }
 
 func (m *Model) themeProjectConfigPath() string {
+	if config.HasVirtualRoot(m.cfg.Sources) {
+		return ""
+	}
+	for _, source := range m.cfg.Sources {
+		if source.Depth != 0 || source.Kind == config.SourceOverride {
+			continue
+		}
+		if source.CanonicalPath != "" {
+			return source.CanonicalPath
+		}
+		if request := m.app.ProjectComposition(); request.Configured() {
+			return filepath.Join(request.Directory, source.DisplayPath)
+		}
+	}
 	if len(m.configPaths) == 0 {
 		return ""
 	}
-	return m.configPaths[len(m.configPaths)-1]
+	return m.configPaths[0]
 }
 
 // themePickerAccent resolves the accent the picker currently represents. An

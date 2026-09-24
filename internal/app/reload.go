@@ -1,8 +1,10 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"hash/fnv"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -12,10 +14,8 @@ import (
 	"github.com/kranz-org/kranz/internal/config"
 )
 
-// Configuration hot reload. This is the same stamping and debounce pipeline
-// that used to live in the TUI (internal/ui/model_config.go): watch a set of
-// paths by mtime and size, and only re-parse when one of them actually
-// changed. An invalid file leaves the last known good runtime untouched.
+// Configuration reload uses watched paths to avoid reparsing unchanged files.
+// An invalid file leaves the last known good runtime untouched.
 
 // configStamp is one watch target's cheap change signature. Modified and Size
 // have a different meaning per target kind, and the double meaning is
@@ -28,13 +28,33 @@ type configStamp struct {
 	Size     int64
 }
 
-// Reload debounces to at most once per second unless force is true, matching
-// the interval the TUI's polling tick used to enforce on its own.
-const reloadDebounce = time.Second
+type discoveryWatchPolicy struct {
+	followSymlinks bool
+	maxDepth       int // -1 means unlimited
+}
+
+// ConfigChanged checks the same watch set as Reload without changing the
+// runtime or acknowledging the new stamps.
+func (l *Local) ConfigChanged() (bool, error) {
+	l.cfgMu.RLock()
+	paths := append([]string(nil), l.watchPaths...)
+	policies := cloneDiscoveryWatchPolicies(l.watchPolicies)
+	previous := cloneConfigStamps(l.stamps)
+	l.cfgMu.RUnlock()
+	if len(paths) == 0 {
+		return false, nil
+	}
+	current, err := readConfigStampsWithPolicies(paths, policies)
+	if err != nil {
+		return false, err
+	}
+	return !equalConfigStamps(previous, current), nil
+}
 
 // Reload re-reads the configuration if a watched path changed, and applies
-// it to the running services. A concurrent Reload call while one is already
-// in flight is a no-op, reported as (ReloadResult{}, nil).
+// it to the running services. A concurrent request reports that the reload is
+// already in progress, so an explicit caller cannot mistake a skipped apply
+// for success.
 func (l *Local) Reload(force bool) (ReloadResult, error) {
 	l.cfgMu.Lock()
 	if len(l.configPaths) == 0 && l.loadOptions == nil {
@@ -43,17 +63,13 @@ func (l *Local) Reload(force bool) (ReloadResult, error) {
 	}
 	if l.reloadBusy {
 		l.cfgMu.Unlock()
-		return ReloadResult{}, nil
+		return ReloadResult{}, errors.New("configuration reload already in progress")
 	}
-	if !force && time.Since(l.lastConfigScan) < reloadDebounce {
-		l.cfgMu.Unlock()
-		return ReloadResult{}, nil
-	}
-	l.lastConfigScan = time.Now()
 	l.reloadBusy = true
 	paths := append([]string(nil), l.configPaths...)
 	loadOptions := cloneLoadOptions(l.loadOptions)
 	watchPaths := append([]string(nil), l.watchPaths...)
+	watchPolicies := cloneDiscoveryWatchPolicies(l.watchPolicies)
 	previousStamps := cloneConfigStamps(l.stamps)
 	l.cfgMu.Unlock()
 
@@ -63,13 +79,11 @@ func (l *Local) Reload(force bool) (ReloadResult, error) {
 		l.cfgMu.Unlock()
 	}()
 
-	stamps, err := readConfigStamps(watchPaths)
+	stamps, err := readConfigStampsWithPolicies(watchPaths, watchPolicies)
 	if err != nil {
-		l.recordReloadStamps(stamps)
 		return ReloadResult{}, err
 	}
 	changed := force || !equalConfigStamps(previousStamps, stamps)
-	l.recordReloadStamps(stamps)
 	if !changed {
 		return ReloadResult{}, nil
 	}
@@ -97,7 +111,9 @@ func (l *Local) Reload(force bool) (ReloadResult, error) {
 	// that accepted runtime graph, not a different desired graph.
 	l.cfg = l.manager.Config()
 	nextWatchPaths := watchedConfigPaths(next.Paths, next.WatchPaths)
+	nextWatchPolicies := discoveryWatchPolicies(next)
 	l.watchPaths = nextWatchPaths
+	l.watchPolicies = nextWatchPolicies
 	l.generation++
 	generation := l.generation
 	l.loadedAt = time.Now()
@@ -113,25 +129,60 @@ func (l *Local) Reload(force bool) (ReloadResult, error) {
 	// did not change, which is the ordinary case, so the second scan the reload
 	// used to run on every success is gone. A changed scope alone needs a fresh
 	// scan, and replacing the whole map keeps no stale path to compare against.
-	if !slices.Equal(watchPaths, nextWatchPaths) {
-		if fresh, err := readConfigStamps(nextWatchPaths); err == nil {
+	if !slices.Equal(watchPaths, nextWatchPaths) || !equalDiscoveryWatchPolicies(watchPolicies, nextWatchPolicies) {
+		if fresh, err := readConfigStampsWithPolicies(nextWatchPaths, nextWatchPolicies); err == nil {
 			l.recordReloadStamps(fresh)
 		}
+	} else {
+		l.recordReloadStamps(stamps)
 	}
 	return result, nil
 }
 
 // AcknowledgeExternalWrite implements API.AcknowledgeExternalWrite.
 func (l *Local) AcknowledgeExternalWrite() {
-	if stamps, err := readConfigStamps(l.watchPathsSnapshot()); err == nil {
+	paths, policies := l.watchStateSnapshot()
+	if stamps, err := readConfigStampsWithPolicies(paths, policies); err == nil {
 		l.recordReloadStamps(stamps)
 	}
 }
 
-func (l *Local) watchPathsSnapshot() []string {
+func (l *Local) watchStateSnapshot() ([]string, map[string][]discoveryWatchPolicy) {
 	l.cfgMu.RLock()
 	defer l.cfgMu.RUnlock()
-	return append([]string(nil), l.watchPaths...)
+	return append([]string(nil), l.watchPaths...), cloneDiscoveryWatchPolicies(l.watchPolicies)
+}
+
+func discoveryWatchPolicies(cfg *config.Config) map[string][]discoveryWatchPolicy {
+	policies := make(map[string][]discoveryWatchPolicy, len(cfg.DiscoveryScopes))
+	for _, scope := range cfg.DiscoveryScopes {
+		policy := discoveryWatchPolicy{followSymlinks: scope.FollowSymlinks, maxDepth: -1}
+		if scope.MaxDepth != nil {
+			policy.maxDepth = *scope.MaxDepth
+		}
+		policies[scope.Path] = append(policies[scope.Path], policy)
+	}
+	return policies
+}
+
+func cloneDiscoveryWatchPolicies(source map[string][]discoveryWatchPolicy) map[string][]discoveryWatchPolicy {
+	clone := make(map[string][]discoveryWatchPolicy, len(source))
+	for path, policies := range source {
+		clone[path] = append([]discoveryWatchPolicy(nil), policies...)
+	}
+	return clone
+}
+
+func equalDiscoveryWatchPolicies(left, right map[string][]discoveryWatchPolicy) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for path, policies := range left {
+		if !slices.Equal(policies, right[path]) {
+			return false
+		}
+	}
+	return true
 }
 
 func (l *Local) recordReloadStamps(stamps map[string]configStamp) {
@@ -147,8 +198,20 @@ func (l *Local) recordReloadError(err error) {
 }
 
 func readConfigStamps(paths []string) (map[string]configStamp, error) {
+	return readConfigStampsWithPolicies(paths, nil)
+}
+
+func readConfigStampsWithPolicies(paths []string, policies map[string][]discoveryWatchPolicy) (map[string]configStamp, error) {
 	result := make(map[string]configStamp, len(paths))
 	for _, path := range paths {
+		if strings.ContainsAny(path, "*?[") {
+			stamp, err := stampConfigGlob(path)
+			if err != nil {
+				return result, fmt.Errorf("scan config glob %s: %w", filepath.Base(path), redactPath(err, path))
+			}
+			result[path] = stamp
+			continue
+		}
 		info, err := os.Stat(path)
 		if os.IsNotExist(err) {
 			result[path] = configStamp{}
@@ -158,10 +221,14 @@ func readConfigStamps(paths []string) (map[string]configStamp, error) {
 			return result, fmt.Errorf("stat watched path %s: %w", filepath.Base(path), redactPath(err, path))
 		}
 		if !info.IsDir() {
-			result[path] = configStamp{Modified: info.ModTime().UnixNano(), Size: info.Size()}
+			stamp, err := stampConfigFile(path, info)
+			if err != nil {
+				return result, fmt.Errorf("read watched file %s: %w", filepath.Base(path), redactPath(err, path))
+			}
+			result[path] = stamp
 			continue
 		}
-		hash, entries, err := stampDiscoveryScope(path)
+		hash, entries, err := stampDiscoveryScope(path, policies[path])
 		if err != nil {
 			return result, fmt.Errorf("scan discovery scope %s: %w", filepath.Base(path), redactPath(err, path))
 		}
@@ -170,30 +237,159 @@ func readConfigStamps(paths []string) (map[string]configStamp, error) {
 	return result, nil
 }
 
+func stampConfigFile(path string, info os.FileInfo) (configStamp, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return configStamp{}, err
+	}
+	defer func() { _ = file.Close() }()
+	hash := fnv.New64a()
+	if _, err := io.Copy(hash, file); err != nil {
+		return configStamp{}, err
+	}
+	stamp := configStamp{Modified: int64(hash.Sum64()), Size: info.Size()}
+	link, err := os.Lstat(path)
+	if err == nil && link.Mode()&os.ModeSymlink != 0 {
+		target, err := filepath.EvalSymlinks(path)
+		if err == nil {
+			linked := fnv.New64a()
+			_, _ = fmt.Fprintf(linked, "%s\x00%d\x00%d\x00%d", target, stamp.Modified, stamp.Size, link.ModTime().UnixNano())
+			stamp.Modified = int64(linked.Sum64())
+		}
+	}
+	return stamp, nil
+}
+
+func stampConfigGlob(pattern string) (configStamp, error) {
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return configStamp{}, err
+	}
+	hash := fnv.New64a()
+	var count int64
+	for _, match := range matches {
+		info, err := os.Stat(match)
+		if err != nil {
+			return configStamp{}, err
+		}
+		file := match
+		if info.IsDir() {
+			file, err = config.Discover(match)
+			if err != nil {
+				_, _ = fmt.Fprintf(hash, "%s\x00%d\x00", match, info.ModTime().UnixNano())
+				continue
+			}
+			info, err = os.Stat(file)
+			if err != nil {
+				return configStamp{}, err
+			}
+		}
+		stamp, err := stampConfigFile(file, info)
+		if err != nil {
+			return configStamp{}, err
+		}
+		_, _ = fmt.Fprintf(hash, "%s\x00%d\x00%d\x00", file, stamp.Modified, stamp.Size)
+		count++
+	}
+	return configStamp{Modified: int64(hash.Sum64()), Size: count}, nil
+}
+
 // stampDiscoveryScope hashes only the files discovery can actually load under a
 // scope. Nested directories are still walked, but an entry that is not a
 // supported config name is skipped before any stat, so a directory holding
 // thousands of unrelated files costs one directory read instead of one hash per
 // file.
-func stampDiscoveryScope(path string) (int64, int64, error) {
+func stampDiscoveryScope(path string, policies []discoveryWatchPolicy) (int64, int64, error) {
+	if len(policies) == 0 {
+		policies = []discoveryWatchPolicy{{maxDepth: -1}}
+	}
+	combined := fnv.New64a()
+	var total int64
+	for _, policy := range policies {
+		stamp, count, err := stampOneDiscoveryScope(path, policy)
+		if err != nil {
+			return 0, 0, err
+		}
+		_, _ = fmt.Fprintf(combined, "%d:%d\x00", stamp, count)
+		total += count
+	}
+	return int64(combined.Sum64()), total, nil
+}
+
+func stampOneDiscoveryScope(path string, policy discoveryWatchPolicy) (int64, int64, error) {
 	hash := fnv.New64a()
 	var entries int64
-	err := filepath.WalkDir(path, func(entryPath string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
+	seen := make(map[string]bool)
+	var walk func(string, int) error
+	walk = func(directory string, depth int) error {
+		canonical, err := filepath.EvalSymlinks(directory)
+		if err != nil {
+			return err
 		}
-		if entry.IsDir() || !config.IsConfigFileName(entry.Name()) {
+		if seen[canonical] {
 			return nil
 		}
-		info, infoErr := entry.Info()
-		if infoErr != nil {
-			return infoErr
+		seen[canonical] = true
+		children, err := os.ReadDir(directory)
+		if err != nil {
+			return err
 		}
-		relative, _ := filepath.Rel(path, entryPath)
-		_, _ = fmt.Fprintf(hash, "%s\x00%d\x00%d\x00", relative, info.ModTime().UnixNano(), info.Size())
-		entries++
+		candidates := make(map[string]os.FileInfo)
+		for _, child := range children {
+			if child.Type()&os.ModeSymlink != 0 && !policy.followSymlinks {
+				continue
+			}
+			if policy.maxDepth >= 0 && depth >= policy.maxDepth &&
+				(child.IsDir() || !config.IsConfigFileName(child.Name())) {
+				continue
+			}
+			if !child.IsDir() && child.Type()&os.ModeSymlink == 0 && !config.IsConfigFileName(child.Name()) {
+				continue
+			}
+			entryPath := filepath.Join(directory, child.Name())
+			info, err := os.Stat(entryPath)
+			if err != nil {
+				return err
+			}
+			if info.IsDir() {
+				if policy.maxDepth >= 0 && depth >= policy.maxDepth {
+					continue
+				}
+				if child.Type()&os.ModeSymlink != 0 {
+					target, err := filepath.EvalSymlinks(entryPath)
+					if err != nil {
+						return err
+					}
+					relative, _ := filepath.Rel(path, entryPath)
+					_, _ = fmt.Fprintf(hash, "link:%s:%s\x00", relative, target)
+				}
+				if err := walk(entryPath, depth+1); err != nil {
+					return err
+				}
+				continue
+			}
+			if !config.IsConfigFileName(child.Name()) {
+				continue
+			}
+			candidates[child.Name()] = info
+		}
+		names := make([]string, 0, len(candidates))
+		for name := range candidates {
+			names = append(names, name)
+		}
+		if preferred := config.PreferredConfigName(names); preferred != "" {
+			entryPath := filepath.Join(directory, preferred)
+			stamp, err := stampConfigFile(entryPath, candidates[preferred])
+			if err != nil {
+				return err
+			}
+			relative, _ := filepath.Rel(path, entryPath)
+			_, _ = fmt.Fprintf(hash, "%s\x00%d\x00%d\x00", relative, stamp.Modified, stamp.Size)
+			entries++
+		}
 		return nil
-	})
+	}
+	err := walk(path, 0)
 	if err != nil {
 		return 0, 0, err
 	}

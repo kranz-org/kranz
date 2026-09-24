@@ -914,6 +914,230 @@ func TestManualConfigReloadReconcilesModel(t *testing.T) {
 	}
 }
 
+func TestExternalConfigReloadReconcilesModelWithoutOpeningModal(t *testing.T) {
+	directory := t.TempDir()
+	path := filepath.Join(directory, "kranz.yaml")
+	initial := "project: Reload Test\nservices:\n  api:\n    command: sleep 60\n"
+	if err := os.WriteFile(path, []byte(initial), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	model := NewModelWithOptions(cfg, "test", ModelOptions{ConfigPaths: []string{path}})
+	defer model.Shutdown()
+	updated := "project: Reload Test\nservices:\n  api:\n    command: sleep 61\n"
+	if err := os.WriteFile(path, []byte(updated), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := model.app.Reload(true); err != nil {
+		t.Fatal(err)
+	}
+	message := model.checkConfigChanges()().(configChangedMsg)
+	model.Update(message)
+	if model.mode != ModeNormal || model.configGeneration != 2 || model.cfg.Services["api"].Command != "sleep 61" {
+		t.Fatal("external reload was not reconciled")
+	}
+}
+
+func TestCtrlLWaitsForPassiveConfigCheck(t *testing.T) {
+	directory := t.TempDir()
+	path := filepath.Join(directory, "kranz.yaml")
+	initial := "project: Reload Test\nservices:\n  api:\n    command: sleep 60\n"
+	if err := os.WriteFile(path, []byte(initial), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	model := NewModelWithOptions(cfg, "test", ModelOptions{ConfigPaths: []string{path}})
+	defer model.Shutdown()
+	check := model.checkConfigChanges()
+	if check == nil {
+		t.Fatal("passive check was not scheduled")
+	}
+	if command := model.reloadConfig(true); command != nil || !model.reloadRequested {
+		t.Fatal("Ctrl+L was not queued during the check")
+	}
+	_, command := model.Update(check())
+	if command == nil || model.reloadRequested {
+		t.Fatal("queued Ctrl+L was not resumed")
+	}
+	if result, ok := command().(configReloadMsg); !ok || result.err != nil {
+		t.Fatalf("queued reload result = %#v", result)
+	}
+}
+
+func TestConfigReloadConfirmsRemovalOfRunningService(t *testing.T) {
+	directory := t.TempDir()
+	path := filepath.Join(directory, "kranz.yaml")
+	write := func(includeRemoved bool) {
+		t.Helper()
+		content := "project: Reload Test\nservices:\n  kept:\n    command: sleep 60\n"
+		if includeRemoved {
+			content += "  removed:\n    command: sleep 60\n"
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(true)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	model := NewModelWithOptions(cfg, "test", ModelOptions{ConfigPaths: []string{path}})
+	defer model.Shutdown()
+	if err := model.app.StartServicesContext(t.Context(), []string{"removed"}); err != nil {
+		t.Fatal(err)
+	}
+	model.refreshServices()
+	model.selected["removed"] = true
+	write(false)
+	preview := func() configReloadPreviewMsg {
+		t.Helper()
+		msg, ok := model.reloadConfig(true)().(configReloadPreviewMsg)
+		if !ok || len(msg.removed) != 1 || msg.removed[0] != "removed" {
+			t.Fatalf("reload preview = %#v", msg)
+		}
+		model.handleConfigReloadPreview(msg)
+		return msg
+	}
+	preview()
+	model.handleConfirmConfigReloadKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	if _, exists := model.app.Service("removed"); !exists || model.configGeneration != 1 {
+		t.Fatal("cancelled reload changed the runtime")
+	}
+	model.lastConfigCheck = time.Time{}
+	if check := model.checkConfigChanges(); check == nil {
+		t.Fatal("config change check was not scheduled")
+	} else if message := check().(configChangedMsg); !message.changed || message.err != nil {
+		t.Fatalf("cancelled change was not detected: %#v", message)
+	} else {
+		model.Update(message)
+	}
+	if model.mode != ModeNormal || !model.configChanged || model.configGeneration != 1 {
+		t.Fatal("background check applied config or opened confirmation")
+	}
+	if !strings.Contains(ansi.Strip(model.contextMessage()), "Ctrl+L to apply") {
+		t.Fatal("changed config is not visible in the status bar")
+	}
+	preview()
+	model.width, model.height, model.ready = 100, 30, true
+	plain := ansi.Strip(model.renderConfirmConfigReloadView())
+	for _, phrase := range []string{"removed", "WILL REMAIN RUNNING AFTER CONFIG RELOAD", "disappear from the list", "Stop listed services, then apply config", "Keep listed services running and apply config", "Keep current config"} {
+		if !strings.Contains(plain, phrase) {
+			t.Fatalf("confirmation omitted %q: %q", phrase, plain)
+		}
+	}
+	_, command := model.handleConfirmConfigReloadKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	message := command().(configReloadMsg)
+	if message.err != nil {
+		t.Fatal(message.err)
+	}
+	model.handleConfigReload(message)
+	if _, exists := model.app.Service("removed"); !exists {
+		t.Fatal("keep-running choice stopped the service")
+	}
+	if len(model.services) != 1 || model.services[0].Name != "kept" {
+		t.Fatalf("removed service is still visible: %#v", model.services)
+	}
+	if model.selected["removed"] {
+		t.Fatal("removed service is still selected")
+	}
+	model.refreshServices()
+	if len(model.services) != 1 || model.services[0].Name != "kept" {
+		t.Fatal("periodic refresh restored the removed service")
+	}
+	model.lastConfigCheck = time.Time{}
+	if check := model.checkConfigChanges(); check == nil {
+		t.Fatal("config change check was not scheduled")
+	} else if message := check().(configChangedMsg); message.changed || message.err != nil {
+		t.Fatalf("applied config still appears changed: %#v", message)
+	}
+	preview()
+	_, command = model.handleConfirmConfigReloadKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	message = command().(configReloadMsg)
+	if message.err != nil {
+		t.Fatal(message.err)
+	}
+	model.handleConfigReload(message)
+	if _, exists := model.app.Service("removed"); exists {
+		t.Fatal("stop-and-reload choice kept the removed service")
+	}
+}
+
+func TestConfigReloadUpdatesPortHintsWithoutConfirmation(t *testing.T) {
+	directory := t.TempDir()
+	path := filepath.Join(directory, "kranz.yaml")
+	write := func(declared bool) {
+		t.Helper()
+		content := "project: Reload Test\nservices:\n  api:\n    command: sleep 60\n"
+		if declared {
+			content += "    ports: [45000]\n"
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(true)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	model := NewModelWithOptions(cfg, "test", ModelOptions{ConfigPaths: []string{path}})
+	defer model.Shutdown()
+	if err := model.app.StartServicesContext(t.Context(), []string{"api"}); err != nil {
+		t.Fatal(err)
+	}
+	write(false)
+	message, ok := model.reloadConfig(true)().(configReloadMsg)
+	if !ok || message.err != nil || len(message.result.Pending) != 0 {
+		t.Fatalf("port-only reload required confirmation: %#v", message)
+	}
+	model.handleConfigReload(message)
+	if ports := model.FocusedService().Config.Ports; len(ports) != 0 {
+		t.Fatalf("declared ports remained after reload: %v", ports)
+	}
+}
+
+func TestConfigReloadDoesNotClaimUnstoppableServiceWasStopped(t *testing.T) {
+	directory := t.TempDir()
+	path := filepath.Join(directory, "kranz.yaml")
+	initial := "project: Reload Test\nservices:\n  external:\n    supervision: detached\n    lifecycle:\n      start:\n        command: exit 0\n"
+	if err := os.WriteFile(path, []byte(initial), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	model := NewModelWithOptions(cfg, "test", ModelOptions{ConfigPaths: []string{path}})
+	defer model.Shutdown()
+	if err := model.app.StartServicesContext(t.Context(), []string{"external"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("project: Reload Test\nservices:\n  placeholder:\n    command: exit 0\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rawPreview := model.reloadConfig(true)()
+	preview, ok := rawPreview.(configReloadPreviewMsg)
+	if !ok || len(preview.removed) != 1 {
+		t.Fatalf("reload preview = %T %#v", rawPreview, rawPreview)
+	}
+	model.handleConfigReloadPreview(preview)
+	_, command := model.handleConfirmConfigReloadKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	message := command().(configReloadMsg)
+	if message.err == nil {
+		t.Fatal("unstoppable service was silently accepted as stopped")
+	}
+	if _, exists := model.app.Service("external"); !exists {
+		t.Fatal("failed stop applied the config anyway")
+	}
+}
+
 func TestProcfileAndDotenvReloadReconcileModel(t *testing.T) {
 	directory := t.TempDir()
 	procfilePath := filepath.Join(directory, "Procfile")

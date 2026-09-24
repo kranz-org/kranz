@@ -12,12 +12,9 @@ import (
 	"github.com/kranz-org/kranz/internal/config"
 )
 
-// TestBackgroundWatcherReloadsWithoutAConnectedClient proves the README's
-// "background runtime reload работает без TUI" requirement directly: a
-// config file changes on disk while zero clients are connected, and the
-// Supervisor's own watcher goroutine — not any client's polling — picks it
-// up.
-func TestBackgroundWatcherReloadsWithoutAConnectedClient(t *testing.T) {
+// A changed file stays pending until a client explicitly applies it, even
+// while no client is attached to the runtime.
+func TestChangedConfigWaitsForExplicitReloadWithoutAConnectedClient(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "kranz.yaml")
 	initial := "project: Watcher\nservices:\n  api:\n    command: sleep 60\n"
@@ -55,16 +52,28 @@ func TestBackgroundWatcherReloadsWithoutAConnectedClient(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	deadline := time.Now().Add(3 * time.Second)
-	for local.Project().Generation == before {
-		if time.Now().After(deadline) {
-			t.Fatalf("background watcher did not reload; generation stayed at %d", before)
-		}
-		time.Sleep(20 * time.Millisecond)
+	time.Sleep(650 * time.Millisecond)
+	if local.Project().Generation != before {
+		t.Fatal("configuration applied without an explicit reload")
 	}
-
+	client, err := Dial(socketPath, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := client.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
+	changed, err := client.ConfigChanged()
+	if err != nil || !changed {
+		t.Fatalf("changed configuration was not reported: %v, %v", changed, err)
+	}
+	if _, err := client.Reload(true); err != nil {
+		t.Fatal(err)
+	}
 	if _, ok := local.Service("worker"); !ok {
-		t.Fatal("reloaded config did not add the worker service")
+		t.Fatal("explicit reload did not add the worker service")
 	}
 }
 

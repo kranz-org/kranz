@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -186,17 +187,34 @@ func runUp(options kranzcli.GlobalOptions, args []string, stdout io.Writer) erro
 	signals := make(chan os.Signal, 2)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(signals)
-	if err := spawnBackground(options, selectors, startAll, io.Discard); err != nil {
+	child, err := launchBackground(options, selectors, startAll, io.Discard, false)
+	if err != nil {
 		return classifyRuntimeError(err)
+	}
+	childExit := make(chan error, 1)
+	go func() { childExit <- child.Wait() }()
+	childResult := func(err error) error {
+		if exit, ok := err.(*exec.ExitError); ok {
+			return requestedExitError{code: exit.ExitCode()}
+		}
+		return err
+	}
+	failedAttach := func(err error) error {
+		select {
+		case exitErr := <-childExit:
+			return childResult(exitErr)
+		case <-time.After(time.Second):
+			return err
+		}
 	}
 	record, err := resolveSession(options)
 	if err != nil {
-		return err
+		return failedAttach(err)
 	}
 	client, err := kranzruntime.DialWithIdentity(record.Socket, version,
 		kranzruntime.ClientIdentity{Surface: "cli", Label: "Kranz foreground"})
 	if err != nil {
-		return classifyRuntimeError(err)
+		return failedAttach(classifyRuntimeError(err))
 	}
 	defer func() { _ = client.Close() }()
 	cfg := client.Config()
@@ -221,7 +239,12 @@ func runUp(options kranzcli.GlobalOptions, args []string, stdout io.Writer) erro
 		case sig := <-signals:
 			return terminateForegroundWithSignal(client, record, signals, sig)
 		case <-client.Done():
-			return nil
+			select {
+			case exitErr := <-childExit:
+				return childResult(exitErr)
+			case <-time.After(time.Second):
+				return nil
+			}
 		case <-ticker.C:
 			for _, service := range client.Services() {
 				entries := client.Logs(service.Name)
@@ -270,13 +293,18 @@ type backgroundStartResult struct {
 var newBackgroundCommand = func(executable string, args ...string) *exec.Cmd { return exec.Command(executable, args...) }
 
 func spawnBackground(options kranzcli.GlobalOptions, selectors []string, startAll bool, stdout io.Writer) error {
+	_, err := launchBackground(options, selectors, startAll, stdout, true)
+	return err
+}
+
+func launchBackground(options kranzcli.GlobalOptions, selectors []string, startAll bool, stdout io.Writer, release bool) (*exec.Cmd, error) {
 	executable, err := os.Executable()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	reader, writer, err := os.Pipe()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer func() { _ = reader.Close() }()
 	args := []string{"-C", options.Directory}
@@ -308,13 +336,13 @@ func spawnBackground(options kranzcli.GlobalOptions, selectors []string, startAl
 	devNull, err := os.Open(os.DevNull)
 	if err != nil {
 		_ = writer.Close()
-		return err
+		return nil, err
 	}
 	defer func() { _ = devNull.Close() }()
 	command.Stdin = devNull
 	if err := command.Start(); err != nil {
 		_ = writer.Close()
-		return err
+		return nil, err
 	}
 	_ = writer.Close()
 	readyResult := make(chan struct {
@@ -333,7 +361,7 @@ func spawnBackground(options kranzcli.GlobalOptions, selectors []string, startAl
 	case result := <-readyResult:
 		if result.err != nil {
 			waitErr := command.Wait()
-			return fmt.Errorf("background runtime exited before readiness: %w", errors.Join(result.err, waitErr))
+			return nil, fmt.Errorf("background runtime exited before readiness: %w", errors.Join(result.err, waitErr))
 		}
 		if !result.ready.OK {
 			_ = command.Wait()
@@ -345,18 +373,20 @@ func spawnBackground(options kranzcli.GlobalOptions, selectors []string, startAl
 			if code == "" {
 				code = "background_start"
 			}
-			return &kranzcli.Error{Code: code, Message: result.ready.Error, Hint: result.ready.Hint, ExitCode: exitCode}
+			return nil, &kranzcli.Error{Code: code, Message: result.ready.Error, Hint: result.ready.Hint, ExitCode: exitCode}
 		}
-		if err := command.Process.Release(); err != nil {
-			return err
+		if release {
+			if err := command.Process.Release(); err != nil {
+				return nil, err
+			}
 		}
 		if options.Output == kranzcli.OutputJSON {
-			return kranzcli.WriteJSON(stdout, backgroundStartResult{
+			return command, kranzcli.WriteJSON(stdout, backgroundStartResult{
 				ID: result.ready.ID, Name: result.ready.Name, PID: result.ready.PID, Mode: "background",
 			})
 		}
 		_, err = fmt.Fprintf(stdout, "Started %s (%s), PID %d.\n", result.ready.Name, shortID(result.ready.ID), result.ready.PID)
-		return err
+		return command, err
 	case <-time.After(60 * time.Second):
 		_ = command.Process.Signal(syscall.SIGTERM)
 		waitDone := make(chan error, 1)
@@ -367,7 +397,7 @@ func spawnBackground(options kranzcli.GlobalOptions, selectors []string, startAl
 			_ = command.Process.Kill()
 			<-waitDone
 		}
-		return &kranzcli.Error{Code: "background_timeout", Message: "background runtime did not become ready within 1m", ExitCode: kranzcli.ExitUnavailable}
+		return nil, &kranzcli.Error{Code: "background_timeout", Message: "background runtime did not become ready within 1m", ExitCode: kranzcli.ExitUnavailable}
 	}
 }
 
@@ -529,7 +559,15 @@ func resolveSession(options kranzcli.GlobalOptions) (kranzruntime.SessionRecord,
 	if err != nil {
 		return kranzruntime.SessionRecord{}, classifyMissingRuntime(err, options, reference)
 	}
+	if options.Project == "" && !sameLaunchDirectory(record.Directory, options.Directory) {
+		return kranzruntime.SessionRecord{}, wrongProjectRuntime(reference)
+	}
 	return record, nil
+}
+
+func wrongProjectRuntime(name string) error {
+	return &kranzcli.Error{Code: "runtime_conflict", Message: fmt.Sprintf("runtime %q belongs to another project directory", name),
+		Hint: "Use -p to select that runtime explicitly, or choose a distinct runtime name for this project.", ExitCode: kranzcli.ExitConflict}
 }
 
 // classifyMissingRuntime turns "not found" into advice. A project that has not
@@ -563,15 +601,11 @@ func classifyMissingRuntime(err error, options kranzcli.GlobalOptions, reference
 // missing runtime, so it says how to aim the command instead of reporting that
 // some unnamed runtime could not be found.
 func runtimeNameFromDirectory(options kranzcli.GlobalOptions) (string, error) {
-	original, err := os.Getwd()
+	directory, err := filepath.Abs(options.Directory)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("resolve project directory: %w", err)
 	}
-	if err := os.Chdir(options.Directory); err != nil {
-		return "", err
-	}
-	defer func() { _ = os.Chdir(original) }() // best effort; command performs no work after resolution on failure
-	cfg, err := config.Compose(config.LoadOptions{Directory: ".", Sources: options.ConfigPaths, Overrides: options.OverridePaths, FollowSymlinks: options.FollowSymlinks})
+	cfg, err := config.Compose(config.LoadOptions{Directory: directory, Sources: options.ConfigPaths, Overrides: options.OverridePaths, FollowSymlinks: options.FollowSymlinks})
 	if err != nil {
 		return "", &kranzcli.Error{Code: "no_project", Message: "no Kranz configuration was found in this directory", Hint: "Run from a project directory, pass -f PATH, or name a runtime with -p NAME_OR_ID.", ExitCode: kranzcli.ExitUsage, Cause: err}
 	}

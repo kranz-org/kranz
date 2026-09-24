@@ -125,17 +125,24 @@ func (m *Model) refreshLogCache(target app.RunTarget) {
 	}
 
 	entries := m.logEntries[target]
-	if len(result.Window.Streams) > 0 && result.Window.Streams[0].OldestSequence > 0 {
+	if len(result.Window.Streams) > 0 {
 		oldest := result.Window.Streams[0].OldestSequence
-		entries = slices.DeleteFunc(entries, func(entry config.LogEntry) bool { return entry.Sequence < oldest })
-		m.actionLogLines[target] = slices.DeleteFunc(m.actionLogLines[target], func(line cachedActionLogLine) bool { return line.sequence < oldest })
-		for run, lines := range m.actionRunLogLines[target] {
-			lines = slices.DeleteFunc(lines, func(line cachedActionLogLine) bool { return line.sequence < oldest })
-			if len(lines) == 0 {
-				delete(m.actionRunLogLines[target], run)
-				continue
+		if oldest == 0 {
+			// Another client may have cleared the stream without writing any new
+			// output. An empty window supersedes the entries cached before it.
+			m.invalidateLogCache(target)
+			entries = nil
+		} else {
+			entries = slices.DeleteFunc(entries, func(entry config.LogEntry) bool { return entry.Sequence < oldest })
+			m.actionLogLines[target] = slices.DeleteFunc(m.actionLogLines[target], func(line cachedActionLogLine) bool { return line.sequence < oldest })
+			for run, lines := range m.actionRunLogLines[target] {
+				lines = slices.DeleteFunc(lines, func(line cachedActionLogLine) bool { return line.sequence < oldest })
+				if len(lines) == 0 {
+					delete(m.actionRunLogLines[target], run)
+					continue
+				}
+				m.actionRunLogLines[target][run] = lines
 			}
-			m.actionRunLogLines[target][run] = lines
 		}
 	}
 	for _, event := range result.Events {
@@ -196,6 +203,7 @@ func (m *Model) resetLogCaches() {
 	m.actionLogLines = make(map[app.RunTarget][]cachedActionLogLine)
 	m.actionRunLogLines = make(map[app.RunTarget]map[uint32][]cachedActionLogLine)
 	m.logCursors = make(map[app.RunTarget]string)
+	m.logRowCache = [logSlotCount]*logRowMetrics{}
 }
 
 func (m *Model) cachedActionLogRecords(target app.RunTarget, run uint32) []cachedActionLogLine {
@@ -203,21 +211,6 @@ func (m *Model) cachedActionLogRecords(target app.RunTarget, run uint32) []cache
 		return m.actionLogLines[target]
 	}
 	return m.actionRunLogLines[target][run]
-}
-
-func (m *Model) cachedActionOutputLines(target app.RunTarget, run uint32) []string {
-	cached := m.cachedActionLogRecords(target, run)
-	lines := make([]string, 0, len(cached))
-	for _, line := range cached {
-		lines = append(lines, line.text)
-	}
-	if run > 0 {
-		if summary, ok := m.runSummary(target, run); ok && summary.Output.MissingLines > 0 {
-			marker := formatMissingOutputMarker(summary)
-			lines = append([]string{marker}, lines...)
-		}
-	}
-	return lines
 }
 
 func formatMissingOutputMarker(summary app.RunSummary) string {

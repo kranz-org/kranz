@@ -31,10 +31,11 @@ type API interface {
 	// changed since the last successful load (or unconditionally, if
 	// force is true), and reconciles it into the running services.
 	Reload(force bool) (ReloadResult, error)
-	// AcknowledgeExternalWrite re-stamps the watched configuration paths
-	// without reloading. Call it right after writing to one of them (for
-	// example, saving a theme to the project file) so the next Reload does
-	// not treat that write as an external change worth reconciling.
+	// ConfigChanged reports whether watched configuration files differ from
+	// the last loaded or acknowledged state without applying them.
+	ConfigChanged() (bool, error)
+	// AcknowledgeExternalWrite re-stamps watched paths without reloading.
+	// Use it only when a caller has already applied the written configuration.
 	AcknowledgeExternalWrite()
 
 	// Services returns every configured service in stable declaration

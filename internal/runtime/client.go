@@ -329,6 +329,10 @@ func (c *Client) Reload(force bool) (app.ReloadResult, error) {
 	return call[reloadRequest, app.ReloadResult](c, context.Background(), methodReload, reloadRequest{Force: force})
 }
 
+func (c *Client) ConfigChanged() (bool, error) {
+	return call[emptyRequest, bool](c, context.Background(), methodConfigChanged, emptyRequest{})
+}
+
 func (c *Client) AcknowledgeExternalWrite() {
 	_, _ = call[emptyRequest, emptyResponse](c, context.Background(), methodAcknowledgeExternalWrite, emptyRequest{})
 }

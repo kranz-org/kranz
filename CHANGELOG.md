@@ -4,6 +4,35 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-09-24
+
+### Changed
+
+- The TUI detects configuration edits and shows that a reload is available, but
+  applies them only after `Ctrl+L`. Explicit reloads are not dropped when a
+  configuration check is in progress. Removing a running service asks whether
+  to stop it, keep it running outside the configured list, or cancel.
+
+### Fixed
+
+- Log and action-output navigation stays anchored while new output arrives,
+  including wrapped, filtered, pinned, and long histories. Clearing or deleting
+  retained output refreshes the displayed window and cursors. Service logs keep
+  their default retained history across managed restarts.
+- Captured process and detached output is assembled into complete lines with
+  bounded buffering. Readiness markers from an earlier run cannot satisfy a
+  new run, and run selection rejects invalid or out-of-range addresses.
+- Reload reconciliation preserves running services and run history through
+  renames, applies port policy consistently, and reports pending changes when
+  a running service cannot be stopped. Configuration change detection follows
+  selected sources, discovery depth, globs, and symlink policy.
+- CLI, MCP, and TUI runtime selection honor the chosen project and source
+  without silently switching to a same-named runtime elsewhere. Appearance
+  previews survive configuration reloads until saved.
+- The TUI log header separates `WRAP` and `TIME` from adjacent status labels.
+  Radio and checkbox choices move to aligned rows when they do not fit the
+  parameter form, so every option remains visible.
+
 ## [0.16.0] - 2026-09-21
 
 ### Added

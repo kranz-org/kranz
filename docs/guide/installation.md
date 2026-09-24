@@ -62,9 +62,9 @@ Two things are worth knowing:
 
 - **Keep the project on the Linux filesystem.** A project under `/mnt/c` is
   reached through a translation layer, where file watching is unreliable and
-  every process start is slower. Configuration reload depends on watching, so a
-  project under `$HOME` behaves correctly and one under `/mnt/c` may not
-  notice edits.
+  every process start is slower. Detecting configuration edits depends on
+  watching, so a project under `$HOME` behaves correctly and one under
+  `/mnt/c` may not notice edits before an explicit reload.
 - **Ports are shared with Windows.** WSL 2 forwards listening ports to the
   Windows host, so `kranz ports` and the port conflict checks see the same
   numbers your browser does. A port held by a Windows process appears as taken.

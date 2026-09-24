@@ -40,6 +40,12 @@ The log panels support:
 - pause/follow mode and unread counters;
 - a pinned service above the currently focused log panel.
 
+Long, wrapped, filtered, and pinned output stays anchored as new lines arrive.
+Clearing logs or deleting a retained run refreshes the visible window. Managed
+service restarts retain the default log history for that service. Output split
+across multiple process writes is reconstructed into complete lines, with a
+bounded buffer for an unfinished line.
+
 ## Run history
 
 Every start of a service and every invocation of an action is a numbered *run*.

@@ -57,6 +57,9 @@ var handlers = map[string]handlerFunc{
 	methodReload: handler(func(_ context.Context, l *app.Local, req reloadRequest) (app.ReloadResult, error) {
 		return l.Reload(req.Force)
 	}),
+	methodConfigChanged: handler(func(_ context.Context, l *app.Local, _ emptyRequest) (bool, error) {
+		return l.ConfigChanged()
+	}),
 	methodAcknowledgeExternalWrite: handler(func(_ context.Context, l *app.Local, _ emptyRequest) (emptyResponse, error) {
 		l.AcknowledgeExternalWrite()
 		return emptyResponse{}, nil

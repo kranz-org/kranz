@@ -14,6 +14,23 @@ import (
 	"github.com/kranz-org/kranz/internal/health"
 )
 
+func TestManagerServiceRetainsMoreThanOneThousandLogLines(t *testing.T) {
+	manager := NewManager(&config.Config{Services: map[string]config.Service{
+		"service": {Command: "true"},
+	}})
+	defer manager.Shutdown()
+	svc, ok := manager.GetService("service")
+	if !ok {
+		t.Fatal("service missing")
+	}
+	for range 1001 {
+		svc.AppendLog("output")
+	}
+	if got := len(svc.LogEntries()); got != 1001 {
+		t.Fatalf("retained %d log lines, want 1001", got)
+	}
+}
+
 func TestDependencyGatedStartExposesAndClearsQueuedIntent(t *testing.T) {
 	manager := NewManager(&config.Config{Project: "Test", Services: map[string]config.Service{
 		"server": {Command: "sleep 60", ReadyLogLine: "NEVER"},
@@ -90,6 +107,36 @@ func TestDetachedLifecycleRunsStartAndStopDefinitions(t *testing.T) {
 	}
 	if _, err := os.Stat(marker); !os.IsNotExist(err) {
 		t.Fatalf("stop marker still exists: %v", err)
+	}
+}
+
+func TestDetachedStopFailureCanBeRetried(t *testing.T) {
+	directory := t.TempDir()
+	marker := filepath.Join(directory, "first-stop-failed")
+	serviceConfig := config.Service{
+		Supervision: config.SupervisionDetached,
+		Lifecycle: config.LifecycleConfig{
+			Start: &config.Action{Command: "exit 0", Dir: directory, Shell: "/bin/sh"},
+			Stop:  &config.Action{Command: "if [ -f " + marker + " ]; then exit 0; fi; touch " + marker + "; exit 1", Dir: directory, Shell: "/bin/sh"},
+		},
+	}
+	manager := NewManager(&config.Config{Project: "Detached", Services: map[string]config.Service{"stack": serviceConfig}})
+	defer manager.Shutdown()
+	if err := manager.StartService("stack"); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.StopServices([]string{"stack"}); err == nil {
+		t.Fatal("first stop unexpectedly succeeded")
+	}
+	service, _ := manager.GetService("stack")
+	if service.Status() != config.StatusUnknown || !service.CanStop() {
+		t.Fatalf("failed stop cannot be retried: %#v", service.GetState())
+	}
+	if err := manager.StopServices([]string{"stack"}); err != nil {
+		t.Fatalf("retry failed: %v", err)
+	}
+	if service.Status() != config.StatusStopped {
+		t.Fatalf("status after retry = %s", service.Status())
 	}
 }
 
@@ -283,6 +330,35 @@ func TestDetachedStatusReconcilesExternalState(t *testing.T) {
 	waitForServiceStatus(t, service, config.StatusStopped)
 }
 
+func TestDetachedStatusCompletesRunAfterExternalStop(t *testing.T) {
+	directory := t.TempDir()
+	marker := filepath.Join(directory, "running")
+	serviceConfig := config.Service{
+		Supervision: config.SupervisionDetached,
+		Lifecycle: config.LifecycleConfig{
+			Start: &config.Action{Command: "touch " + marker, Dir: directory, Shell: "/bin/sh"},
+			Status: &config.LifecycleStatusConfig{CheckConfig: config.CheckConfig{
+				Type: config.CheckCommand, Command: "test -f " + marker, Interval: 10 * time.Millisecond, Timeout: time.Second,
+			}, StoppedInterval: 10 * time.Millisecond},
+		},
+	}
+	manager := NewManager(&config.Config{Project: "Observed", Services: map[string]config.Service{"stack": serviceConfig}})
+	defer manager.Shutdown()
+	if err := manager.StartService("stack"); err != nil {
+		t.Fatal(err)
+	}
+	service, _ := manager.GetService("stack")
+	waitForServiceStatus(t, service, config.StatusRunning)
+	if err := os.Remove(marker); err != nil {
+		t.Fatal(err)
+	}
+	waitForServiceStatus(t, service, config.StatusStopped)
+	summaries := manager.runs.List(ServiceRunTarget("stack"))
+	if len(summaries) != 1 || summaries[0].Live || summaries[0].FinishedAt.IsZero() {
+		t.Fatalf("external stop left run live: %#v", summaries)
+	}
+}
+
 func TestDetachedProcessHealthyWaitsForReadinessNotStatus(t *testing.T) {
 	directory := t.TempDir()
 	running := filepath.Join(directory, "running")
@@ -357,6 +433,32 @@ func TestDetachedLogFollowerStreamsAndStopsSeparately(t *testing.T) {
 	}
 	if service.Status() != config.StatusStopped {
 		t.Fatalf("status after stop = %s", service.Status())
+	}
+}
+
+func TestDetachedLogFollowerKeepsOutputBeyondActionBuffer(t *testing.T) {
+	directory := t.TempDir()
+	serviceConfig := config.Service{
+		Supervision: config.SupervisionDetached,
+		Lifecycle: config.LifecycleConfig{
+			Start: &config.Action{Command: "exit 0", Dir: directory, Shell: "/bin/sh"},
+			Logs:  &config.Action{Command: `i=1; while [ "$i" -le 20 ]; do printf 'line-%02d\n' "$i"; i=$((i+1)); done`, Dir: directory, Shell: "/bin/sh"},
+		},
+	}
+	manager := NewManager(&config.Config{Project: "Logs", Services: map[string]config.Service{"stack": serviceConfig}})
+	manager.actions.logBufSize = 4
+	defer manager.Shutdown()
+	if err := manager.StartService("stack"); err != nil {
+		t.Fatal(err)
+	}
+	service, _ := manager.GetService("stack")
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && !strings.Contains(strings.Join(service.LogLines(), "\n"), "line-20") {
+		time.Sleep(10 * time.Millisecond)
+	}
+	lines := strings.Join(service.LogLines(), "\n")
+	if !strings.Contains(lines, "line-01") || !strings.Contains(lines, "line-20") {
+		t.Fatalf("detached stream lost output: %q", lines)
 	}
 }
 
@@ -527,6 +629,44 @@ func TestCompletionAndLogReadyDependencyConditions(t *testing.T) {
 		api, _ := manager.GetService("api")
 		if api.Status() != config.StatusRunning {
 			t.Fatalf("api status = %s", api.Status())
+		}
+	})
+
+	t.Run("log ready without newline", func(t *testing.T) {
+		manager := NewManager(&config.Config{Project: "Test", Services: map[string]config.Service{
+			"server": {Command: "printf READY; sleep 60", ReadyLogLine: "READY"},
+		}})
+		defer manager.Shutdown()
+		if err := manager.StartService("server"); err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		defer cancel()
+		if err := manager.waitForDependencyCondition(ctx, "server", config.DependencyLogReady); err != nil {
+			t.Fatalf("partial readiness marker was missed: %v", err)
+		}
+	})
+
+	t.Run("log ready ignores previous run", func(t *testing.T) {
+		manager := NewManager(&config.Config{Project: "Test", Services: map[string]config.Service{
+			"server": {Command: "sleep 60", ReadyLogLine: "READY"},
+		}})
+		defer manager.Shutdown()
+		service, _ := manager.GetService("server")
+		service.SetStatus(config.StatusStarting)
+		service.AppendLog("READY")
+		service.RecordExit(0, nil)
+		service.SetStatus(config.StatusStopped)
+		service.SetStatus(config.StatusStarting)
+		service.SetStatus(config.StatusRunning)
+		ctx, cancel := context.WithTimeout(t.Context(), 150*time.Millisecond)
+		defer cancel()
+		if err := manager.waitForDependencyCondition(ctx, "server", config.DependencyLogReady); !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("previous run released readiness gate: %v", err)
+		}
+		service.AppendLog("READY")
+		if err := manager.waitForDependencyCondition(t.Context(), "server", config.DependencyLogReady); err != nil {
+			t.Fatalf("current run did not satisfy readiness: %v", err)
 		}
 	})
 }
@@ -774,6 +914,62 @@ func TestApplyConfigUpdatesDetachedDefinitionWithoutCyclingResource(t *testing.T
 	}
 }
 
+func TestApplyConfigUpdatesRunningPortPolicyWithoutRestart(t *testing.T) {
+	initial := config.Service{Command: "sleep 60", Ports: []int{45000}}
+	manager := NewManager(&config.Config{Project: "Test", Services: map[string]config.Service{"api": initial}})
+	defer manager.Shutdown()
+	if err := manager.StartService("api"); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := manager.GetService("api")
+	pid := before.PID()
+	next := initial
+	next.Ports = nil
+	result, err := manager.ApplyConfig(&config.Config{Project: "Test", Services: map[string]config.Service{"api": next}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, _ := manager.GetService("api")
+	ports, _ := after.PortConfig()
+	if after != before || after.PID() != pid || len(ports) != 0 || !after.PortDiscoveryEnabled() || len(result.Pending) != 0 {
+		t.Fatalf("port-only reload replaced process or kept stale hints: ports=%v pending=%#v", ports, result.Pending)
+	}
+}
+
+func TestDisablingPortDiscoveryClearsPortsAndRejectsInFlightScan(t *testing.T) {
+	enabled, disabled := true, false
+	initial := config.Service{Command: "sleep 60", DetectPorts: &enabled}
+	manager := NewManager(&config.Config{Project: "Test", Services: map[string]config.Service{"api": initial}})
+	defer manager.Shutdown()
+	if err := manager.StartService("api"); err != nil {
+		t.Fatal(err)
+	}
+	svc, _ := manager.GetService("api")
+	_, generation, running := svc.discoveryTarget()
+	if !running || !svc.updateDetectedPortsJournalled(generation, []int{41234}) {
+		t.Fatal("failed to seed detected ports")
+	}
+	_, _, before, _ := manager.journal.Since(0, 0)
+	next := initial
+	next.DetectPorts = &disabled
+	if _, err := manager.ApplyConfig(&config.Config{Project: "Test", Services: map[string]config.Service{"api": next}}); err != nil {
+		t.Fatal(err)
+	}
+	if svc.updateDetectedPortsJournalled(generation, []int{41234}) || len(svc.DetectedPorts()) != 0 {
+		t.Fatal("in-flight scan restored disabled detected ports")
+	}
+	changes, _, _, _ := manager.journal.Since(before, 0)
+	foundRemoval := false
+	for _, change := range changes {
+		if change.Kind == TransitionServicePorts && change.Service == "api" && change.From == "41234" && change.To == "none" {
+			foundRemoval = true
+		}
+	}
+	if !foundRemoval {
+		t.Fatalf("port removal transition missing: %#v", changes)
+	}
+}
+
 func TestApplyConfigCanRemoveObserveOnlyDetachedService(t *testing.T) {
 	manager := NewManager(&config.Config{Project: "Observed", Services: map[string]config.Service{
 		"stack": {Supervision: config.SupervisionDetached, Lifecycle: config.LifecycleConfig{Status: &config.LifecycleStatusConfig{
@@ -850,6 +1046,61 @@ func TestRestartAdoptsRenameAndAddNameCollision(t *testing.T) {
 	}
 }
 
+func TestReloadKeepsRunningServiceWhenStoppedRenameTakesItsName(t *testing.T) {
+	current := &config.Config{Project: "Test", Services: map[string]config.Service{
+		"former": {Command: "exit 0"},
+		"active": {Command: "sleep 60"},
+	}, ServiceMetadata: map[string]config.EffectiveService{
+		"former": {ID: "svc_former", SourceID: "source_a", SourceName: "former", DisplayName: "former"},
+		"active": {ID: "svc_active", SourceID: "source_b", SourceName: "active", DisplayName: "active"},
+	}}
+	manager := NewManager(current)
+	defer manager.Shutdown()
+	if err := manager.StartService("active"); err != nil {
+		t.Fatal(err)
+	}
+	active, _ := manager.GetService("active")
+	pid := active.PID()
+	next := &config.Config{Project: "Test", Services: map[string]config.Service{
+		"active": {Command: "exit 0"},
+	}, ServiceMetadata: map[string]config.EffectiveService{
+		"active": {ID: "svc_former", SourceID: "source_a", SourceName: "former", DisplayName: "active"},
+	}}
+	if _, err := manager.ApplyConfig(next); err != nil {
+		t.Fatal(err)
+	}
+	stillActive, ok := manager.GetService("active")
+	if !ok || stillActive != active || stillActive.PID() != pid || stillActive.Status() != config.StatusRunning {
+		t.Fatalf("running service was replaced during reload: %#v", stillActive)
+	}
+	if _, ok := manager.GetService("former"); !ok {
+		t.Fatal("pending rename lost its original service")
+	}
+	if err := manager.RestartService("former"); err != nil {
+		t.Fatal(err)
+	}
+	stillActive, ok = manager.GetService("active")
+	if !ok || stillActive != active || stillActive.PID() != pid || stillActive.Status() != config.StatusRunning {
+		t.Fatalf("pending rename adoption replaced the running service: %#v", stillActive)
+	}
+	if _, ok := manager.GetService("former"); !ok {
+		t.Fatal("pending rename adoption lost the original service")
+	}
+	if len(manager.PendingChanges()) == 0 {
+		t.Fatal("blocked rename was marked as adopted")
+	}
+	if err := manager.StopService("active"); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.RestartService("former"); err != nil {
+		t.Fatal(err)
+	}
+	stillActive, ok = manager.GetService("active")
+	if !ok || stillActive != active {
+		t.Fatal("pending rename adoption replaced the stopped occupant")
+	}
+}
+
 func TestApplyConfigHotAppliesDetachedDefinitionWithoutStopCommand(t *testing.T) {
 	directory := t.TempDir()
 	marker := filepath.Join(directory, "running")
@@ -891,6 +1142,35 @@ func TestApplyConfigHotAppliesDetachedDefinitionWithoutStopCommand(t *testing.T)
 	}
 	if after.Config.Lifecycle.Start.Command != "printf x >> "+counter {
 		t.Fatalf("detached definition was not updated: %q", after.Config.Lifecycle.Start.Command)
+	}
+}
+
+func TestDetachedRenamePreservesRunCatalog(t *testing.T) {
+	directory := t.TempDir()
+	definition := config.Service{Supervision: config.SupervisionDetached, Lifecycle: config.LifecycleConfig{
+		Start: &config.Action{Command: "exit 0", Dir: directory, Shell: "/bin/sh"},
+	}}
+	current := &config.Config{Project: "Detached", Services: map[string]config.Service{"old": definition},
+		ServiceMetadata: map[string]config.EffectiveService{"old": {ID: "svc_1", SourceID: "source_1", SourceName: "old", DisplayName: "old"}}}
+	manager := NewManager(current)
+	defer manager.Shutdown()
+	if err := manager.StartService("old"); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := manager.GetService("old")
+	before.AppendLog("retained output")
+	next := &config.Config{Project: "Detached", Services: map[string]config.Service{"new": definition},
+		ServiceMetadata: map[string]config.EffectiveService{"new": {ID: "svc_1", SourceID: "source_1", SourceName: "old", DisplayName: "new"}}}
+	if _, err := manager.ApplyConfig(next); err != nil {
+		t.Fatal(err)
+	}
+	after, ok := manager.GetService("new")
+	if !ok || after.Run() != 1 || len(after.LogLines()) == 0 {
+		t.Fatalf("renamed service lost its run or output: %#v", after)
+	}
+	summaries := manager.runs.List(ServiceRunTarget("new"))
+	if len(summaries) != 1 || summaries[0].Run != 1 || summaries[0].Target.Name != "new" || summaries[0].Output.CapturedLines == 0 {
+		t.Fatalf("renamed run catalog = %#v", summaries)
 	}
 }
 

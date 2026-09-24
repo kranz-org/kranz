@@ -8,7 +8,6 @@ import (
 	"net"
 	"sort"
 	"sync"
-	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -16,13 +15,6 @@ import (
 	"github.com/kranz-org/kranz/internal/config"
 	"github.com/kranz-org/kranz/internal/service"
 )
-
-// backgroundReloadInterval is how often the Supervisor's own watcher checks
-// the configuration when no client is connected to drive Reload itself. It
-// only runs in that gap — see runReloadWatcher — so this can be short without
-// wasting work; Local.Reload's own one-second debounce is still the real
-// rate limit.
-const backgroundReloadInterval = 300 * time.Millisecond
 
 // Supervisor hosts one app.API implementation (always a *app.Local today)
 // and answers requests from Client connections over a Unix socket. It is the
@@ -36,7 +28,6 @@ type Supervisor struct {
 	listener   *net.UnixListener
 	socketPath string
 
-	clients atomic.Int64
 	connMu  sync.Mutex
 	conns   map[*net.UnixConn]struct{}
 	closing bool
@@ -47,10 +38,6 @@ type Supervisor struct {
 	clientMu    sync.Mutex
 	connected   map[uint64]ClientInfo
 	nextClientN uint64
-
-	stopWatch chan struct{}
-	watchDone chan struct{}
-	watching  atomic.Bool
 
 	connWG sync.WaitGroup
 
@@ -74,8 +61,6 @@ func NewSupervisor(local *app.Local) *Supervisor {
 		local:                   local,
 		conns:                   make(map[*net.UnixConn]struct{}),
 		connected:               make(map[uint64]ClientInfo),
-		stopWatch:               make(chan struct{}),
-		watchDone:               make(chan struct{}),
 		closed:                  make(chan struct{}),
 		shutdownRequested:       make(chan struct{}),
 		applicationShutdownDone: make(chan struct{}),
@@ -87,7 +72,7 @@ func NewSupervisor(local *app.Local) *Supervisor {
 // registry entry after the application layer has stopped its services.
 func (s *Supervisor) ShutdownRequested() <-chan struct{} { return s.shutdownRequested }
 
-// Serve binds socketPath, starts the background reload watcher, and accepts
+// Listen binds socketPath and accepts
 // connections until Close is called or the listener otherwise fails. It
 // blocks; callers run it in its own goroutine, after Listen has bound the
 // socket synchronously. Splitting bind from accept this way means the
@@ -111,9 +96,6 @@ func (s *Supervisor) Serve() error {
 	if s.listener == nil {
 		return errors.New("runtime: Serve called before Listen")
 	}
-	s.watching.Store(true)
-	go s.runReloadWatcher()
-
 	for {
 		conn, err := s.listener.AcceptUnix()
 		if err != nil {
@@ -146,14 +128,13 @@ func (s *Supervisor) Serve() error {
 	}
 }
 
-// Close stops accepting connections, stops the reload watcher, and closes
+// Close stops accepting connections and closes
 // the listener. It does not shut down the wrapped Local — a client's
 // "shutdown" request does that explicitly, so a Supervisor going away is
 // distinguishable from a runtime being torn down.
 func (s *Supervisor) Close() error {
 	s.closeOnce.Do(func() {
 		close(s.closed)
-		close(s.stopWatch)
 		s.connMu.Lock()
 		s.closing = true
 		connections := make([]*net.UnixConn, 0, len(s.conns))
@@ -168,34 +149,8 @@ func (s *Supervisor) Close() error {
 			_ = conn.Close()
 		}
 	})
-	if s.watching.Load() {
-		<-s.watchDone
-	}
 	s.connWG.Wait()
 	return s.closeErr
-}
-
-// runReloadWatcher drives configuration reload while no client is connected,
-// so a background session that nobody is attached to still notices a config
-// change (README: "background runtime reload работает без TUI"). While a
-// client is connected, that client's own periodic Reload(false) calls do the
-// same debounced work; letting both race to be "the one that observed the
-// change" would make the loser silently miss the notification its caller
-// expects, so the watcher steps back rather than compete with it.
-func (s *Supervisor) runReloadWatcher() {
-	defer close(s.watchDone)
-	ticker := time.NewTicker(backgroundReloadInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-s.stopWatch:
-			return
-		case <-ticker.C:
-			if s.clients.Load() == 0 {
-				_, _ = s.local.Reload(false)
-			}
-		}
-	}
 }
 
 func (s *Supervisor) handleConn(conn *net.UnixConn) {
@@ -210,8 +165,6 @@ func (s *Supervisor) handleConn(conn *net.UnixConn) {
 		return
 	}
 
-	s.clients.Add(1)
-	defer s.clients.Add(-1)
 	token := s.registerClient(info)
 	defer s.unregisterClient(token)
 

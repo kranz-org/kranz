@@ -123,11 +123,15 @@ The root and every recursive composition node use native `kranz.yaml` syntax.
 `Procfile` and supported `process-compose.yaml` files are valid terminal leaves:
 they contribute services but cannot declare `include` or `overrides` themselves.
 
-Valid file changes hot-reload. New services and stopped-service changes apply
-immediately. Running services keep their accepted snapshot when changed,
-renamed, or removed; the pending reason is visible until an explicit restart.
-Invalid changes leave the last known good runtime untouched. Press `Ctrl+L` to
-reload immediately.
+The TUI watches selected configuration sources and indicates when they change.
+Press `Ctrl+L` to review and apply the changed configuration; edits alone do
+not replace the running configuration. `kranz reload` and the MCP `reload`
+tool also apply changes explicitly. Additions and stopped-service changes take
+effect when the reload succeeds. Changed or renamed running services keep their
+accepted snapshot, with a pending reason shown until an explicit restart.
+Removing a running service in the TUI asks whether to stop it, keep it running
+outside the configured list, or cancel. Invalid changes leave the last known
+good runtime untouched.
 
 ## Environment precedence
 

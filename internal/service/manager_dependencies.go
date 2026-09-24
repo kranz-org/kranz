@@ -93,8 +93,15 @@ func (m *Manager) waitForDependencyCondition(ctx context.Context, name string, c
 				return fmt.Errorf("dependency %s completed with exit code %d", name, state.ExitCode)
 			}
 		case config.DependencyLogReady:
-			for _, line := range svc.LogLines() {
-				if readyPattern.MatchString(line) {
+			currentRun := svc.Run()
+			for _, entry := range svc.LogEntries() {
+				if entry.Run == currentRun && readyPattern.MatchString(entry.Raw) {
+					return nil
+				}
+			}
+			if process, _ := svc.runtime(); process != nil {
+				stdout, stderr := process.pendingOutput()
+				if readyPattern.MatchString(stdout) || readyPattern.MatchString(stderr) {
 					return nil
 				}
 			}

@@ -148,6 +148,11 @@ func (m *Model) handleCloseAndChooseResult(closeErr error) (tea.Model, tea.Cmd) 
 	m.operations = make(map[int]*activeOperation)
 	m.operation = ""
 	m.sessionGeneration++
+	m.pendingReloadRemoved = nil
+	m.pendingReloadFingerprint = ""
+	m.configChanged = false
+	m.configCheckError = ""
+	m.reloadRequested = false
 	m.mode = ModeRuntimeLost
 	m.recoveryReason = "Runtime closed"
 	m.recoveryBusy = false
@@ -273,6 +278,11 @@ func (m *Model) installSession(record kranzruntime.SessionRecord, client *kranzr
 		m.workingDirectory = filepath.Dir(m.configPaths[0])
 	}
 	m.sessionGeneration++
+	m.pendingReloadRemoved = nil
+	m.pendingReloadFingerprint = ""
+	m.configChanged = false
+	m.configCheckError = ""
+	m.reloadRequested = false
 	m.mode = ModeNormal
 	m.recoveryShowingList = false
 	m.recoveryReason = ""
@@ -293,7 +303,7 @@ func (m *Model) installSession(record kranzruntime.SessionRecord, client *kranzr
 	m.operationCancel = nil
 
 	m.resetRuntimeDataCaches()
-	m.allServices = m.app.Services()
+	m.allServices = visibleServices(m.app.Services(), project.Pending)
 	m.services = m.allServices
 	m.refreshRunSummaries()
 	m.refreshActionStates()

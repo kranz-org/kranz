@@ -477,8 +477,8 @@ Precedence, lowest to highest:
 A value already present in your shell environment wins over the adjacent
 `.env`, but explicit configuration values always win. `$HOME`-style references
 expand after all layers merge. In a composed project each file's `.env` reaches
-only the services that file declares. Every referenced dotenv file is watched, so
-editing one reloads the configuration.
+only the services that file declares. Referenced dotenv files are watched;
+in the TUI, press `Ctrl+L` to apply a detected change.
 
 ### is_dotenv_disabled
 
@@ -931,7 +931,10 @@ Kranz rejects a configuration rather than starting with an ambiguous one:
 - dependencies must exist, and the graph must be acyclic;
 - `before_start` must reference an action that exists and is not interactive.
 
-An invalid change during a live reload leaves the running configuration in
-place. Additions and stopped-service changes apply immediately. A changed,
-renamed, or removed running service keeps its accepted snapshot and is reported
-as `pending_restart`; an explicit restart adopts the desired snapshot.
+An invalid reload leaves the accepted configuration in place. Additions and
+stopped-service changes apply when a reload succeeds. A changed or renamed
+running service keeps its accepted snapshot and is reported as
+`pending_restart`; an explicit restart adopts the desired snapshot. Removing a
+running service in the TUI requires a stop-or-keep-running choice. Keeping it
+running removes it from the configured service list while the process remains
+active until stopped separately.

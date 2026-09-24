@@ -300,6 +300,118 @@ func TestPinnedHistoricalRunRemainsImmutableAfterNewStart(t *testing.T) {
 	}
 }
 
+func TestPinnedActionRowCountIncludesStderrPrefix(t *testing.T) {
+	model := newTestModel()
+	defer model.Shutdown()
+	model.width, model.height, model.wrapLogs = 70, 16, true
+	model.panelFocus = panelPinnedLogs
+	id := config.ActionID{OwnerKind: config.ActionOwnerGroup, Owner: "tools", Name: "report"}
+	target := app.ActionRunTarget(id)
+	model.pinnedTarget = target
+	width := model.currentLogContentWidth()
+	entry := config.LogEntry{Sequence: 1, Source: "stderr", Raw: strings.Repeat("x", width-5)}
+	model.logEntries[target] = []config.LogEntry{entry}
+	want := len(strings.Split(ansi.Hardwrap(styleLogLine(model.pinnedActionDisplayLine(entry)), width, true), "\n"))
+	if want <= 1 {
+		t.Fatalf("test output should wrap with stderr prefix, got %d rows", want)
+	}
+	for _, filter := range []bool{false, true} {
+		if filter {
+			model.pinnedSearchMode = searchFilter
+			if err := model.pinnedSearcher.SetPattern("x+"); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if got := model.displayedPinnedLogLineCount(); got != want {
+			t.Fatalf("filter=%v: pinned action rows = %d, want %d", filter, got, want)
+		}
+	}
+}
+
+func TestPinnedActionWindowUsesCachedRowPositions(t *testing.T) {
+	model := newTestModel()
+	defer model.Shutdown()
+	model.width, model.height, model.wrapLogs = 90, 24, true
+	id := config.ActionID{OwnerKind: config.ActionOwnerGroup, Owner: "tools", Name: "report"}
+	target := app.ActionRunTarget(id)
+	model.pinnedTarget = target
+	entries := make([]config.LogEntry, 10_000)
+	for index := range entries {
+		entries[index] = config.LogEntry{Sequence: uint64(index + 1), Source: "stderr", Raw: fmt.Sprintf("line %d with wrapped output", index)}
+	}
+	model.logEntries[target] = entries
+	width := model.currentLogContentWidth()
+	metrics := model.logRowMetricsFor(logSlotPinned, target, width)
+	total := metrics.totalPinnedActionRows(model, entries, width)
+	if total < len(entries) {
+		t.Fatalf("pinned action row count = %d, want at least %d", total, len(entries))
+	}
+	cachedRows := &metrics.rows[0]
+	if got := metrics.totalPinnedActionRows(model, entries, width); got != total || &metrics.rows[0] != cachedRows {
+		t.Fatal("stable pinned action history rebuilt its row positions")
+	}
+	start := metrics.rows[5_000]
+	rows := model.stylePinnedActionRowWindow(entries, nil, len(entries), metrics, width, start, start+2, false, nil)
+	if got := ansi.Strip(strings.Join(rows, "\n")); !strings.Contains(got, "line 5000") {
+		t.Fatalf("middle viewport omitted the selected pinned line: %q", got)
+	}
+	if err := model.pinnedSearcher.SetPattern("line 5000"); err != nil {
+		t.Fatal(err)
+	}
+	model.pinnedSearchMode = searchFilter
+	panel := ansi.Strip(model.renderPinnedActionRunPanel(target, width+2, 12))
+	if !strings.Contains(panel, "line 5000") || strings.Contains(panel, "line 5001") {
+		t.Fatalf("filtered pinned viewport contains wrong output: %q", panel)
+	}
+}
+
+func TestPinnedActionMatchNavigationUsesDisplayedRows(t *testing.T) {
+	model := newTestModel()
+	defer model.Shutdown()
+	model.width, model.height, model.wrapLogs = 70, 16, true
+	model.panelFocus = panelPinnedLogs
+	id := config.ActionID{OwnerKind: config.ActionOwnerGroup, Owner: "tools", Name: "report"}
+	target := app.ActionRunTarget(id)
+	model.pinnedTarget = target
+	width := model.currentLogContentWidth()
+	entries := make([]config.LogEntry, 20)
+	for index := range entries {
+		entries[index] = config.LogEntry{Sequence: uint64(index + 1), Source: "stderr", Raw: fmt.Sprintf("line-%02d %s", index, strings.Repeat("x", width-5))}
+	}
+	model.logEntries[target] = entries
+	metrics := model.logRowMetricsFor(logSlotPinned, target, width)
+	total := metrics.totalPinnedActionRows(model, entries, width)
+	row := metrics.rows[10]
+	maxLines := max(1, model.pinnedLogPanelHeight()-2)
+	maxStart := max(0, total-maxLines)
+	wantStart := min(maxStart, max(0, row-maxLines/2))
+	model.focusActiveLogMatch(10)
+	if got := maxStart - model.pinnedOffset; got != wantStart {
+		t.Fatalf("pinned match viewport starts at %d, want %d", got, wantStart)
+	}
+}
+
+func TestPinnedActionBrowseDoesNotRevealLaterOutput(t *testing.T) {
+	model := newTestModel()
+	defer model.Shutdown()
+	model.width, model.height = 90, 24
+	model.panelFocus = panelPinnedLogs
+	id := config.ActionID{OwnerKind: config.ActionOwnerGroup, Owner: "tools", Name: "report"}
+	target := app.ActionRunTarget(id)
+	model.pinnedTarget = target
+	model.logEntries[target] = []config.LogEntry{{Sequence: 1, Raw: "first"}, {Sequence: 2, Raw: "second"}}
+	model.scrollLogs(-1)
+	if model.pinnedFollow || model.pinnedAnchor != 2 {
+		t.Fatalf("pinned browse state = follow %v anchor %d", model.pinnedFollow, model.pinnedAnchor)
+	}
+	model.logEntries[target] = append(model.logEntries[target], config.LogEntry{Sequence: 3, Raw: "later"})
+	width := model.width - model.dashboardLeftWidth()
+	panel := ansi.Strip(model.renderPinnedActionRunPanel(target, width, model.pinnedLogPanelHeight()))
+	if strings.Contains(panel, "later") || !strings.Contains(panel, "second") {
+		t.Fatalf("paused pinned viewport changed after new output: %q", panel)
+	}
+}
+
 func TestFocusedPinnedPanelCanAlwaysBeUnpinned(t *testing.T) {
 	model := newTestModel()
 	defer model.Shutdown()

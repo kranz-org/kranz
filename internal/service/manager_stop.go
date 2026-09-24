@@ -91,6 +91,9 @@ func (m *Manager) stopDetachedService(svc *Service) error {
 	result, err := m.actions.RunDefinition(context.Background(), id, *stop)
 	m.appendLifecycleResult(svc, "stop", result)
 	if err != nil {
+		// The resource may still be running. Keep an unknown state eligible for
+		// another explicit stop when there is no status probe to correct it.
+		svc.SetDesiredRunning(true)
 		svc.SetStatus(config.StatusUnknown)
 		m.wakeStatusMonitor(svc.Name)
 		return fmt.Errorf("stop detached service %q: %w", svc.Name, err)
