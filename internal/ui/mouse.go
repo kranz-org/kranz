@@ -335,7 +335,18 @@ func (m *Model) handleOverlayMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	case ModeThemes:
 		return m.handleThemeMouseClick(rendered, msg)
 	case ModeRuntimeSwitcher:
+		if renderedTextHit(rendered, msg.X, msg.Y, "[s] Stop") {
+			return m.openRuntimeStop()
+		}
 		return m.handleRuntimeRowClick(rendered, msg, m.closeRuntimeSwitcher)
+	case ModeRuntimeStop:
+		if renderedTextHit(rendered, msg.X, msg.Y, "[Enter/s] Stop runtime") {
+			return m.confirmRuntimeStop()
+		}
+		if renderedTextHit(rendered, msg.X, msg.Y, "[Esc/n]   Return to runtime list") {
+			return m.handleRuntimeStopKeys(keyMessage("esc"))
+		}
+		return m, nil
 	case ModeRuntimeLost:
 		if m.recoveryShowingList {
 			if renderedTextHit(rendered, msg.X, msg.Y, "[q] Quit TUI") {

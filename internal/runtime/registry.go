@@ -599,6 +599,24 @@ func resolveRecord(records []SessionRecord, reference string) (SessionRecord, er
 	return SessionRecord{}, &AmbiguousSessionError{Reference: reference, Matches: names}
 }
 
+// ForceDownPreview validates the recovery evidence and lists the owned
+// processes that a forced stop would signal. ForceDown validates again.
+func (r *Registry) ForceDownPreview(record SessionRecord) ([]string, error) {
+	metadata, ownership, err := r.forceEvidence(record)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(ownership.Processes))
+	for _, process := range ownership.Processes {
+		if err := validateOwnedProcess(process, metadata.PID); err != nil {
+			return nil, err
+		}
+		names = append(names, process.Service)
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
 // ForceDown performs the recovery-only shutdown path for a session whose RPC
 // endpoint cannot be reached. Every signal target is proven again immediately
 // before use; a PID, metadata file, or ownership snapshot alone is never

@@ -6,13 +6,53 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/kranz-org/kranz/internal/app"
+	kranzruntime "github.com/kranz-org/kranz/internal/runtime"
 )
+
+func (m *Model) renderRuntimeStopView() string {
+	record := m.runtimeStopRecord
+	confirmation := shutdownConfirmation{
+		title: "Stop " + record.Name + "?",
+	}
+	switch {
+	case m.runtimeStopLoading:
+		confirmation.footer = append(confirmation.footer, "Checking shutdown plan…")
+	case m.runtimeStopErr != "":
+		confirmation.footer = append(confirmation.footer, m.runtimeStopErr)
+	case record.State == kranzruntime.SessionRunning:
+		confirmation.plan = &m.runtimeStopPlan
+		confirmation.operationActive = record.ID == m.sessionID && m.operation != ""
+		confirmation.footer = append(confirmation.footer, "", "This TUI stays open.")
+	default:
+		plan := app.ShutdownPlan{Managed: m.runtimeStopOwned}
+		confirmation.plan = &plan
+		confirmation.footer = append(confirmation.footer, "", "Protocol mismatch: force stop may leave detached services running; this TUI stays open.")
+	}
+	if m.runtimeStopBusy {
+		confirmation.footer = append(confirmation.footer, "", "Stopping…")
+	}
+	confirmation.footer = append(confirmation.footer, "", HelpSectionStyle.Render("STOP"))
+	confirmation.actions = []string{"  [Esc/n]   Return to runtime list"}
+	if m.runtimeStopBusy {
+		confirmation.actions = nil
+	}
+	if !m.runtimeStopLoading && !m.runtimeStopBusy && m.runtimeStopErr == "" {
+		confirmation.actions = append([]string{"  [Enter/s] Stop runtime"}, confirmation.actions...)
+	}
+	content := renderShutdownConfirmation(confirmation)
+	return m.placeOverlayOver(content, m.renderRuntimeSwitcherView())
+}
 
 // renderRuntimeSwitcherView draws the `p` modal: every locally registered
 // runtime, current first, live-refreshing while open (PRD 3.2).
 func (m *Model) renderRuntimeSwitcherView() string {
 	contentWidth := flushModalContentWidth(m.width, 110)
-	shortcutGroups := []string{"[↑/↓] [j/k] Select", "[Enter] Connect", "[Esc] Cancel"}
+	shortcutGroups := []string{"[↑/↓] [j/k] Select", "[Enter] Connect / close"}
+	if m.switcherCursor >= 0 && m.switcherCursor < len(m.switcherRows) && !m.switcherRows[m.switcherCursor].IsCurrent {
+		shortcutGroups = append(shortcutGroups, "[s] Stop")
+	}
+	shortcutGroups = append(shortcutGroups, "[Esc] Cancel")
 	if m.switcherConnecting != "" {
 		shortcutGroups = append(shortcutGroups, "Connecting…")
 	}
@@ -77,7 +117,11 @@ func renderRuntimeRowLines(rows []runtimeRow, cursor int, capacity int, width in
 		lines = append(lines, "  "+ContextBarStyle.Render(fmt.Sprintf("%d/%d", cursor+1, len(rows))))
 	}
 	if reason != "" {
-		lines = append(lines, "  "+ContextBarStyle.Render(ansi.Truncate(reason, rowWidth, "…")))
+		if rows[cursor].Record.State == kranzruntime.SessionIncompatible {
+			lines = append(lines, "  "+LogWarnStyle.Render(ansi.Truncate("⚠ "+reason, rowWidth, "…")))
+		} else {
+			lines = append(lines, "  "+ContextBarStyle.Render(ansi.Truncate(reason, rowWidth, "…")))
+		}
 	}
 	return lines
 }

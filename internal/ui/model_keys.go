@@ -67,6 +67,8 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleConfirmDeleteRunKeys(msg)
 	case ModeRuntimeSwitcher:
 		return m.handleRuntimeSwitcherKeys(msg)
+	case ModeRuntimeStop:
+		return m.handleRuntimeStopKeys(msg)
 	case ModeRuntimeLost:
 		return m.handleRuntimeLostKeys(msg)
 	case ModeParamEdit:

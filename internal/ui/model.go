@@ -43,6 +43,7 @@ const (
 	ModeConfirmDeleteRun
 	ModeRuntimeSwitcher
 	ModeRuntimeLost
+	ModeRuntimeStop
 	ModeParamEdit
 	ModeParamForm
 )
@@ -432,6 +433,13 @@ type Model struct {
 	lastSwitcherRefresh time.Time
 	switcherConnecting  string
 	switchSeq           uint64
+	runtimeStopRecord   kranzruntime.SessionRecord
+	runtimeStopPlan     app.ShutdownPlan
+	runtimeStopOwned    []string
+	runtimeStopLoading  bool
+	runtimeStopBusy     bool
+	runtimeStopErr      string
+	runtimeStopSeq      uint64
 	exiting             bool
 
 	recoveryReason      string
@@ -807,6 +815,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleRuntimeListMsg(msg)
 	case switchTargetMsg:
 		return m.handleSwitchTargetMsg(msg)
+	case runtimeStopPlanMsg:
+		return m.handleRuntimeStopPlanMsg(msg)
+	case runtimeStopResultMsg:
+		return m.handleRuntimeStopResultMsg(msg)
 	case currentRuntimeLostMsg:
 		return m.handleCurrentRuntimeLostMsg(msg)
 	case restartRuntimeMsg:

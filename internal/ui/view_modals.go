@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/kranz-org/kranz/internal/app"
 	"github.com/kranz-org/kranz/internal/config"
 )
 
@@ -244,7 +245,41 @@ func (m *Model) renderNotificationsView() string {
 
 // renderConfirmQuitView explains the process cleanup performed on exit.
 func (m *Model) renderConfirmQuitView() string {
-	managed, detachedStop, detachedKeep := m.quitLifecyclePlan()
+	plan := m.app.ShutdownPlan()
+	actions := []string{
+		"  [Enter/y] Stop runtime and quit",
+		"  [d]       Detach and keep runtime running",
+	}
+	if m.switcherSupported() {
+		actions = append(actions, "  [c]       Close & choose another runtime")
+	}
+	actions = append(actions, "", "  [Esc/n]   Stay here")
+	content := renderShutdownConfirmation(shutdownConfirmation{
+		title: "Quit Kranz?", plan: &plan, operationActive: m.operation != "",
+		footer: []string{"", HelpSectionStyle.Render("EXIT")}, actions: actions,
+	})
+	return m.placeOverlay(content)
+}
+
+type shutdownConfirmation struct {
+	title           string
+	plan            *app.ShutdownPlan
+	operationActive bool
+	footer          []string
+	actions         []string
+}
+
+func renderShutdownConfirmation(options shutdownConfirmation) string {
+	var body []string
+	if options.plan != nil {
+		body = append(body, shutdownPlanBody(*options.plan, options.operationActive)...)
+	}
+	body = append(body, options.footer...)
+	return renderConfirmationModal(options.title, body, options.actions...)
+}
+
+func shutdownPlanBody(plan app.ShutdownPlan, operationActive bool) []string {
+	managed, detachedStop, detachedKeep := plan.Managed, plan.DetachedStop, plan.DetachedKeep
 	body := make([]string, 0, 10)
 	if len(managed) == 0 {
 		body = append(body, "No managed processes will be stopped.")
@@ -259,25 +294,10 @@ func (m *Model) renderConfirmQuitView() string {
 		body = append(body, "")
 		body = appendQuitRetainedResources(body, detachedKeep)
 	}
-	if m.operation != "" {
+	if operationActive {
 		body = append(body, "", "The current operation will be cancelled.")
 	}
-	body = append(body, "", HelpSectionStyle.Render("EXIT"))
-	actions := []string{
-		"  [Enter/y] Stop runtime and quit",
-		"  [d]       Detach and keep runtime running",
-	}
-	if m.switcherSupported() {
-		actions = append(actions, "  [c]       Close & choose another runtime")
-	}
-	actions = append(actions, "", "  [Esc/n]   Stay here")
-	content := renderConfirmationModal("Quit Kranz?", body, actions...)
-	return m.placeOverlay(content)
-}
-
-func (m *Model) quitLifecyclePlan() (managed, detachedStop, detachedKeep []string) {
-	plan := m.app.ShutdownPlan()
-	return plan.Managed, plan.DetachedStop, plan.DetachedKeep
+	return body
 }
 
 func appendQuitServiceNames(lines []string, heading string, names []string) []string {
@@ -1073,7 +1093,11 @@ func (m *Model) themePickerColorModeLabel() string {
 
 // placeOverlay composites a modal over a dimmed snapshot of the dashboard.
 func (m *Model) placeOverlay(content string) string {
-	background := strings.Split(m.renderMainView(), "\n")
+	return m.placeOverlayOver(content, m.renderMainView())
+}
+
+func (m *Model) placeOverlayOver(content, backgroundView string) string {
+	background := strings.Split(backgroundView, "\n")
 	for len(background) < m.height {
 		background = append(background, "")
 	}

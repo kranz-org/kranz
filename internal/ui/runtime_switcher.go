@@ -177,6 +177,8 @@ func (m *Model) handleRuntimeSwitcherKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.moveSwitcherCursor(1)
 	case msg.String() == "enter":
 		return m.connectToSwitcherSelection()
+	case msg.String() == "s":
+		return m.openRuntimeStop()
 	case msg.String() == "esc", msg.String() == "p":
 		m.closeRuntimeSwitcher()
 	}
@@ -195,7 +197,13 @@ func (m *Model) connectToSwitcherSelection() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	row := m.switcherRows[m.switcherCursor]
-	if !row.Selectable || row.IsCurrent {
+	if row.IsCurrent {
+		if m.mode == ModeRuntimeSwitcher {
+			m.closeRuntimeSwitcher()
+		}
+		return m, nil
+	}
+	if !row.Selectable {
 		return m, nil
 	}
 	return m, m.beginSwitchTo(row.Record)

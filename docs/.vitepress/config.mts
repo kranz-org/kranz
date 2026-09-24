@@ -70,6 +70,7 @@ export default defineConfig({
       {
         text: 'Upgrading',
         items: [
+          { text: 'What is new in 0.16.2', link: '/releases/0.16.2' },
           { text: 'What is new in 0.16.1', link: '/releases/0.16.1' },
           { text: 'What is new in 0.16', link: '/releases/0.16.0' },
           { text: 'Upgrading to 0.15', link: '/releases/0.15.0' },

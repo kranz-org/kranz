@@ -173,8 +173,11 @@ func TestForceDownRefusesMismatchedSupervisorBirthIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	record := SessionRecord{SessionMetadata: metadata, State: SessionUnreachable}
-	err = registry.ForceDown(context.Background(), record)
 	var refused *ForceDownError
+	if _, previewErr := registry.ForceDownPreview(record); !errors.As(previewErr, &refused) {
+		t.Fatalf("ForceDownPreview error = %T %v, want ForceDownError", previewErr, previewErr)
+	}
+	err = registry.ForceDown(context.Background(), record)
 	if !errors.As(err, &refused) {
 		t.Fatalf("ForceDown error = %T %v, want ForceDownError", err, err)
 	}

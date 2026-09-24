@@ -160,6 +160,14 @@ leaving the TUI. `Esc` or `n` stays on the current dashboard. Shutdown stops
 process-owned services and only detached services with `stop_on_exit: true`;
 other external resources are listed and remain active.
 
+In the runtime list opened with `p`, `Enter` attaches to another compatible
+runtime or closes the list when the current runtime is selected. Press `s`
+on any other highlighted runtime to review and confirm its shutdown without
+attaching; the TUI stays open. The current runtime has no stop shortcut in
+this list. Use `q` from its dashboard for its full exit choices. If the
+selected runtime has an incompatible protocol, the confirmation lists verified
+managed processes and warns that detached resources may remain running.
+
 ## Configuration map
 
 `m` opens a read-only map of where the effective configuration came from. It

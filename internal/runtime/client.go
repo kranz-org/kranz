@@ -386,8 +386,13 @@ func (c *Client) AffectedServices(name string) []string {
 }
 
 func (c *Client) ShutdownPlan() app.ShutdownPlan {
-	resp, _ := call[emptyRequest, shutdownPlanResponse](c, context.Background(), methodShutdownPlan, emptyRequest{})
-	return resp.Plan
+	plan, _ := c.ShutdownPlanChecked()
+	return plan
+}
+
+func (c *Client) ShutdownPlanChecked() (app.ShutdownPlan, error) {
+	resp, err := call[emptyRequest, shutdownPlanResponse](c, context.Background(), methodShutdownPlan, emptyRequest{})
+	return resp.Plan, err
 }
 
 func (c *Client) Plan(request app.PlanRequest) (app.OperationPlan, error) {

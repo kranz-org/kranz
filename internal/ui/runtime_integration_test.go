@@ -136,6 +136,52 @@ func serviceProjectConfig(project, service string) *config.Config {
 	}}
 }
 
+func TestSwitcherStopsSelectedRuntimeWithoutAttaching(t *testing.T) {
+	registry := testRegistry(t)
+	current := startTestRuntime(t, registry, "current", emptyProjectConfig("Current"), t.TempDir())
+	target := startTestRuntime(t, registry, "target", serviceProjectConfig("Target", "worker"), t.TempDir())
+	if err := target.client.StartServicesContext(context.Background(), []string{"worker"}); err != nil {
+		t.Fatal(err)
+	}
+	model := newSwitchableTestModel(t, registry, current, ModelOptions{})
+	fireOnce(model, model.openRuntimeSwitcher())
+	model.width, model.height, model.ready = 100, 25, true
+	if _, cmd := model.handleRuntimeSwitcherKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}}); cmd != nil || model.mode != ModeRuntimeSwitcher {
+		t.Fatal("s on the current runtime must leave the switcher open")
+	}
+	if strings.Contains(ansi.Strip(model.renderRuntimeSwitcherView()), "[s] Stop") {
+		t.Fatal("current runtime advertises a stop action")
+	}
+	for index, row := range model.switcherRows {
+		if row.Record.ID == target.record.ID {
+			model.switcherCursor = index
+			break
+		}
+	}
+	if !strings.Contains(ansi.Strip(model.renderRuntimeSwitcherView()), "[s] Stop") {
+		t.Fatal("another runtime does not advertise its stop action")
+	}
+	_, planCmd := model.handleRuntimeSwitcherKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	if model.mode != ModeRuntimeStop || planCmd == nil {
+		t.Fatal("s did not open the selected runtime's stop confirmation")
+	}
+	fireOnce(model, planCmd)
+	if model.runtimeStopErr != "" || len(model.runtimeStopPlan.Managed) != 1 || model.runtimeStopPlan.Managed[0] != "worker" {
+		t.Fatalf("shutdown preview = %#v, error %q", model.runtimeStopPlan, model.runtimeStopErr)
+	}
+	_, stopCmd := model.handleRuntimeStopKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	if stopCmd == nil {
+		t.Fatal("confirmed stop did not issue a command")
+	}
+	fireOnce(model, stopCmd)
+	if model.mode != ModeRuntimeSwitcher || model.runtimeStopErr != "" || model.sessionID != current.record.ID {
+		t.Fatalf("stop result left mode=%v error=%q current=%q", model.mode, model.runtimeStopErr, model.sessionID)
+	}
+	if service, ok := target.local.Service("worker"); !ok || service.CanStop {
+		t.Fatalf("selected runtime's worker is still running: %#v", service)
+	}
+}
+
 // switchTo drives the full PRD 3.3 algorithm (discover, select, dial,
 // handshake, install) against a real target and fails the test if the
 // target never appears in discovery or the connection is refused.

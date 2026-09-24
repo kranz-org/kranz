@@ -120,10 +120,17 @@ runtime. A restart from either is reflected immediately in this TUI.
 
 ## Switch between local runtimes
 
-One TUI can work with several projects. Press `p` to open a modal styled like Run history with every Kranz
-runtime registered on this machine — current runtime first — and press
-`Enter` on another one to attach to it in the same process. `Esc` closes the
-modal without changing anything.
+One TUI can work with several projects. Press `p` to list local runtimes,
+with the current runtime first. Press `Enter` on another compatible runtime
+to attach, or on the current runtime to close the list. `Esc` also closes it.
+
+On another runtime, press `s` to review the same shutdown plan shown by the
+quit confirmation, then confirm stopping it without attaching. The TUI stays
+open on the current runtime. The current row has no `s` action; use `q` to
+review its shutdown choices. A runtime with an incompatible protocol cannot
+be attached, but it can be stopped after confirmation. That confirmation
+shows verified managed processes and warns that detached resources may remain
+running because their stop plan is unavailable.
 
 Runtime and Run history tables adapt to the terminal width. Wide terminals
 show their complete detail; narrower ones remove secondary columns first and

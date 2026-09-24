@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/kranz-org/kranz/internal/app"
 	kranzruntime "github.com/kranz-org/kranz/internal/runtime"
 )
 
@@ -24,7 +25,7 @@ func rowFor(id, name string, startedAt time.Time, current bool, state kranzrunti
 	case kranzruntime.SessionRunning:
 		row.Selectable = !current
 	case kranzruntime.SessionIncompatible:
-		row.Reason = "This runtime speaks a different protocol version. Update Kranz to attach to it."
+		row.Reason = "Different protocol: cannot attach, but this runtime can be stopped."
 	case kranzruntime.SessionUnreachable:
 		row.Reason = "This runtime is registered but is not answering. The list keeps retrying it."
 	}
@@ -46,7 +47,7 @@ func TestSwitcherShowsWhyTheSelectedRowCannotBeSelected(t *testing.T) {
 
 	model.switcherCursor = 0
 	plain := ansi.Strip(model.renderRuntimeSwitcherView())
-	if !strings.Contains(plain, "Update Kranz to attach to it") {
+	if !strings.Contains(plain, "⚠ Different protocol: cannot attach, but this runtime can be stopped.") {
 		t.Fatalf("switcher does not explain why the selected row is disabled:\n%s", plain)
 	}
 
@@ -54,8 +55,52 @@ func TestSwitcherShowsWhyTheSelectedRowCannotBeSelected(t *testing.T) {
 	// instead of leaving a stale reason under the list.
 	model.switcherCursor = 1
 	plain = ansi.Strip(model.renderRuntimeSwitcherView())
-	if strings.Contains(plain, "Update Kranz to attach to it") {
+	if strings.Contains(plain, "Different protocol: cannot attach") {
 		t.Fatalf("a disabled row's reason survived moving to a selectable row:\n%s", plain)
+	}
+}
+
+func TestStopConfirmationShowsQuitPlanAndKeepsTUIOpen(t *testing.T) {
+	model := newTestModel()
+	defer model.Shutdown()
+	model.width, model.height, model.ready = 100, 32, true
+	model.mode = ModeRuntimeStop
+	model.runtimeStopRecord = rowFor("target", "sample", time.Now(), false, kranzruntime.SessionRunning).Record
+	model.runtimeStopPlan = app.ShutdownPlan{
+		Managed: []string{"web"}, DetachedStop: []string{"cache"}, DetachedKeep: []string{"external"},
+	}
+	plain := ansi.Strip(model.renderRuntimeStopView())
+	for _, expected := range []string{
+		"Managed processes will stop and release their ports:",
+		"Detached stop commands will run:",
+		"WILL REMAIN RUNNING AFTER KRANZ EXITS",
+		"This TUI stays open.",
+		"[Enter/s] Stop runtime",
+	} {
+		if !strings.Contains(plain, expected) {
+			t.Fatalf("stop confirmation omitted %q", expected)
+		}
+	}
+}
+
+func TestIncompatibleStopUsesQuitPlanWording(t *testing.T) {
+	model := newTestModel()
+	defer model.Shutdown()
+	model.width, model.height, model.ready = 100, 26, true
+	model.mode = ModeRuntimeStop
+	model.runtimeStopRecord = rowFor("older", "sample", time.Now(), false, kranzruntime.SessionIncompatible).Record
+	plain := ansi.Strip(model.renderRuntimeStopView())
+	for _, expected := range []string{
+		"No managed processes will be stopped.",
+		"Protocol mismatch: force stop may leave detached services running; this TUI stays open.",
+		"[Enter/s] Stop runtime",
+	} {
+		if !strings.Contains(plain, expected) {
+			t.Fatalf("incompatible stop confirmation omitted %q", expected)
+		}
+	}
+	if strings.Contains(plain, "recovery snapshot") || strings.Contains(plain, "Selected runtime:") {
+		t.Fatal("incompatible stop confirmation contains the old extra explanation")
 	}
 }
 
@@ -213,14 +258,18 @@ func TestSwitcherKeyboardNavigationAndDisabledRows(t *testing.T) {
 		t.Fatalf("connecting to a disabled row set switcherConnecting = %q", model.switcherConnecting)
 	}
 
-	// Enter on the current row is also a no-op (nothing to switch to).
+	// Enter on the current row closes the switcher without reconnecting.
 	model.switcherCursor = 0
 	model.handleRuntimeSwitcherKeys(tea.KeyMsg{Type: tea.KeyEnter})
 	if model.switcherConnecting != "" {
-		t.Fatal("connecting to the current row should be a no-op")
+		t.Fatal("current row should not start a connection")
+	}
+	if model.mode != ModeNormal {
+		t.Fatalf("current row left mode = %v, want ModeNormal", model.mode)
 	}
 
-	// Esc closes the modal without touching any row.
+	// Esc also closes the modal without touching any row.
+	model.mode = ModeRuntimeSwitcher
 	model.handleRuntimeSwitcherKeys(tea.KeyMsg{Type: tea.KeyEsc})
 	if model.mode != ModeNormal {
 		t.Fatalf("Esc left mode = %v, want ModeNormal", model.mode)

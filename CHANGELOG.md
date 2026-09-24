@@ -4,6 +4,17 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.16.2] - 2026-09-24
+
+### Added
+
+- The runtime list can stop another local runtime without attaching: select it,
+  press `s`, review the shutdown plan, and confirm. The current runtime has no
+  stop action in this list; its existing `q` flow remains available.
+- An incompatible runtime stays visible with a warning and can be stopped
+  through the verified recovery path. Its confirmation explains that detached
+  resources may remain running because their stop plan cannot be read.
+
 ## [0.16.1] - 2026-09-24
 
 ### Changed

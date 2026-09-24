@@ -66,6 +66,8 @@ func (m *Model) View() string {
 		content = m.renderConfirmDeleteRunView()
 	case ModeRuntimeSwitcher:
 		content = m.renderRuntimeSwitcherView()
+	case ModeRuntimeStop:
+		content = m.renderRuntimeStopView()
 	case ModeRuntimeLost:
 		content = m.renderRuntimeLostView()
 	default:
