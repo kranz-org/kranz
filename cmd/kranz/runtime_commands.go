@@ -923,7 +923,7 @@ func runDown(options kranzcli.GlobalOptions, args []string, stdout io.Writer) er
 		return err
 	}
 	dialCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	client, dialErr := kranzruntime.DialContext(dialCtx, record.Socket, version)
+	client, dialErr := kranzruntime.DialContextForShutdown(dialCtx, record.Socket, version)
 	cancel()
 	if dialErr == nil {
 		if err := client.Shutdown(); err != nil {
@@ -1034,7 +1034,7 @@ func classifyRuntimeError(err error) error {
 	}
 	var mismatch *kranzruntime.VersionMismatchError
 	if errors.As(err, &mismatch) {
-		return &kranzcli.Error{Code: "protocol_mismatch", Message: mismatch.Error(), ExitCode: kranzcli.ExitUnavailable}
+		return &kranzcli.Error{Code: "protocol_mismatch", Message: strings.TrimPrefix(mismatch.Error(), "Kranz: "), Hint: "Stop the session with the Kranz version that started it.", ExitCode: kranzcli.ExitUnavailable}
 	}
 	var refused *kranzruntime.ForceDownError
 	if errors.As(err, &refused) {

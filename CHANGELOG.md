@@ -4,6 +4,18 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.16.3] - 2026-09-25
+
+### Fixed
+
+- `kranz down` and the runtime list can gracefully stop sessions using older
+  protocols 1 and 2 without attaching to them. The TUI reads the old session's
+  shutdown plan before asking for confirmation; normal attachment still
+  requires the current protocol.
+- When a runtime cannot be stopped safely, the TUI explains why and points to
+  the matching older Kranz version instead of offering a stop action that does
+  nothing.
+
 ## [0.16.2] - 2026-09-24
 
 ### Added

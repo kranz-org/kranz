@@ -1,8 +1,10 @@
 package runtime
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"strings"
 	"testing"
@@ -11,6 +13,93 @@ import (
 	"github.com/kranz-org/kranz/internal/app"
 	"github.com/kranz-org/kranz/internal/config"
 )
+
+func TestShutdownClientNegotiatesOldProtocolsAndUsesTheirEnvelope(t *testing.T) {
+	for _, oldProtocol := range []int{1, 2} {
+		t.Run(fmt.Sprint(oldProtocol), func(t *testing.T) {
+			_, socketPath, cleanupDir, err := NewSocketDir()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer cleanupDir()
+			listener, err := listenUnix(socketPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = listener.Close() }()
+
+			serverDone := make(chan error, 1)
+			go func() {
+				conn, err := listener.AcceptUnix()
+				if err != nil {
+					serverDone <- err
+					return
+				}
+				defer func() { _ = conn.Close() }()
+				c := newCodec(conn)
+				hello, err := c.receive()
+				if err != nil {
+					serverDone <- err
+					return
+				}
+				var request helloRequest
+				if err := json.Unmarshal(hello.Body, &request); err != nil {
+					serverDone <- err
+					return
+				}
+				if request.ProtocolMin != 1 || request.ProtocolMax != protocolVersion {
+					serverDone <- fmt.Errorf("hello range = %d..%d", request.ProtocolMin, request.ProtocolMax)
+					return
+				}
+				body, _ := json.Marshal(helloResponse{ProtocolMin: oldProtocol, ProtocolMax: oldProtocol, AgreedProtocol: oldProtocol})
+				if err := c.send(envelope{V: oldProtocol, Type: messageResponse, ID: hello.ID, Body: body}); err != nil {
+					serverDone <- err
+					return
+				}
+				for _, method := range []string{methodShutdownPlan, methodShutdown} {
+					request, err := c.receive()
+					if err != nil {
+						serverDone <- err
+						return
+					}
+					if request.V != oldProtocol || request.Method != method {
+						serverDone <- fmt.Errorf("request = protocol %d method %q, want protocol %d method %q", request.V, request.Method, oldProtocol, method)
+						return
+					}
+					var response []byte
+					if method == methodShutdownPlan {
+						response, _ = json.Marshal(shutdownPlanResponse{Plan: app.ShutdownPlan{Managed: []string{"worker"}}})
+					} else {
+						response, _ = json.Marshal(emptyResponse{})
+					}
+					if err := c.send(envelope{V: oldProtocol, Type: messageResponse, ID: request.ID, Body: response}); err != nil {
+						serverDone <- err
+						return
+					}
+				}
+				serverDone <- nil
+			}()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			client, err := DialContextForShutdown(ctx, socketPath, "v0.16.2")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = client.Close() }()
+			plan, err := client.ShutdownPlanChecked()
+			if err != nil || len(plan.Managed) != 1 || plan.Managed[0] != "worker" {
+				t.Fatalf("shutdown plan = %#v, error %v", plan, err)
+			}
+			if err := client.Shutdown(); err != nil {
+				t.Fatal(err)
+			}
+			if err := <-serverDone; err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
 
 func TestDialRejectsAnIncompatibleProtocolRange(t *testing.T) {
 	cfg := &config.Config{Project: "Version Mismatch"}

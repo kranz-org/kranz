@@ -12,16 +12,17 @@ import (
 // only one goroutine (the connection's read loop) ever calls receive.
 type codec struct {
 	conn    net.Conn
+	version int
 	writeMu sync.Mutex
 }
 
 func newCodec(conn net.Conn) *codec {
-	return &codec{conn: conn}
+	return &codec{conn: conn, version: protocolVersion}
 }
 
 func (c *codec) send(msg envelope) error {
 	if msg.V == 0 {
-		msg.V = protocolVersion
+		msg.V = c.version
 	}
 	payload, err := json.Marshal(msg)
 	if err != nil {

@@ -25,7 +25,7 @@ func rowFor(id, name string, startedAt time.Time, current bool, state kranzrunti
 	case kranzruntime.SessionRunning:
 		row.Selectable = !current
 	case kranzruntime.SessionIncompatible:
-		row.Reason = "Different protocol: cannot attach, but this runtime can be stopped."
+		row.Reason = "Different protocol: cannot attach; press s to check whether it can be stopped."
 	case kranzruntime.SessionUnreachable:
 		row.Reason = "This runtime is registered but is not answering. The list keeps retrying it."
 	}
@@ -47,7 +47,7 @@ func TestSwitcherShowsWhyTheSelectedRowCannotBeSelected(t *testing.T) {
 
 	model.switcherCursor = 0
 	plain := ansi.Strip(model.renderRuntimeSwitcherView())
-	if !strings.Contains(plain, "⚠ Different protocol: cannot attach, but this runtime can be stopped.") {
+	if !strings.Contains(plain, "⚠ Different protocol: cannot attach; press s to check whether it can be stopped.") {
 		t.Fatalf("switcher does not explain why the selected row is disabled:\n%s", plain)
 	}
 
@@ -92,7 +92,7 @@ func TestIncompatibleStopUsesQuitPlanWording(t *testing.T) {
 	plain := ansi.Strip(model.renderRuntimeStopView())
 	for _, expected := range []string{
 		"No managed processes will be stopped.",
-		"Protocol mismatch: force stop may leave detached services running; this TUI stays open.",
+		"This TUI stays open.",
 		"[Enter/s] Stop runtime",
 	} {
 		if !strings.Contains(plain, expected) {

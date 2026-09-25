@@ -20,14 +20,14 @@ func (m *Model) renderRuntimeStopView() string {
 		confirmation.footer = append(confirmation.footer, "Checking shutdown plan…")
 	case m.runtimeStopErr != "":
 		confirmation.footer = append(confirmation.footer, m.runtimeStopErr)
-	case record.State == kranzruntime.SessionRunning:
+	case record.State != kranzruntime.SessionUnreachable:
 		confirmation.plan = &m.runtimeStopPlan
 		confirmation.operationActive = record.ID == m.sessionID && m.operation != ""
 		confirmation.footer = append(confirmation.footer, "", "This TUI stays open.")
 	default:
 		plan := app.ShutdownPlan{Managed: m.runtimeStopOwned}
 		confirmation.plan = &plan
-		confirmation.footer = append(confirmation.footer, "", "Protocol mismatch: force stop may leave detached services running; this TUI stays open.")
+		confirmation.footer = append(confirmation.footer, "", "Runtime is unreachable: force stop may leave detached services running; this TUI stays open.")
 	}
 	if m.runtimeStopBusy {
 		confirmation.footer = append(confirmation.footer, "", "Stopping…")

@@ -57,7 +57,7 @@ func discoverRuntimeRows(ctx context.Context, registry *kranzruntime.Registry, c
 		case kranzruntime.SessionRunning:
 			row.Selectable = !row.IsCurrent
 		case kranzruntime.SessionIncompatible:
-			row.Reason = "Different protocol: cannot attach, but this runtime can be stopped."
+			row.Reason = "Different protocol: cannot attach; press s to check whether it can be stopped."
 		case kranzruntime.SessionUnreachable:
 			row.Reason = "This runtime is registered but is not answering. The list keeps retrying it."
 		default:

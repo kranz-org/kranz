@@ -73,6 +73,18 @@ func DialContext(ctx context.Context, socketPath, clientVersion string) (*Client
 }
 
 func DialContextWithIdentity(ctx context.Context, socketPath, clientVersion string, identity ClientIdentity) (*Client, error) {
+	return dialContextWithProtocolRange(ctx, socketPath, clientVersion, identity, protocolVersion, protocolVersion)
+}
+
+// DialContextForShutdown negotiates only the protocol range whose shutdown
+// and shutdown-plan RPCs retain the same wire contract. It must not be used for
+// normal attachment or service operations.
+func DialContextForShutdown(ctx context.Context, socketPath, clientVersion string) (*Client, error) {
+	return dialContextWithProtocolRange(ctx, socketPath, clientVersion,
+		ClientIdentity{Surface: "cli", Label: "Kranz CLI"}, 1, protocolVersion)
+}
+
+func dialContextWithProtocolRange(ctx context.Context, socketPath, clientVersion string, identity ClientIdentity, protocolMin, protocolMax int) (*Client, error) {
 	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
 	if err != nil {
 		return nil, fmt.Errorf("dial %s: %w", socketPath, err)
@@ -97,7 +109,7 @@ func DialContextWithIdentity(ctx context.Context, socketPath, clientVersion stri
 		return nil, err
 	}
 
-	helloBody, err := json.Marshal(helloRequest{ProtocolMin: protocolVersion, ProtocolMax: protocolVersion,
+	helloBody, err := json.Marshal(helloRequest{ProtocolMin: protocolMin, ProtocolMax: protocolMax,
 		ClientVersion: clientVersion, Surface: identity.Surface, ClientLabel: identity.Label, ClientPID: os.Getpid()})
 	if err != nil {
 		_ = conn.Close()
@@ -127,7 +139,7 @@ func DialContextWithIdentity(ctx context.Context, socketPath, clientVersion stri
 		_ = conn.Close()
 		return nil, fmt.Errorf("decode hello response: %w", err)
 	}
-	if hello.ProtocolMin > protocolVersion || hello.ProtocolMax < protocolVersion || hello.AgreedProtocol != protocolVersion {
+	if hello.ProtocolMin > hello.AgreedProtocol || hello.ProtocolMax < hello.AgreedProtocol || hello.AgreedProtocol < protocolMin || hello.AgreedProtocol > protocolMax {
 		_ = conn.Close()
 		return nil, &VersionMismatchError{
 			Message: fmt.Sprintf(
@@ -138,6 +150,7 @@ func DialContextWithIdentity(ctx context.Context, socketPath, clientVersion stri
 			ServerVersion:  hello.ServerVersion,
 		}
 	}
+	client.c.version = hello.AgreedProtocol
 	if err := unixConn.SetDeadline(time.Time{}); err != nil {
 		_ = conn.Close()
 		return nil, err

@@ -48,13 +48,13 @@ func (m *Model) openRuntimeStop() (tea.Model, tea.Cmd) {
 	m.mode = ModeRuntimeStop
 	seq, record, version, registry := m.runtimeStopSeq, row.Record, m.version, m.registry
 	return m, func() tea.Msg {
-		if record.State != kranzruntime.SessionRunning {
+		if record.State == kranzruntime.SessionUnreachable {
 			owned, err := registry.ForceDownPreview(record)
 			return runtimeStopPlanMsg{seq: seq, owned: owned, err: err}
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), runtimeSwitchTimeout)
 		defer cancel()
-		client, err := kranzruntime.DialContext(ctx, record.Socket, version)
+		client, err := kranzruntime.DialContextForShutdown(ctx, record.Socket, version)
 		if err != nil {
 			return runtimeStopPlanMsg{seq: seq, err: err}
 		}
@@ -72,7 +72,7 @@ func (m *Model) handleRuntimeStopPlanMsg(msg runtimeStopPlanMsg) (tea.Model, tea
 	m.runtimeStopPlan = msg.plan
 	m.runtimeStopOwned = msg.owned
 	if msg.err != nil {
-		m.runtimeStopErr = "Could not inspect runtime: " + msg.err.Error()
+		m.runtimeStopErr = runtimeStopError("inspect", msg.err)
 	}
 	return m, nil
 }
@@ -109,8 +109,8 @@ func (m *Model) confirmRuntimeStop() (tea.Model, tea.Cmd) {
 		if fresh.ID != record.ID || fresh.State != record.State {
 			return runtimeStopResultMsg{seq: seq, record: record, err: errors.New("runtime state changed; reopen the stop confirmation")}
 		}
-		if fresh.State == kranzruntime.SessionRunning {
-			client, dialErr := kranzruntime.DialContext(ctx, fresh.Socket, version)
+		if fresh.State == kranzruntime.SessionRunning || fresh.State == kranzruntime.SessionIncompatible {
+			client, dialErr := kranzruntime.DialContextForShutdown(ctx, fresh.Socket, version)
 			if dialErr != nil {
 				return runtimeStopResultMsg{seq: seq, record: record, err: dialErr}
 			}
@@ -144,11 +144,24 @@ func (m *Model) handleRuntimeStopResultMsg(msg runtimeStopResultMsg) (tea.Model,
 	}
 	m.runtimeStopBusy = false
 	if msg.err != nil {
-		m.runtimeStopErr = fmt.Sprintf("Could not stop runtime: %v", msg.err)
+		m.runtimeStopErr = runtimeStopError("stop", msg.err)
 		return m, nil
 	}
 	m.runtimeStopSeq++
 	m.mode = ModeRuntimeSwitcher
 	m.addNotification("runtime", "Stopped "+msg.record.Name, config.LogInfo)
 	return m, m.refreshRuntimeList()
+}
+
+func runtimeStopError(operation string, err error) string {
+	message := fmt.Sprintf("Could not %s runtime: %v", operation, err)
+	var mismatch *kranzruntime.VersionMismatchError
+	if errors.As(err, &mismatch) {
+		return message + ". Stop it with the Kranz version that started the session."
+	}
+	var refused *kranzruntime.ForceDownError
+	if errors.As(err, &refused) {
+		return message + ". Forced shutdown needs verified process ownership; use the Kranz version that started the session to run `down`."
+	}
+	return message
 }
