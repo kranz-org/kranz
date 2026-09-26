@@ -582,6 +582,11 @@ func (m *Model) scrollLogs(direction int) {
 	maxLines := max(1, panelHeight-2)
 	maxOffset := max(0, displayLineCount-maxLines)
 	if direction < 0 {
+		// The current panel cannot browse history until something is outside
+		// the viewport. Keep following so delayed output stays visible.
+		if !pinned && follow && maxOffset == 0 {
+			return
+		}
 		if follow {
 			anchor = displayLineCount
 		}

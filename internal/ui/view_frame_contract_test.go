@@ -167,7 +167,7 @@ func TestActionBrowseStaysAnchoredAsOutputGrows(t *testing.T) {
 	}}
 	for _, wrap := range []bool{false, true} {
 		model := NewModel(cfg, "test")
-		model.width, model.height, model.ready = 90, 24, true
+		model.width, model.height, model.ready = 90, 14, true
 		model.wrapLogs = wrap
 		model.focusedAction = &id
 		model.panelFocus = panelLogs
@@ -191,6 +191,113 @@ func TestActionBrowseStaysAnchoredAsOutputGrows(t *testing.T) {
 			t.Errorf("wrap=%v: action viewport moved as output grew", wrap)
 		}
 		model.Shutdown()
+	}
+}
+
+func TestActionEarlyScrollKeepsFollowingDelayedOutput(t *testing.T) {
+	id := config.ActionID{OwnerKind: config.ActionOwnerGroup, Owner: "tools", Name: "report"}
+	cfg := &config.Config{Project: "Action Output", ActionGroups: map[string]config.ActionGroup{
+		"tools": {Actions: map[string]config.Action{"report": {Command: "run-report", Shell: "/bin/sh"}}},
+	}}
+	for _, wrap := range []bool{false, true} {
+		model := NewModel(cfg, "test")
+		model.width, model.height, model.ready = 90, 24, true
+		model.wrapLogs = wrap
+		model.focusedAction = &id
+		model.panelFocus = panelLogs
+		model.syncRunTarget()
+		model.runMode = runViewCombined
+		model.actionStates[id] = app.ActionResult{ID: id, Run: 1, Status: app.ActionRunning}
+		model.scrollLogs(-1)
+		if !model.followMode || model.logOffset != 0 || model.logAnchor != 0 {
+			t.Errorf("wrap=%v: early scroll changed viewport: follow=%v offset=%d anchor=%d", wrap, model.followMode, model.logOffset, model.logAnchor)
+		}
+		target := app.ActionRunTarget(id)
+		for index := range 35 {
+			model.actionLogLines[target] = append(model.actionLogLines[target], cachedActionLogLine{
+				sequence: uint64(index + 1), text: fmt.Sprintf("delayed line %02d", index),
+			})
+		}
+		panel := ansi.Strip(model.renderActionLogPanel(model.width-model.dashboardLeftWidth(), model.currentLogPanelHeight()))
+		if !strings.Contains(panel, "delayed line 34") {
+			t.Errorf("wrap=%v: delayed output is outside viewport:\n%s", wrap, panel)
+		}
+		model.Shutdown()
+	}
+}
+
+func TestActionRegexUpdatesAsOutputArrives(t *testing.T) {
+	id := config.ActionID{OwnerKind: config.ActionOwnerGroup, Owner: "tools", Name: "report"}
+	cfg := &config.Config{Project: "Action Search", ActionGroups: map[string]config.ActionGroup{
+		"tools": {Actions: map[string]config.Action{"report": {Command: "run-report", Shell: "/bin/sh"}}},
+	}}
+	for _, wrap := range []bool{false, true} {
+		for _, mode := range []logSearchMode{searchFilter, searchHighlight} {
+			model := NewModel(cfg, "test")
+			model.width, model.height, model.ready = 90, 24, true
+			model.wrapLogs = wrap
+			model.focusedAction = &id
+			model.panelFocus = panelLogs
+			model.syncRunTarget()
+			model.runMode = runViewCombined
+			model.actionStates[id] = app.ActionResult{ID: id, Run: 1, Status: app.ActionRunning}
+			model.searchMode = mode
+			model.searchInput.SetValue("ready-[0-9]+")
+			if !model.applySearchQuery() {
+				t.Fatal("valid regex was rejected")
+			}
+			model.scrollLogs(-1)
+			if !model.followMode {
+				t.Errorf("wrap=%v mode=%v: early scroll stopped following", wrap, mode)
+			}
+			target := app.ActionRunTarget(id)
+			model.actionLogLines[target] = []cachedActionLogLine{
+				{sequence: 1, text: "unrelated output"},
+				{sequence: 2, text: "ready-42"},
+			}
+			panel := ansi.Strip(model.renderActionLogPanel(model.width-model.dashboardLeftWidth(), model.currentLogPanelHeight()))
+			_, action, state, _ := model.focusedActionDefinition()
+			matches := model.logSearcher.Search(model.actionLogContentView(id, action, state).lines())
+			if !strings.Contains(panel, "ready-42") || len(matches) != 1 {
+				t.Errorf("wrap=%v mode=%v: new match missing from output: %q", wrap, mode, panel)
+			}
+			if mode == searchFilter && strings.Contains(panel, "unrelated output") {
+				t.Errorf("wrap=%v: filter showed nonmatching output: %q", wrap, panel)
+			}
+			if mode == searchHighlight {
+				if !model.handleSearchNavigationKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}}) || model.currentMatch != 2 {
+					t.Errorf("wrap=%v: navigation did not find the new match: %d", wrap, model.currentMatch)
+				}
+			}
+			model.Shutdown()
+		}
+	}
+}
+
+func TestServiceRegexUpdatesAsOutputArrives(t *testing.T) {
+	model := newTestModel()
+	defer model.Shutdown()
+	model.width, model.height, model.ready = 90, 24, true
+	model.panelFocus = panelLogs
+	model.searchInput.SetValue("ready-[0-9]+")
+	if !model.applySearchQuery() {
+		t.Fatal("valid regex was rejected")
+	}
+	model.scrollLogs(-1)
+	if !model.followMode {
+		t.Fatal("early scroll stopped following service output")
+	}
+	name := model.FocusedService().Name
+	appendTestLog(model, name, "unrelated output")
+	appendTestLog(model, name, "ready-42")
+	panel := ansi.Strip(model.renderLogPanel(model.FocusedService(), model.width-model.dashboardLeftWidth(), model.currentLogPanelHeight()))
+	if !strings.Contains(panel, "ready-42") || strings.Contains(panel, "unrelated output") {
+		t.Fatalf("incoming service output did not respect regex filter: %q", panel)
+	}
+	model.clearSearch()
+	panel = ansi.Strip(model.renderLogPanel(model.FocusedService(), model.width-model.dashboardLeftWidth(), model.currentLogPanelHeight()))
+	if !strings.Contains(panel, "unrelated output") || !strings.Contains(panel, "ready-42") {
+		t.Fatalf("clearing regex did not restore incoming output: %q", panel)
 	}
 }
 
