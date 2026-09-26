@@ -185,6 +185,48 @@ func TestShutdownCommandFailureStillKillsManagedProcess(t *testing.T) {
 	}
 }
 
+func TestStopKillsDescendantAfterParentExits(t *testing.T) {
+	pm := NewProcessManager(32)
+	marker := t.TempDir() + "/heartbeat"
+	command := `sh -c 'trap "" TERM; while :; do printf alive >> "$MARKER"; sleep 0.02; done' >/dev/null 2>&1 & wait`
+	pid, err := pm.Start(context.Background(), command, ".", map[string]string{"MARKER": marker}, "sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stopped := false
+	t.Cleanup(func() {
+		if !stopped {
+			_ = syscall.Kill(-pid, syscall.SIGKILL)
+		}
+	})
+	deadline := time.Now().Add(time.Second)
+	for {
+		if _, err := os.Stat(marker); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("descendant never started")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err := pm.StopWithOptions(StopOptions{Timeout: 100 * time.Millisecond}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Stat(marker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(150 * time.Millisecond)
+	after, err := os.Stat(marker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Size() != before.Size() {
+		t.Fatal("descendant kept running after Stop")
+	}
+	stopped = true
+}
+
 func TestConfiguredShutdownSignalIsDelivered(t *testing.T) {
 	pm := NewProcessManager(32)
 	directory := t.TempDir()

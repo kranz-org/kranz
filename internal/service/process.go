@@ -279,11 +279,12 @@ func (pm *ProcessManager) StopWithOptions(options StopOptions) error {
 		return nil
 	}
 
-	if channelClosed(done) {
+	pid := cmd.Process.Pid
+	// The command parent can exit before its descendants, especially when they
+	// redirect their output. Keep the group addressable until it is gone.
+	if channelClosed(done) && (options.ParentOnly || !processGroupAlive(pid)) {
 		return nil
 	}
-
-	pid := cmd.Process.Pid
 	timeout := options.Timeout
 	if timeout <= 0 {
 		timeout = 3 * time.Second
@@ -291,12 +292,9 @@ func (pm *ProcessManager) StopWithOptions(options StopOptions) error {
 	if options.Command != "" {
 		commandErr := runShutdownCommand(options, timeout)
 		if commandErr != nil {
-			if channelClosed(done) {
-				return commandErr
-			}
 			return errors.Join(commandErr, killProcess(pid, done))
 		}
-		if waitForDone(done, timeout) {
+		if waitForProcessExit(pid, done, timeout, options.ParentOnly) {
 			return nil
 		}
 		return killProcess(pid, done)
@@ -316,14 +314,10 @@ func (pm *ProcessManager) StopWithOptions(options StopOptions) error {
 		}
 	}
 
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
-	select {
-	case <-done:
+	if waitForProcessExit(pid, done, timeout, options.ParentOnly) {
 		return nil
-	case <-timer.C:
-		return killProcess(pid, done)
 	}
+	return killProcess(pid, done)
 }
 
 func runShutdownCommand(options StopOptions, timeout time.Duration) error {
@@ -345,23 +339,38 @@ func runShutdownCommand(options StopOptions, timeout time.Duration) error {
 	return nil
 }
 
-func waitForDone(done <-chan struct{}, timeout time.Duration) bool {
+func waitForProcessExit(pid int, done <-chan struct{}, timeout time.Duration, parentOnly bool) bool {
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
-	select {
-	case <-done:
-		return true
-	case <-timer.C:
-		return false
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if channelClosed(done) && (parentOnly || !processGroupAlive(pid)) {
+			return true
+		}
+		select {
+		case <-ticker.C:
+		case <-timer.C:
+			return false
+		}
 	}
+}
+
+func processGroupAlive(pid int) bool {
+	return !errors.Is(syscall.Kill(-pid, 0), syscall.ESRCH)
 }
 
 func killProcess(pid int, done <-chan struct{}) error {
 	targetPID := -pid
+	if !processGroupAlive(pid) {
+		return nil
+	}
 	if err := syscall.Kill(targetPID, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
 		return fmt.Errorf("send SIGKILL to PID %d: %w", targetPID, err)
 	}
-	<-done
+	if !channelClosed(done) {
+		<-done
+	}
 	return nil
 }
 
