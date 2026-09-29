@@ -27,7 +27,7 @@ terminal tabs, alongside Docker Compose when containers remain the right home
 for infrastructure.
 
 <p align="center">
-  <img src="docs/assets/kranz-demo.gif" alt="Kranz v0.16.0 editing a parameterized action and switching between two dark runtimes with distinct accents">
+  <img src="docs/assets/kranz-demo.gif" alt="Kranz v0.16.4 editing a parameterized action and switching between two dark runtimes with distinct accents">
 </p>
 
 ## TUI, CLI, and MCP

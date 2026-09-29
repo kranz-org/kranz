@@ -1,11 +1,11 @@
-# Kranz v0.16.0: typed action parameters across two dark runtimes.
+# Kranz v0.16.4: typed action parameters across two dark runtimes.
 # Re-record with VHS 0.11.0: vhs docs/assets/tapes/kranz-demo.tape
 # VHS 0.12.0 has an upstream cancelled-render regression.
 
 Output docs/assets/kranz-demo.gif
 
 Set Shell "bash"
-Set FontSize 16
+Set FontSize 20
 Set Width 1000
 Set Height 620
 Set Padding 16

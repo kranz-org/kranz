@@ -1,5 +1,5 @@
 {
-  "version": "0.16.0",
+  "version": "0.16.4",
   "generator": "VHS 0.11.0",
   "dimensions": "1000x620",
   "assets": [
@@ -16,7 +16,7 @@
     {
       "file": "kranz-demo.gif",
       "source": "tapes/kranz-demo.tape",
-      "subject": "v0.16.0 hero with parameters and two dark runtimes",
+      "subject": "v0.16.4 hero with parameters and two dark runtimes",
       "accents": ["#7DCFFF", "#FF9E64"]
     }
   ],

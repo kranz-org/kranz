@@ -2,7 +2,7 @@
   "name": "kranz",
   "displayName": "Kranz",
   "description": "Inspect and operate local development services through the Kranz MCP server and agent skill.",
-  "version": "0.16.3",
+  "version": "0.16.4",
   "author": {
     "name": "Kranz"
   },

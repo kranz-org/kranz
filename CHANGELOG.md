@@ -4,6 +4,20 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.16.4] - 2026-09-29
+
+### Added
+
+- The Kranz MCP server and agent skill are packaged as a Claude plugin, with a
+  repository marketplace and installation instructions.
+
+### Fixed
+
+- Stopping an action terminates remaining child processes after the command
+  parent exits, including when they outlive the graceful stop timeout.
+- Scrolling action output before it fills the viewport keeps following new
+  lines, so delayed output and live search matches remain visible.
+
 ## [0.16.3] - 2026-09-25
 
 ### Fixed

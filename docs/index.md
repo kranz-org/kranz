@@ -41,7 +41,7 @@ features:
 
 <div class="demo-frame demo-frame--hero">
 
-![Kranz v0.16.0 editing a parameterized action, switching between two dark runtimes with distinct accents, then returning to the first](./assets/kranz-demo.gif)
+![Kranz v0.16.4 editing a parameterized action, switching between two dark runtimes with distinct accents, then returning to the first](./assets/kranz-demo.gif)
 
 </div>
 
