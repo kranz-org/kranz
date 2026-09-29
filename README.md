@@ -67,6 +67,19 @@ See [Coding agents and your live runtimes](https://kranz-org.github.io/kranz/gui
 for ownership behavior and examples, and the [MCP reference](https://kranz-org.github.io/kranz/reference/mcp)
 for the exact resource, tool, cursor, confirmation, and error contracts.
 
+For Claude Code, the [Kranz plugin](./plugins/kranz) bundles the MCP connection
+with the agent skill. After installing the binary, add this repository as a
+plugin marketplace and install the plugin:
+
+```bash
+claude plugin marketplace add kranz-org/kranz
+claude plugin install kranz@kranz
+```
+
+The standalone [agent skill](./skills/kranz-services) remains available for
+Codex, OpenCode, and other clients that support Agent Skills. Keep the plugin's
+copy of the skill synchronized with this source when updating it.
+
 ## Quick start
 
 Install on macOS or Linux:
