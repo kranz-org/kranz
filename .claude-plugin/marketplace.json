@@ -1,0 +1,14 @@
+{
+  "name": "kranz",
+  "description": "Kranz plugin for local development services",
+  "owner": {
+    "name": "Kranz"
+  },
+  "plugins": [
+    {
+      "name": "kranz",
+      "source": "./plugins/kranz",
+      "description": "Inspect and operate local development services with Kranz MCP"
+    }
+  ]
+}

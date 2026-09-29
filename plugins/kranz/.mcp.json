@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "kranz": {
+      "command": "kranz",
+      "args": ["mcp"]
+    }
+  }
+}
