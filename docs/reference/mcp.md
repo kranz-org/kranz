@@ -177,6 +177,19 @@ A mutation whose resolved plan requires confirmation returns
 same call with `confirmation_token`. The supervisor rejects a used token or a
 token whose session, generation, or resolved plan changed.
 
+Confirmation tokens live only in the runtime supervisor's memory and are never
+persisted to disk. Stopping or restarting the runtime discards all pending
+tokens; restarting the MCP server or disconnecting its client does not discard
+them while the same runtime remains running. Restarting an individual service
+does not restart the runtime supervisor.
+
+After a runtime restart, an otherwise valid request with an old token returns
+`confirmation_expired` when submitted to the replacement runtime. Automation
+must request and review a fresh plan or `confirmation_required` response before
+retrying with a new token.
+A pending confirmation is not a queued action: no operation starts automatically
+when the runtime comes back.
+
 Stable causal codes include `selector_not_found`, `service_unavailable`,
 `action_not_found`, `action_run_not_found`, `action_run_evicted`,
 `interactive_action`, `confirmation_required`, `confirmation_expired`,
