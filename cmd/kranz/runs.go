@@ -248,7 +248,7 @@ func runFormatRow(run app.RunSummary) map[string]any {
 	if !run.FinishedAt.IsZero() {
 		duration, finished = run.FinishedAt.Sub(run.StartedAt), run.FinishedAt.Format(time.RFC3339)
 	}
-	return map[string]any{"Run": fmt.Sprintf("%s#%d", runTargetName(run.Target), run.Run), "Target": runTargetName(run.Target), "Number": run.Run, "Kind": string(run.Target.Kind), "Status": run.Status, "Started": shortDuration(time.Since(run.StartedAt)), "StartedAt": run.StartedAt.Format(time.RFC3339), "FinishedAt": finished, "Duration": duration.Round(time.Millisecond), "PID": run.PID, "Exit": exit, "Reason": run.StartReason, "Initiator": runInitiator(run), "Surface": run.Surface, "Client": run.ClientLabel, "Live": run.Live, "Output": run.Output.State}
+	return map[string]any{"Run": fmt.Sprintf("%s#%d", runTargetName(run.Target), run.Run), "Target": runTargetName(run.Target), "Number": run.Run, "Kind": string(run.Target.Kind), "Status": run.Status, "Started": shortAge(run.StartedAt), "StartedAt": run.StartedAt.Format(time.RFC3339), "FinishedAt": finished, "Duration": duration.Round(time.Millisecond), "PID": run.PID, "Exit": exit, "Reason": run.StartReason, "Initiator": runInitiator(run), "Surface": run.Surface, "Client": run.ClientLabel, "Live": run.Live, "Output": run.Output.State}
 }
 
 func retentionFormatHeaders() map[string]any {

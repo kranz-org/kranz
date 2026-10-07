@@ -281,12 +281,17 @@ in them, including client identity, PID, and connection age. They are two
 commands because they answer two questions: what is running, and who is using
 it. Narrow either one to a single runtime with `-p NAME|ID`.
 
+Uptime uses compact whole units: `42s`, `3m12s`, `10h20m`, `2d4h15m`,
+`2w4d5h`, `1mo2d3h`, or `1y2mo3d`. Smaller units are truncated. Calendar years
+and months are calculated in UTC; dates clamp to the last day of a month
+when necessary.
+
 ```console
 $ kranz ps
 ID        PID    NAME       PROJECT    SERVICES  CLIENTS  STATE    UPTIME
-7fa21c8d  18400  shop-dev   Shop       4/4       2        running  18m
-91bc430a  18022  billing    Billing    3/3       0        running  6m
-3de94a71  19001  analytics  Analytics  2/2       1        running  2m
+7fa21c8d  18400  shop-dev   Shop       4/4       2        running  18m0s
+91bc430a  18022  billing    Billing    3/3       0        running  6m0s
+3de94a71  19001  analytics  Analytics  2/2       1        running  2m0s
 
 $ kranz clients
 RUNTIME    PID    CLIENT  CONNECTED

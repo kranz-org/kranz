@@ -15,6 +15,7 @@ import (
 	kranzcli "github.com/kranz-org/kranz/internal/cli"
 	"github.com/kranz-org/kranz/internal/config"
 	kranzruntime "github.com/kranz-org/kranz/internal/runtime"
+	"github.com/kranz-org/kranz/internal/uptime"
 )
 
 var (
@@ -385,7 +386,7 @@ func writePS(output kranzcli.OutputFormat, formatter *rowTemplate, records []kra
 		if len(id) > 8 {
 			id = id[:8]
 		}
-		_, _ = fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\n", id, record.PID, record.Name, record.Project, services, clients, record.State, shortDuration(time.Since(record.StartedAt)))
+		_, _ = fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\n", id, record.PID, record.Name, record.Project, services, clients, record.State, shortAge(record.StartedAt))
 	}
 	if err := w.Flush(); err != nil {
 		return err
@@ -414,30 +415,15 @@ func psFormatRow(record kranzruntime.SessionRecord) map[string]any {
 	return map[string]any{
 		"ID": shortID(record.ID), "FullID": record.ID, "PID": record.PID, "Name": record.Name,
 		"Project": record.Project, "Services": services, "Clients": clients,
-		"State": string(record.State), "Uptime": shortDuration(time.Since(record.StartedAt)),
+		"State": string(record.State), "Uptime": shortAge(record.StartedAt),
 		"Directory": record.Directory, "Mode": record.Mode, "Version": record.KranzVersion,
 		"StartedAt": record.StartedAt.Format(time.RFC3339),
 	}
 }
 
-// shortDuration renders an age the way a person reads one: the largest unit
-// that still says something, never a run of trailing zero units. Every command
-// that shows an age uses it, so `ps` and `status` cannot disagree about what
-// eight minutes looks like.
-func shortDuration(d time.Duration) string {
-	if d < 0 {
-		d = 0
-	}
-	switch {
-	case d < time.Minute:
-		return fmt.Sprintf("%ds", int(d.Seconds()))
-	case d < time.Hour:
-		return fmt.Sprintf("%dm", int(d.Minutes()))
-	case d < 24*time.Hour:
-		return fmt.Sprintf("%dh%dm", int(d.Hours()), int(d.Minutes())%60)
-	default:
-		return fmt.Sprintf("%dd%dh", int(d.Hours())/24, int(d.Hours())%24)
-	}
+// shortAge uses the compact CLI form of the shared uptime format.
+func shortAge(startedAt time.Time) string {
+	return uptime.Format(startedAt, time.Now(), "")
 }
 
 func writeVersion(stdout, stderr io.Writer, format kranzcli.OutputFormat) int {

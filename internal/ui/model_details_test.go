@@ -92,6 +92,21 @@ func TestPortDetailsShowExplicitDetectionOptOut(t *testing.T) {
 
 // Tests for the Details panel and port inspection.
 
+func TestRuntimeDetailsUptimeUsesWholeSpacedUnits(t *testing.T) {
+	svc := &app.ServiceSnapshot{State: config.ServiceState{
+		Status:    config.StatusRunning,
+		StartedAt: time.Now().Add(-(2*24*time.Hour + 4*time.Hour + 15*time.Minute + 30*time.Second)),
+	}}
+	plain := ansi.Strip(strings.Join(runtimeDetailLines(svc, 80), "\n"))
+	if !strings.Contains(plain, "UPTIME 2d 4h 15m") {
+		t.Fatalf("runtime details uptime = %q", plain)
+	}
+	svc.State.Status = config.StatusStopped
+	if stopped := strings.Join(runtimeDetailLines(svc, 80), "\n"); strings.Contains(stopped, "UPTIME") {
+		t.Fatalf("stopped service shows uptime: %q", stopped)
+	}
+}
+
 func TestExternalPortConflictOffersVerifiedStopAction(t *testing.T) {
 	model := newTestModel()
 	defer model.Shutdown()
