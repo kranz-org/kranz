@@ -92,6 +92,40 @@ func TestPortDetailsShowExplicitDetectionOptOut(t *testing.T) {
 
 // Tests for the Details panel and port inspection.
 
+func TestConfiguredDurationsInDetailsOmitZeroUnits(t *testing.T) {
+	model := newTestModel()
+	defer model.Shutdown()
+	id := config.ActionID{OwnerKind: config.ActionOwnerService, Owner: "api", Name: "check"}
+	for _, width := range []int{24, 80} {
+		action := config.Action{Command: "true", Timeout: 10 * time.Minute}
+		lines := model.actionDetailLines(id, action, app.ActionResult{}, width)
+		plain := ansi.Strip(strings.Join(lines, "\n"))
+		if !strings.Contains(plain, "TIMEOUT 10m") || strings.Contains(plain, "10m0s") {
+			t.Fatalf("action timeout at width %d = %q", width, plain)
+		}
+		for _, line := range lines {
+			if lipgloss.Width(line) > width {
+				t.Fatalf("action detail exceeds width %d: %q", width, line)
+			}
+		}
+	}
+	svc := &app.ServiceSnapshot{Config: config.Service{
+		Availability: config.AvailabilityConfig{Restart: "always", Backoff: time.Minute + 500*time.Millisecond},
+		Shutdown:     config.ShutdownConfig{Timeout: time.Minute + 30*time.Second},
+	}}
+	recovery := ansi.Strip(strings.Join(availabilityDetailLines(svc, 80), "\n"))
+	if !strings.Contains(recovery, "backoff 1m 500ms") {
+		t.Fatalf("restart backoff lost precision: %q", recovery)
+	}
+	for _, command := range []string{"", "true"} {
+		svc.Config.Shutdown.Command = command
+		shutdown := ansi.Strip(strings.Join(shutdownDetailLines(svc, 80), "\n"))
+		if !strings.Contains(shutdown, "timeout 1m 30s") {
+			t.Fatalf("shutdown timeout = %q", shutdown)
+		}
+	}
+}
+
 func TestRuntimeDetailsUptimeUsesWholeSpacedUnits(t *testing.T) {
 	svc := &app.ServiceSnapshot{State: config.ServiceState{
 		Status:    config.StatusRunning,
