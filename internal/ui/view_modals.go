@@ -169,78 +169,121 @@ func wrapHelpText(value string, width int) []string {
 
 // renderHealthHistoryView renders readiness and liveness history.
 func (m *Model) renderHealthHistoryView() string {
+	title := "Health"
+	if svc := m.FocusedService(); svc != nil {
+		title += ": " + svc.Name
+	}
+	return m.placeOverlay(m.infoModalContent(title, m.healthHistoryBodyLines()))
+}
+
+func (m *Model) healthHistoryBodyLines() []string {
 	svc := m.FocusedService()
 	if svc == nil {
-		return m.placeOverlay(renderModal("No service selected"))
+		return modalTextRows("No service selected", m.infoModalWidth())
 	}
 
 	var lines []string
-	lines = append(lines, ModalTitleStyle.Render(fmt.Sprintf(" Health: %s ", svc.Name)))
-	lines = append(lines, "")
-
+	appendText := func(text string) {
+		lines = append(lines, modalTextRows(text, m.infoModalWidth())...)
+	}
+	appendTarget := func(check *config.CheckConfig) {
+		if check == nil {
+			return
+		}
+		target := checkDescription(check, svc.DetectedPorts, svc.State.Status != config.StatusStopped)
+		for _, row := range modalTextRows(target, m.infoModalWidth()-2) {
+			lines = append(lines, "  "+ContextBarStyle.Render(row))
+		}
+	}
 	if svc.Config.HealthCheck != nil {
-		detectedPorts := svc.DetectedPorts
-		serviceActive := svc.State.Status != config.StatusStopped
-		lines = append(lines, "  Readiness: "+m.readinessSummary(svc))
-		if check := healthReadiness(svc); check != nil {
-			lines = append(lines, checkDescription(check, detectedPorts, serviceActive))
-		}
-		lines = append(lines, "  Liveness:  "+m.livenessSummary(svc))
-		if check := healthLiveness(svc); check != nil {
-			lines = append(lines, checkDescription(check, detectedPorts, serviceActive))
-		}
+		appendText("Readiness: " + m.readinessSummary(svc))
+		appendTarget(healthReadiness(svc))
+		appendText("")
+		appendText("Liveness:  " + m.livenessSummary(svc))
+		appendTarget(healthLiveness(svc))
 		if svc.Health.Observed {
-			lines = append(lines, "")
-			lines = append(lines, "History:")
-			for _, h := range m.app.HealthHistory(svc.Name) {
-				lines = append(lines, "  "+h)
+			appendText("")
+			appendText(renderConfirmTitle("History"))
+			appendText("")
+			for _, event := range m.app.HealthHistory(svc.Name) {
+				timestamp, message, ok := strings.Cut(event, "  ")
+				if ok {
+					event = LogTimestampStyle.Bold(true).Render(timestamp) + "  " + message
+				}
+				appendText(event)
 			}
 		}
 	} else {
-		lines = append(lines, "No health checks configured for this service")
+		appendText("No health checks configured for this service")
 	}
-
-	lines = append(lines, "")
-	lines = append(lines, "[Esc] Close")
-
-	content := renderModal(strings.Join(lines, "\n"))
-	return m.placeOverlay(content)
+	return lines
 }
 
 // renderNotificationsView renders the in-memory notification center.
 func (m *Model) renderNotificationsView() string {
-	var lines []string
-	lines = append(lines, ModalTitleStyle.Render(" Notifications "))
-	lines = append(lines, "")
+	return m.placeOverlay(m.infoModalContent("Notifications", m.notificationBodyLines()))
+}
 
+func (m *Model) notificationBodyLines() []string {
 	m.notifMu.RLock()
-	notifs := m.notifications
-	m.notifMu.RUnlock()
+	defer m.notifMu.RUnlock()
 
-	if len(notifs) == 0 {
-		lines = append(lines, "No notifications")
-	} else {
-		for _, notif := range notifs {
-			prefix := "  ●"
-			switch notif.Level {
-			case config.LogError:
-				prefix = LogErrorStyle.Render("  ✗")
-			case config.LogWarn:
-				prefix = LogWarnStyle.Render("  ⚠")
-			case config.LogDebug:
-				prefix = LogDebugStyle.Render("  ·")
-			}
-			t := notif.Time.Format("15:04:05")
-			line := fmt.Sprintf("%s %s [%s] %s", prefix, t, notif.Service, notif.Message)
-			lines = append(lines, line)
-		}
+	if len(m.notifications) == 0 {
+		return modalTextRows("No notifications", m.infoModalWidth())
 	}
+	var lines []string
+	for _, notif := range m.notifications {
+		messageStyle := LogInfoStyle
+		switch notif.Level {
+		case config.LogError:
+			messageStyle = LogErrorStyle
+		case config.LogWarn:
+			messageStyle = LogWarnStyle
+		case config.LogDebug:
+			messageStyle = LogDebugStyle
+		}
+		timestamp := LogTimestampStyle.Bold(true).Render(notif.Time.Format("15:04:05"))
+		service := ServiceNameStyle.Foreground(ColorAccentText).Render("[" + notif.Service + "]")
+		line := fmt.Sprintf("%s %s %s", timestamp, service, messageStyle.Render(notif.Message))
+		lines = append(lines, modalTextRows(line, m.infoModalWidth())...)
+	}
+	return lines
+}
 
+func (m *Model) infoModalWidth() int {
+	return flushModalContentWidth(m.width, 78)
+}
+
+func (m *Model) infoModalVisibleHeight() int {
+	// Reserve title, two separators, and up to two wrapped shortcut rows.
+	return min(24, max(1, m.height-modalVerticalChrome-5))
+}
+
+func (m *Model) maxInfoModalOffset() int {
+	body := m.notificationBodyLines()
+	if m.mode == ModeHealthHistory {
+		body = m.healthHistoryBodyLines()
+	}
+	return max(0, len(body)-m.infoModalVisibleHeight())
+}
+
+func (m *Model) infoModalContent(title string, body []string) string {
+	width := m.infoModalWidth()
+	visibleHeight := m.infoModalVisibleHeight()
+	maxOffset := max(0, len(body)-visibleHeight)
+	offset := min(maxOffset, max(0, m.infoModalOffset))
+	end := min(len(body), offset+visibleHeight)
+	lines := modalTextRows(renderConfirmTitle(title), width)
 	lines = append(lines, "")
-	lines = append(lines, "[Esc] Close")
-
-	content := renderModal(strings.Join(lines, "\n"))
-	return m.placeOverlay(content)
+	lines = append(lines, body[offset:end]...)
+	lines = append(lines, "")
+	groups := []string{}
+	if maxOffset > 0 {
+		groups = append(groups, "[↑/↓ · j/k] Scroll")
+	}
+	groups = append(groups, "[Esc] Close")
+	lines = append(lines, renderModalShortcutRows(groups, width, lipgloss.NewStyle().Foreground(ColorDim))...)
+	return renderFlushModal(strings.Join(lines, "\n"))
 }
 
 // renderConfirmQuitView explains the process cleanup performed on exit.

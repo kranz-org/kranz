@@ -303,11 +303,12 @@ type Model struct {
 	deleteTarget     app.RunTarget
 	deleteRun        uint32
 
-	mode       ViewMode
-	width      int
-	height     int
-	ready      bool
-	helpOffset int
+	mode            ViewMode
+	width           int
+	height          int
+	ready           bool
+	helpOffset      int
+	infoModalOffset int
 	// configMapOffset and configMapView hold the read-only configuration
 	// provenance modal's scroll position and reading direction. Opening it
 	// resets both; nothing here is persisted.
