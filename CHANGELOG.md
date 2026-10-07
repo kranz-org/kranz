@@ -4,16 +4,32 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.16.5] - 2026-10-07
+
 ### Changed
 
 - TUI timeout, restart backoff, and action duration labels omit zero units and
   separate remaining units with spaces, preserving configured precision.
-
 - Uptime uses whole seconds below a minute, minutes and seconds below an hour,
   hours and minutes below a day, days/hours/minutes below a week,
   weeks/days/hours below a month, months/days/hours below a year, and
   years/months/days thereafter. TUI units are separated by spaces; CLI units
   remain compact. Calendar units are calculated in UTC.
+- Building from source now requires Go 1.26 or newer, matching the updated
+  `golang.org/x/sys` dependency. Prebuilt archives and packages do not require Go.
+- Documentation build dependencies update Vue and its server renderer to
+  3.5.43 and source-map-js to 1.2.2.
+
+### Fixed
+
+- Quit and runtime-stop confirmation shortcuts align with the dialog content.
+- Health history and notification dialogs use bounded widths, wrap long
+  messages, and support keyboard scrolling instead of clipping content.
+
+### Documentation
+
+- MCP confirmation tokens remain valid until used or invalidated by a runtime
+  session or configuration change; they have no time-based expiry.
 
 ## [0.16.4] - 2026-09-29
 

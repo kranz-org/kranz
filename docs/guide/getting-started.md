@@ -10,7 +10,7 @@ existing project is required.
 brew install kranz-org/tap/kranz
 ```
 
-Or install with Go 1.24 or newer:
+Or install with Go 1.26 or newer:
 
 ```bash
 go install github.com/kranz-org/kranz/cmd/kranz@latest
