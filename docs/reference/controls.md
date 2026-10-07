@@ -203,8 +203,10 @@ appears or disappears without reopening the modal.
 | `Esc` or `p` | Close the modal and stay on the current runtime |
 
 Uptime in the runtime list and service Details uses whole units separated by
-spaces: `42s`, `3m 12s`, `10h 20m`, `2d 4h 15m`, `2w 4d 5h`, or `1y 2w 3d`.
-Smaller units are truncated, and a year is 365 days.
+spaces: `42s`, `3m 12s`, `10h 20m`, `2d 4h 15m`, `2w 4d 5h`,
+`1mo 2d 3h`, or `1y 2mo 3d`. Smaller units are truncated. Calendar years
+and months are calculated in UTC; dates clamp to the last day of a month
+when necessary.
 
 The table has separate `RUNTIME`, `STATUS`, `CLIENTS`, `SERVICES`, `UPTIME`,
 and `DIRECTORY` columns. `STATUS` is `current` for the runtime already open

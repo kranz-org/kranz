@@ -282,7 +282,9 @@ commands because they answer two questions: what is running, and who is using
 it. Narrow either one to a single runtime with `-p NAME|ID`.
 
 Uptime uses compact whole units: `42s`, `3m12s`, `10h20m`, `2d4h15m`,
-`2w4d5h`, or `1y2w3d`. Smaller units are truncated; a year is 365 days.
+`2w4d5h`, `1mo2d3h`, or `1y2mo3d`. Smaller units are truncated. Calendar years
+and months are calculated in UTC; dates clamp to the last day of a month
+when necessary.
 
 ```console
 $ kranz ps

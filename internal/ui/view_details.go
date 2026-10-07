@@ -521,7 +521,7 @@ func runtimeDetailLines(svc *app.ServiceSnapshot, contentWidth int) []string {
 
 	lines := detailFieldLines("LAST START", state.StartedAt.Local().Format("15:04:05"), contentWidth)
 	if svc.State.Status != config.StatusStopped {
-		value := uptime.Format(time.Since(state.StartedAt), " ")
+		value := uptime.Format(state.StartedAt, time.Now(), " ")
 		lines = append(lines, detailFieldLines("UPTIME", value, contentWidth)...)
 	}
 	if state.Completed {

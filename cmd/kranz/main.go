@@ -386,7 +386,7 @@ func writePS(output kranzcli.OutputFormat, formatter *rowTemplate, records []kra
 		if len(id) > 8 {
 			id = id[:8]
 		}
-		_, _ = fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\n", id, record.PID, record.Name, record.Project, services, clients, record.State, shortDuration(time.Since(record.StartedAt)))
+		_, _ = fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\n", id, record.PID, record.Name, record.Project, services, clients, record.State, shortAge(record.StartedAt))
 	}
 	if err := w.Flush(); err != nil {
 		return err
@@ -415,15 +415,15 @@ func psFormatRow(record kranzruntime.SessionRecord) map[string]any {
 	return map[string]any{
 		"ID": shortID(record.ID), "FullID": record.ID, "PID": record.PID, "Name": record.Name,
 		"Project": record.Project, "Services": services, "Clients": clients,
-		"State": string(record.State), "Uptime": shortDuration(time.Since(record.StartedAt)),
+		"State": string(record.State), "Uptime": shortAge(record.StartedAt),
 		"Directory": record.Directory, "Mode": record.Mode, "Version": record.KranzVersion,
 		"StartedAt": record.StartedAt.Format(time.RFC3339),
 	}
 }
 
-// shortDuration uses the compact CLI form of the shared uptime format.
-func shortDuration(d time.Duration) string {
-	return uptime.Format(d, "")
+// shortAge uses the compact CLI form of the shared uptime format.
+func shortAge(startedAt time.Time) string {
+	return uptime.Format(startedAt, time.Now(), "")
 }
 
 func writeVersion(stdout, stderr io.Writer, format kranzcli.OutputFormat) int {

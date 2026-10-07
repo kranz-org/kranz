@@ -90,7 +90,7 @@ func sortRuntimeRows(rows []runtimeRow) {
 
 // runtimeRowUptime separates whole uptime units for reading at a glance.
 func runtimeRowUptime(record kranzruntime.SessionRecord) string {
-	return uptime.Format(time.Since(record.StartedAt), " ")
+	return uptime.Format(record.StartedAt, time.Now(), " ")
 }
 
 // runtimeRowSurfaceLabel joins the deduplicated client surfaces a row is
@@ -153,7 +153,7 @@ type runtimeTableLayout struct {
 func newRuntimeTableLayout(width int) runtimeTableLayout {
 	layout := runtimeTableLayout{
 		nameWidth: runtimeRowNameWidth, statusWidth: 12, clientsWidth: 11,
-		servicesWidth: 8, uptimeWidth: 12, showClients: true, showUptime: true,
+		servicesWidth: 8, uptimeWidth: 13, showClients: true, showUptime: true,
 	}
 	coreWidth := func() int {
 		widths := []int{layout.nameWidth, layout.statusWidth, layout.servicesWidth}
