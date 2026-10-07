@@ -6,6 +6,9 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ### Changed
 
+- TUI timeout, restart backoff, and action duration labels omit zero units and
+  separate remaining units with spaces, preserving configured precision.
+
 - Uptime uses whole seconds below a minute, minutes and seconds below an hour,
   hours and minutes below a day, days/hours/minutes below a week,
   weeks/days/hours below a month, months/days/hours below a year, and

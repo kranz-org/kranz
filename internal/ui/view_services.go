@@ -177,7 +177,7 @@ func (m *Model) renderServiceListRow(index int, row actionListRow, width int) st
 			status += ContextBarStyle.Render("  " + state.Status.String())
 		}
 		if state.Duration > 0 && state.Status != app.ActionRunning {
-			status += ContextBarStyle.Render(" · " + state.Duration.Round(time.Millisecond).String())
+			status += ContextBarStyle.Render(" · " + formatExactDuration(state.Duration.Round(time.Millisecond)))
 		}
 		// An action whose command can be configured carries the settings mark.
 		// A triangle would read as "expand a list", which is not what opening

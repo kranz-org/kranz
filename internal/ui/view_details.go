@@ -79,7 +79,7 @@ func (m *Model) actionDetailLines(id config.ActionID, action config.Action, stat
 	}
 	lines = append(lines, detailFieldLines("DIRECTORY", displayServiceDirectory(action.Dir, m.workingDirectory), contentWidth)...)
 	if action.Timeout > 0 {
-		lines = append(lines, detailFieldLines("TIMEOUT", action.Timeout.String(), contentWidth)...)
+		lines = append(lines, detailFieldLines("TIMEOUT", formatExactDuration(action.Timeout), contentWidth)...)
 	}
 	// A parameterized action is described by the invocation the current form
 	// values produce, not by the declaration behind it.
@@ -96,7 +96,7 @@ func (m *Model) actionDetailLines(id config.ActionID, action config.Action, stat
 	if !state.StartedAt.IsZero() {
 		lines = append(lines, detailFieldLines("LAST RUN", state.StartedAt.Local().Format("15:04:05"), contentWidth)...)
 		if state.Status != app.ActionRunning {
-			lines = append(lines, detailFieldLines("RESULT", fmt.Sprintf("exit %d · %s", state.ExitCode, state.Duration.Round(time.Millisecond)), contentWidth)...)
+			lines = append(lines, detailFieldLines("RESULT", fmt.Sprintf("exit %d · %s", state.ExitCode, formatExactDuration(state.Duration.Round(time.Millisecond))), contentWidth)...)
 		}
 	}
 	command := action.Command
@@ -502,7 +502,7 @@ func availabilityDetailLines(svc *app.ServiceSnapshot, contentWidth int) []strin
 		if availability.MaxRestarts > 0 {
 			limit = strconv.Itoa(availability.MaxRestarts)
 		}
-		parts = append(parts, "backoff "+backoff.String(), fmt.Sprintf("restarts %d/%s", svc.State.RestartCount, limit))
+		parts = append(parts, "backoff "+formatExactDuration(backoff), fmt.Sprintf("restarts %d/%s", svc.State.RestartCount, limit))
 	}
 	if availability.ExitOnEnd {
 		parts = append(parts, "exit on end")
@@ -545,13 +545,13 @@ func shutdownDetailLines(svc *app.ServiceSnapshot, contentWidth int) []string {
 		target = "parent only"
 	}
 	if shutdown.Command != "" {
-		return detailSectionLines("SHUTDOWN", []string{"command " + shutdown.Command, "timeout " + timeout.String()}, contentWidth)
+		return detailSectionLines("SHUTDOWN", []string{"command " + shutdown.Command, "timeout " + formatExactDuration(timeout)}, contentWidth)
 	}
 	signal := shutdown.Signal
 	if signal == 0 {
 		signal = 15
 	}
-	return detailSectionLines("SHUTDOWN", []string{fmt.Sprintf("signal %d", signal), "timeout " + timeout.String(), "target " + target}, contentWidth)
+	return detailSectionLines("SHUTDOWN", []string{fmt.Sprintf("signal %d", signal), "timeout " + formatExactDuration(timeout), "target " + target}, contentWidth)
 }
 
 func detailSectionLines(label string, parts []string, contentWidth int) []string {
