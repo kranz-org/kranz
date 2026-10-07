@@ -55,8 +55,8 @@ another supervisor.
 ```console
 $ kranz ps
 ID        PID    NAME      PROJECT  SERVICES  CLIENTS  STATE    UPTIME
-7fa21c8d  18400  shop-dev  Shop     4/4       1        running  18m
-91bc430a  18022  billing   Billing  3/3       2        running  6m
+7fa21c8d  18400  shop-dev  Shop     4/4       1        running  18m0s
+91bc430a  18022  billing   Billing  3/3       2        running  6m0s
 ```
 
 `clients` answers the other half: who is attached to those runtimes, whether
@@ -68,8 +68,8 @@ that is a TUI, a CLI command, or a coding agent over MCP.
 $ kranz status
 NAME     STATE    HEALTH  UPTIME  PID    PORTS
 migrate  stopped  -       -       -      -
-api      running  ready   18m     26078  3000
-worker   running  -       18m     26085  -
+api      running  ready   18m0s     26078  3000
+worker   running  -       18m0s     26085  -
 ```
 
 `HEALTH` is `-` when no readiness or liveness probe is configured. Kranz does

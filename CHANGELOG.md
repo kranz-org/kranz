@@ -4,6 +4,13 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### Changed
+
+- Uptime uses whole seconds below a minute, minutes and seconds below an hour,
+  hours and minutes below a day, days/hours/minutes below a week,
+  weeks/days/hours below a year, and years/weeks/days thereafter. TUI units
+  are separated by spaces; CLI units remain compact. A year is 365 days.
+
 ## [0.16.4] - 2026-09-29
 
 ### Added

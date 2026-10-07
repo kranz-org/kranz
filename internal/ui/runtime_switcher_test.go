@@ -186,11 +186,24 @@ func TestRuntimeTableSeparatesStatusClientsAndServices(t *testing.T) {
 	}
 }
 
-func TestRuntimeTableKeepsJustNowComplete(t *testing.T) {
-	row := rowFor("s", "shop", time.Now(), false, kranzruntime.SessionRunning)
-	line := runtimeRowLine(row, 100)
-	if !strings.Contains(line, "just now") || strings.Contains(line, "just n…") {
-		t.Fatalf("runtime uptime was truncated: %q", line)
+func TestRuntimeTableKeepsUptimeComplete(t *testing.T) {
+	for _, tt := range []struct {
+		elapsed time.Duration
+		want    string
+	}{
+		{42 * time.Second, "42s"},
+		{3*time.Minute + 12*time.Second, "3m 12s"},
+		{10*time.Hour + 20*time.Minute, "10h 20m"},
+		{6*24*time.Hour + 23*time.Hour + 59*time.Minute, "6d 23h 59m"},
+		{51*7*24*time.Hour + 6*24*time.Hour + 23*time.Hour, "51w 6d 23h"},
+		{2*365*24*time.Hour + 3*7*24*time.Hour + 4*24*time.Hour, "2y 3w 4d"},
+	} {
+		row := rowFor("s", "shop", time.Now().Add(-tt.elapsed), false, kranzruntime.SessionRunning)
+		line := runtimeRowLine(row, 100)
+		if !strings.Contains(line, tt.want) {
+			t.Fatalf("runtime uptime %q was truncated: %q", tt.want, line)
+		}
+		t.Log(line)
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 	"github.com/kranz-org/kranz/internal/actionparams"
 	"github.com/kranz-org/kranz/internal/app"
 	"github.com/kranz-org/kranz/internal/config"
+	"github.com/kranz-org/kranz/internal/uptime"
 )
 
 // The Details panel. Every field is width-aware because the panel is the
@@ -520,15 +521,8 @@ func runtimeDetailLines(svc *app.ServiceSnapshot, contentWidth int) []string {
 
 	lines := detailFieldLines("LAST START", state.StartedAt.Local().Format("15:04:05"), contentWidth)
 	if svc.State.Status != config.StatusStopped {
-		elapsed := time.Since(state.StartedAt)
-		if elapsed < 0 {
-			elapsed = 0
-		}
-		uptime := elapsed.Round(time.Second).String()
-		if elapsed < time.Second {
-			uptime = "<1s"
-		}
-		lines = append(lines, detailFieldLines("UPTIME", uptime, contentWidth)...)
+		value := uptime.Format(time.Since(state.StartedAt), " ")
+		lines = append(lines, detailFieldLines("UPTIME", value, contentWidth)...)
 	}
 	if state.Completed {
 		exit := fmt.Sprintf("code %d", state.ExitCode)
