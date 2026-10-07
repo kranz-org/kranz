@@ -247,13 +247,13 @@ func (m *Model) renderNotificationsView() string {
 func (m *Model) renderConfirmQuitView() string {
 	plan := m.app.ShutdownPlan()
 	actions := []string{
-		"  [Enter/y] Stop runtime and quit",
-		"  [d]       Detach and keep runtime running",
+		"[Enter/y] Stop runtime and quit",
+		"[d]       Detach and keep runtime running",
 	}
 	if m.switcherSupported() {
-		actions = append(actions, "  [c]       Close & choose another runtime")
+		actions = append(actions, "[c]       Close & choose another runtime")
 	}
-	actions = append(actions, "", "  [Esc/n]   Stay here")
+	actions = append(actions, "", "[Esc/n]   Stay here")
 	content := renderShutdownConfirmation(shutdownConfirmation{
 		title: "Quit Kranz?", plan: &plan, operationActive: m.operation != "",
 		footer: []string{"", HelpSectionStyle.Render("EXIT")}, actions: actions,
