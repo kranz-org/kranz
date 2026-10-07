@@ -68,8 +68,8 @@ that is a TUI, a CLI command, or a coding agent over MCP.
 $ kranz status
 NAME     STATE    HEALTH  UPTIME  PID    PORTS
 migrate  stopped  -       -       -      -
-api      running  ready   18m0s     26078  3000
-worker   running  -       18m0s     26085  -
+api      running  ready   18m0s   26078  3000
+worker   running  -       18m0s   26085  -
 ```
 
 `HEALTH` is `-` when no readiness or liveness probe is configured. Kranz does
