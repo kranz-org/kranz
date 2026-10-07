@@ -70,6 +70,7 @@ export default defineConfig({
       {
         text: 'Upgrading',
         items: [
+          { text: 'Kranz 0.16.5', link: '/releases/0.16.5' },
           { text: 'Upgrading to 0.16.1', link: '/releases/0.16.1' },
           { text: 'Upgrading to 0.15', link: '/releases/0.15.0' },
           { text: 'Upgrading to 0.8', link: '/releases/0.8.0' }
