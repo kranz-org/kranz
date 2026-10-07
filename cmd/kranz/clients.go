@@ -106,7 +106,7 @@ func writeClients(output kranzcli.OutputFormat, formatter *rowTemplate, rows []c
 	w := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(w, "RUNTIME\tPID\tCLIENT\tCONNECTED")
 	for _, row := range rows {
-		_, _ = fmt.Fprintf(w, "%s\t%d\t%s\t%s\n", row.Runtime, row.PID, clientDisplayLabel(row.Surface, row.Label), shortDuration(time.Since(row.Since)))
+		_, _ = fmt.Fprintf(w, "%s\t%d\t%s\t%s\n", row.Runtime, row.PID, clientDisplayLabel(row.Surface, row.Label), shortAge(row.Since))
 	}
 	return w.Flush()
 }
@@ -124,7 +124,7 @@ func clientFormatRow(row clientRow) map[string]any {
 		"Runtime": row.Runtime, "ID": shortID(row.ID), "FullID": row.ID, "Project": row.Project,
 		"PID": row.PID, "Client": clientDisplayLabel(row.Surface, row.Label),
 		"Surface": row.Surface, "Label": row.Label, "Version": row.Version,
-		"Connected": shortDuration(time.Since(row.Since)), "ConnectedAt": row.Since.Format(time.RFC3339),
+		"Connected": shortAge(row.Since), "ConnectedAt": row.Since.Format(time.RFC3339),
 	}
 }
 

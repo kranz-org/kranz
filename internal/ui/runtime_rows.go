@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -12,6 +11,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	kranzruntime "github.com/kranz-org/kranz/internal/runtime"
+	"github.com/kranz-org/kranz/internal/uptime"
 )
 
 const runtimeRowNameWidth = 22
@@ -88,27 +88,9 @@ func sortRuntimeRows(rows []runtimeRow) {
 	})
 }
 
-// runtimeRowUptime formats how long a runtime has been running. It follows
-// cmd/kranz's shortDuration for every unit above a minute, and deliberately
-// differs below one: a table read at a glance says "just now" where a CLI
-// column that is scanned for exact values says "42s". It is a copy rather
-// than a call because shortDuration lives in package main and cannot be
-// imported here; change the two together.
+// runtimeRowUptime separates whole uptime units for reading at a glance.
 func runtimeRowUptime(record kranzruntime.SessionRecord) string {
-	d := time.Since(record.StartedAt)
-	if d < 0 {
-		d = 0
-	}
-	switch {
-	case d < time.Minute:
-		return "just now"
-	case d < time.Hour:
-		return strconv.Itoa(int(d.Minutes())) + "m"
-	case d < 24*time.Hour:
-		return strconv.Itoa(int(d.Hours())) + "h" + strconv.Itoa(int(d.Minutes())%60) + "m"
-	default:
-		return strconv.Itoa(int(d.Hours())/24) + "d" + strconv.Itoa(int(d.Hours())%24) + "h"
-	}
+	return uptime.Format(record.StartedAt, time.Now(), " ")
 }
 
 // runtimeRowSurfaceLabel joins the deduplicated client surfaces a row is
@@ -171,7 +153,7 @@ type runtimeTableLayout struct {
 func newRuntimeTableLayout(width int) runtimeTableLayout {
 	layout := runtimeTableLayout{
 		nameWidth: runtimeRowNameWidth, statusWidth: 12, clientsWidth: 11,
-		servicesWidth: 8, uptimeWidth: 8, showClients: true, showUptime: true,
+		servicesWidth: 8, uptimeWidth: 13, showClients: true, showUptime: true,
 	}
 	coreWidth := func() int {
 		widths := []int{layout.nameWidth, layout.statusWidth, layout.servicesWidth}

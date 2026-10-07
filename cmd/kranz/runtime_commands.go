@@ -776,7 +776,7 @@ func serviceUptime(service *app.ServiceSnapshot) string {
 	if service.State.Status != config.StatusRunning || service.State.StartedAt.IsZero() {
 		return "-"
 	}
-	return shortDuration(time.Since(service.State.StartedAt))
+	return shortAge(service.State.StartedAt)
 }
 
 func runLifecycle(options kranzcli.GlobalOptions, command string, args []string, stdout io.Writer) error {

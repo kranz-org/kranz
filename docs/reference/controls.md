@@ -202,6 +202,17 @@ appears or disappears without reopening the modal.
 | `s` | Review and stop the selected other runtime |
 | `Esc` or `p` | Close the modal and stay on the current runtime |
 
+Uptime in the runtime list and service Details uses whole units separated by
+spaces: `42s`, `3m 12s`, `10h 20m`, `2d 4h 15m`, `2w 4d 5h`,
+`1mo 2d 3h`, or `1y 2mo 3d`. Smaller units are truncated. Calendar years
+and months are calculated in UTC; dates clamp to the last day of a month
+when necessary.
+
+Configured durations such as action timeouts, shutdown timeouts, and restart
+backoff omit zero units while preserving their exact value: `10m`, `1m 30s`,
+`1h 5s`, or `500ms`. Completed action durations use the same spacing and retain
+their existing millisecond precision.
+
 The table has separate `RUNTIME`, `STATUS`, `CLIENTS`, `SERVICES`, `UPTIME`,
 and `DIRECTORY` columns. `STATUS` is `current` for the runtime already open
 and `started` for another available runtime. `CLIENTS` lists the unique client

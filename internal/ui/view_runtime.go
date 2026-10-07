@@ -33,12 +33,12 @@ func (m *Model) renderRuntimeStopView() string {
 		confirmation.footer = append(confirmation.footer, "", "Stopping…")
 	}
 	confirmation.footer = append(confirmation.footer, "", HelpSectionStyle.Render("STOP"))
-	confirmation.actions = []string{"  [Esc/n]   Return to runtime list"}
+	confirmation.actions = []string{"[Esc/n]   Return to runtime list"}
 	if m.runtimeStopBusy {
 		confirmation.actions = nil
 	}
 	if !m.runtimeStopLoading && !m.runtimeStopBusy && m.runtimeStopErr == "" {
-		confirmation.actions = append([]string{"  [Enter/s] Stop runtime"}, confirmation.actions...)
+		confirmation.actions = append([]string{"[Enter/s] Stop runtime"}, confirmation.actions...)
 	}
 	content := renderShutdownConfirmation(confirmation)
 	return m.placeOverlayOver(content, m.renderRuntimeSwitcherView())
