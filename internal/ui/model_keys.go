@@ -37,6 +37,8 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleSearchKeys(msg)
 	case ModeHelp:
 		return m.handleHelpKeys(msg)
+	case ModeHealthHistory, ModeNotifications:
+		return m.handleInfoModalKeys(msg)
 	case ModeConfirmQuit:
 		return m.handleConfirmQuitKeys(msg)
 	case ModeConfirmRestart:
@@ -193,9 +195,11 @@ func (m *Model) handleViewKey(msg tea.KeyMsg) bool {
 		m.selectedTags = nil
 		return true
 	case key.Matches(msg, m.keys.Health):
+		m.infoModalOffset = 0
 		m.mode = ModeHealthHistory
 		return true
 	case key.Matches(msg, m.keys.Notifs):
+		m.infoModalOffset = 0
 		m.mode = ModeNotifications
 		return true
 	case key.Matches(msg, m.keys.Help):
@@ -223,6 +227,18 @@ func (m *Model) handleHelpKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Down):
 		m.helpOffset = min(m.maxHelpOffset(), m.helpOffset+1)
 	case msg.String() == "esc", msg.String() == "q", msg.String() == "?":
+		m.mode = ModeNormal
+	}
+	return m, nil
+}
+
+func (m *Model) handleInfoModalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.Up):
+		m.infoModalOffset = max(0, m.infoModalOffset-1)
+	case key.Matches(msg, m.keys.Down):
+		m.infoModalOffset = min(m.maxInfoModalOffset(), m.infoModalOffset+1)
+	case msg.String() == "esc", msg.String() == "q":
 		m.mode = ModeNormal
 	}
 	return m, nil
