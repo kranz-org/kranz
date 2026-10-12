@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -189,7 +190,8 @@ func (m *Model) queryLogCache(target app.RunTarget, selector, cursor string) (ap
 			m.logTailLimits[target] = limit
 		}
 		result, err := m.app.QueryLogs(app.LogQuery{Selectors: []string{selector}, Cursor: cursor, Tail: limit})
-		if !errors.Is(err, kranzruntime.ErrResponseTooLarge) || limit == 1 {
+		timedOut := errors.Is(err, context.DeadlineExceeded)
+		if (!errors.Is(err, kranzruntime.ErrResponseTooLarge) && !timedOut) || limit == 1 {
 			return result, err
 		}
 		if limit == 0 {
@@ -201,6 +203,11 @@ func (m *Model) queryLogCache(target app.RunTarget, selector, cursor string) (ap
 		m.invalidateLogCache(target)
 		cursor = ""
 		m.addNotification("logs", fmt.Sprintf("Large log history: showing the latest %d entries", limit), config.LogWarn)
+		if timedOut {
+			// Yield to queued input before retrying on the next poll. A slow
+			// or older supervisor must not make adaptive retries monopolize UI.
+			return result, err
+		}
 	}
 }
 
