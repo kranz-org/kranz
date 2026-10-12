@@ -8,7 +8,43 @@ import (
 
 	"github.com/kranz-org/kranz/internal/app"
 	"github.com/kranz-org/kranz/internal/config"
+	kranzruntime "github.com/kranz-org/kranz/internal/runtime"
 )
+
+type oversizedLogAPI struct {
+	app.API
+	tails []int
+}
+
+func (a *oversizedLogAPI) QueryLogs(query app.LogQuery) (app.LogResult, error) {
+	a.tails = append(a.tails, query.Tail)
+	if query.Tail == 0 || query.Tail > 500 {
+		return app.LogResult{}, kranzruntime.ErrResponseTooLarge
+	}
+	return a.API.QueryLogs(query)
+}
+
+func TestLogCacheRetriesOversizedHistoryWithStableCursorWindow(t *testing.T) {
+	cfg := &config.Config{Project: "Log Demo", Services: map[string]config.Service{
+		"web": {Command: "true", Dir: ".", Shell: "sh"},
+	}}
+	local := app.NewLocal(cfg, nil, app.Options{})
+	local.AppendLogForTest("web", "first")
+	api := &oversizedLogAPI{API: local}
+	model := NewModelWithOptions(cfg, "test", ModelOptions{App: api})
+	defer model.Shutdown()
+	target := app.ServiceRunTarget("web")
+	model.refreshLogCache(target)
+	if model.logTailLimits[target] != 500 || len(model.cachedLogEntries(target)) != 1 {
+		t.Fatal("oversized history did not shrink to an accepted window")
+	}
+	local.AppendLogForTest("web", "second")
+	api.tails = nil
+	model.refreshLogCache(target)
+	if !slices.Equal(api.tails, []int{500}) || len(model.cachedLogEntries(target)) != 2 {
+		t.Fatalf("cursor window changed on next poll: %v", api.tails)
+	}
+}
 
 type countingLogAPI struct {
 	app.API

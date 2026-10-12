@@ -38,7 +38,7 @@ func TestRemoteLargeLogHistoryKeepsDashboardResponsive(t *testing.T) {
 		"web": {Command: "true", Dir: ".", Shell: "sh"},
 	}}
 	rt := startTestRuntime(t, registry, "log-demo", cfg, t.TempDir())
-	line := strings.Repeat("x", 10_000)
+	line := strings.Repeat("x", 128)
 	for range 1100 {
 		rt.local.AppendLogForTest("web", line)
 	}
@@ -47,12 +47,8 @@ func TestRemoteLargeLogHistoryKeepsDashboardResponsive(t *testing.T) {
 	defer model.Shutdown()
 	target := app.ServiceRunTarget("web")
 	model.refreshLogCache(target)
-	deadline := time.Now().Add(15 * time.Second)
-	for len(model.cachedLogEntries(target)) == 0 && time.Now().Before(deadline) {
-		model.refreshLogCache(target)
-	}
-	if got := len(model.cachedLogEntries(target)); got == 0 || got >= 1000 {
-		t.Fatalf("large history did not adapt to the frame budget: %d entries", got)
+	if got := len(model.cachedLogEntries(target)); got != 1000 {
+		t.Fatalf("remote history did not respect the initial window: %d entries", got)
 	}
 	rt.local.AppendLogForTest("web", "new output")
 	model.refreshLogCache(target)
