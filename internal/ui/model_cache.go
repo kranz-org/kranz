@@ -1,12 +1,15 @@
 package ui
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
 
 	"github.com/kranz-org/kranz/internal/app"
 	"github.com/kranz-org/kranz/internal/config"
+	kranzruntime "github.com/kranz-org/kranz/internal/runtime"
 )
 
 const (
@@ -107,18 +110,18 @@ func (m *Model) refreshLogCache(target app.RunTarget) {
 		return
 	}
 	cursor := m.logCursors[target]
-	result, err := m.app.QueryLogs(app.LogQuery{Selectors: []string{selector}, Cursor: cursor})
+	result, err := m.queryLogCache(target, selector, cursor)
 	if err != nil && cursor != "" {
 		m.invalidateLogCache(target)
 		cursor = ""
-		result, err = m.app.QueryLogs(app.LogQuery{Selectors: []string{selector}})
+		result, err = m.queryLogCache(target, selector, "")
 	}
 	if err != nil {
 		return
 	}
 	if cursor != "" && result.Truncated {
 		m.invalidateLogCache(target)
-		result, err = m.app.QueryLogs(app.LogQuery{Selectors: []string{selector}})
+		result, err = m.queryLogCache(target, selector, "")
 		if err != nil {
 			return
 		}
@@ -174,6 +177,40 @@ func (m *Model) refreshLogCache(target app.RunTarget) {
 	m.logCursors[target] = result.NextCursor
 }
 
+// Keep ordinary history intact, but adapt a stream whose encoded response
+// exceeds the transport limit. Remember the window so cursor signatures stay
+// consistent on subsequent polls. Retained runtime output is never deleted.
+func (m *Model) queryLogCache(target app.RunTarget, selector, cursor string) (app.LogResult, error) {
+	for {
+		limit := m.logTailLimits[target]
+		// Released supervisors can silently drop oversized replies. Bound the
+		// initial remote snapshot as well, so a newer TUI can attach safely.
+		if _, remote := m.app.(*kranzruntime.Client); remote && limit == 0 {
+			limit = 1000
+			m.logTailLimits[target] = limit
+		}
+		result, err := m.app.QueryLogs(app.LogQuery{Selectors: []string{selector}, Cursor: cursor, Tail: limit})
+		timedOut := errors.Is(err, context.DeadlineExceeded)
+		if (!errors.Is(err, kranzruntime.ErrResponseTooLarge) && !timedOut) || limit == 1 {
+			return result, err
+		}
+		if limit == 0 {
+			limit = 1000
+		} else {
+			limit = max(1, limit/2)
+		}
+		m.logTailLimits[target] = limit
+		m.invalidateLogCache(target)
+		cursor = ""
+		m.addNotification("logs", fmt.Sprintf("Large log history: showing the latest %d entries", limit), config.LogWarn)
+		if timedOut {
+			// Yield to queued input before retrying on the next poll. A slow
+			// or older supervisor must not make adaptive retries monopolize UI.
+			return result, err
+		}
+	}
+}
+
 func cachedLogLevel(level string) config.LogLevel {
 	switch level {
 	case "error":
@@ -203,6 +240,7 @@ func (m *Model) resetLogCaches() {
 	m.actionLogLines = make(map[app.RunTarget][]cachedActionLogLine)
 	m.actionRunLogLines = make(map[app.RunTarget]map[uint32][]cachedActionLogLine)
 	m.logCursors = make(map[app.RunTarget]string)
+	m.logTailLimits = make(map[app.RunTarget]int)
 	m.logRowCache = [logSlotCount]*logRowMetrics{}
 }
 

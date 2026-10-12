@@ -10,6 +10,9 @@ import (
 	"github.com/kranz-org/kranz/internal/service"
 )
 
+// ErrResponseTooLarge permits callers to retry reads with a smaller window.
+var ErrResponseTooLarge = errors.New("runtime response exceeds the maximum frame size")
+
 // VersionMismatchError distinguishes protocol incompatibility from transport
 // failures such as timeout, EOF, or a malformed frame. Registry-aware clients
 // use this classification to report an incompatible live session instead of
@@ -107,6 +110,9 @@ func encodeError(err error) errorPayload {
 // decodeError reconstructs every error whose identity is part of a delivery
 // contract. Truly generic supervisor failures still cross as text only.
 func decodeError(payload errorPayload) error {
+	if payload.Kind == errorGeneric && payload.Code == "response_too_large" {
+		return ErrResponseTooLarge
+	}
 	if payload.OperationResult != nil {
 		result := *payload.OperationResult
 		payload.OperationResult = nil

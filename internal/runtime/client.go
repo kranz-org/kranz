@@ -236,7 +236,11 @@ func (c *Client) failAllPending(err error) {
 	defer c.pendingMu.Unlock()
 	body, _ := json.Marshal(errorPayload{Kind: errorGeneric, Message: fmt.Sprintf("connection lost: %v", err)})
 	for id, ch := range c.pending {
-		ch <- envelope{Type: messageError, ID: id, Body: body}
+		select {
+		case ch <- envelope{Type: messageError, ID: id, Body: body}:
+		default:
+			// A reply already delivered to this call takes precedence.
+		}
 	}
 }
 
@@ -263,11 +267,27 @@ func (c *Client) roundTrip(ctx context.Context, method string, reqBody []byte) (
 	select {
 	case reply := <-replyCh:
 		return decodeReply(reply)
-	case <-ctx.Done():
-		_ = c.c.send(envelope{Type: messageCancel, ID: id})
+	case <-c.done:
+		// A call may be registered after readLoop has failed all pending calls.
+		// It must observe the closed connection even if it missed that sweep.
 		select {
 		case reply := <-replyCh:
 			return decodeReply(reply)
+		default:
+		}
+		return nil, fmt.Errorf("connection lost: %w", net.ErrClosed)
+	case <-ctx.Done():
+		_ = c.c.send(envelope{Type: messageCancel, ID: id})
+		if method == methodQueryLogs {
+			// This read has no side effects to reconcile. Older supervisors can
+			// lose an oversized response, including the cancellation reply.
+			return nil, ctx.Err()
+		}
+		select {
+		case reply := <-replyCh:
+			return decodeReply(reply)
+		case <-c.done:
+			return nil, fmt.Errorf("connection lost: %w", net.ErrClosed)
 		case <-time.After(cancelGrace):
 			return nil, ctx.Err()
 		}
@@ -578,7 +598,9 @@ func (c *Client) ActionLogs(id config.ActionID) []config.LogEntry {
 }
 
 func (c *Client) QueryLogs(query app.LogQuery) (app.LogResult, error) {
-	return call[app.LogQuery, app.LogResult](c, context.Background(), methodQueryLogs, query)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	return call[app.LogQuery, app.LogResult](c, ctx, methodQueryLogs, query)
 }
 
 func (c *Client) ClearLogStreams(selectors []string, withActions bool) ([]string, error) {

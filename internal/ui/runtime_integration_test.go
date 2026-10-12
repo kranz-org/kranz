@@ -29,6 +29,39 @@ type testRuntime struct {
 	closed     bool
 }
 
+func TestRemoteLargeLogHistoryKeepsDashboardResponsive(t *testing.T) {
+	registry, err := kranzruntime.NewRegistry(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{Project: "Log Demo", Services: map[string]config.Service{
+		"web": {Command: "true", Dir: ".", Shell: "sh"},
+	}}
+	rt := startTestRuntime(t, registry, "log-demo", cfg, t.TempDir())
+	line := strings.Repeat("x", 128)
+	for range 1100 {
+		rt.local.AppendLogForTest("web", line)
+	}
+	retained := rt.local.Logs("web")
+	model := NewModelWithOptions(cfg, "test", ModelOptions{App: rt.client, DetachOnExit: true})
+	defer model.Shutdown()
+	target := app.ServiceRunTarget("web")
+	model.refreshLogCache(target)
+	if got := len(model.cachedLogEntries(target)); got != 1000 {
+		t.Fatalf("remote history did not respect the initial window: %d entries", got)
+	}
+	rt.local.AppendLogForTest("web", "new output")
+	model.refreshLogCache(target)
+	entries := model.cachedLogEntries(target)
+	if entries[len(entries)-1].Raw != "new output" {
+		t.Fatal("cursor polling stopped after shrinking the log window")
+	}
+	if logs := rt.local.Logs("web"); len(logs) != len(retained)+1 || logs[0].Sequence != retained[0].Sequence {
+		t.Fatalf("log reads changed runtime retention: %d entries", len(logs))
+	}
+	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+}
+
 func startTestRuntime(t *testing.T, registry *kranzruntime.Registry, name string, cfg *config.Config, directory string) *testRuntime {
 	t.Helper()
 	session, err := registry.Acquire(name)

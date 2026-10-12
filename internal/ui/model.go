@@ -242,6 +242,7 @@ type Model struct {
 	actionLogLines      map[app.RunTarget][]cachedActionLogLine
 	actionRunLogLines   map[app.RunTarget]map[uint32][]cachedActionLogLine
 	logCursors          map[app.RunTarget]string
+	logTailLimits       map[app.RunTarget]int
 	focused             int
 	selected            map[string]bool
 	detailOffset        int
@@ -533,6 +534,7 @@ func NewModelWithOptions(cfg *config.Config, version string, options ModelOption
 		actionLogLines:       make(map[app.RunTarget][]cachedActionLogLine),
 		actionRunLogLines:    make(map[app.RunTarget]map[uint32][]cachedActionLogLine),
 		logCursors:           make(map[app.RunTarget]string),
+		logTailLimits:        make(map[app.RunTarget]int),
 		portDetails:          make(map[int]*config.PortInfo),
 		selected:             make(map[string]bool),
 		expandedTags:         make(map[string]bool),
