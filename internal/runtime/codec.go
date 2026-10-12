@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -30,7 +31,22 @@ func (c *codec) send(msg envelope) error {
 	}
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
-	return writeFrame(c.conn, payload)
+	err = writeFrame(c.conn, payload)
+	if errors.Is(err, errFramePayloadTooBig) && (msg.Type == messageResponse || msg.Type == messageError) {
+		// No bytes have been written. Reply with a small error instead of
+		// leaving the caller waiting forever for an unsent response.
+		body, _ := json.Marshal(errorPayload{Kind: errorGeneric, Code: "response_too_large", Message: ErrResponseTooLarge.Error()})
+		payload, _ = json.Marshal(envelope{V: msg.V, Type: messageError, ID: msg.ID, Body: body})
+		err = writeFrame(c.conn, payload)
+		if err == nil {
+			return ErrResponseTooLarge
+		}
+	}
+	if err != nil && !errors.Is(err, errFramePayloadTooBig) {
+		// A partial frame cannot be recovered on this stream.
+		_ = c.conn.Close()
+	}
+	return err
 }
 
 func (c *codec) receive() (envelope, error) {
