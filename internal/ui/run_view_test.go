@@ -49,9 +49,10 @@ func TestRunSelectionSurvivesServiceFocusChanges(t *testing.T) {
 			finishTestServiceRun(t, model, "api", 0, "second output")
 			model.refreshServices()
 			pressKey(model, 'x')
-			if selection == "history" {
+			switch selection {
+			case "history":
 				model.moveRun(-1, false)
-			} else if selection == "combined" {
+			case "combined":
 				pressKey(model, 'x')
 			}
 			model.moveFocus(1)
@@ -63,9 +64,10 @@ func TestRunSelectionSurvivesServiceFocusChanges(t *testing.T) {
 			model.refreshServices()
 			model.moveFocus(0)
 			want := "ALL RUNS"
-			if selection == "latest" {
+			switch selection {
+			case "latest":
 				want = "RUN #3/3"
-			} else if selection == "history" {
+			case "history":
 				want = "RUN #1/3 · [L] LATEST"
 			}
 			if got := model.runViewLabel(); got != want {
