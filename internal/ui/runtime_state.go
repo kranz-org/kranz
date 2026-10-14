@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"maps"
 	"time"
 
 	"github.com/kranz-org/kranz/internal/app"
@@ -48,6 +49,7 @@ type runtimeUIState struct {
 	runFollowsLatest bool
 	runListCursor    int
 	runStatusFilter  string
+	runSelections    map[app.RunTarget]runSelectionState
 	runViewports     map[runViewportKey]runViewportState
 
 	notifications []config.Notification
@@ -97,6 +99,7 @@ func (m *Model) captureUIState() runtimeUIState {
 		runFollowsLatest: m.runFollowsLatest,
 		runListCursor:    m.runListCursor,
 		runStatusFilter:  m.runStatusFilter,
+		runSelections:    maps.Clone(m.runSelections),
 		runViewports:     copyViewportMap(m.runViewports),
 
 		notifications: notifications,
@@ -220,6 +223,10 @@ func (m *Model) applyUIState(state runtimeUIState) {
 	m.runFollowsLatest = state.runFollowsLatest
 	m.runListCursor = state.runListCursor
 	m.runStatusFilter = state.runStatusFilter
+	m.runSelections = maps.Clone(state.runSelections)
+	if m.runSelections == nil {
+		m.runSelections = make(map[app.RunTarget]runSelectionState)
+	}
 	m.runViewports = copyViewportMap(state.runViewports)
 	m.reconcileRestoredRunSelection()
 	// syncRunTarget skipped its own restore while runTarget was still being
@@ -282,6 +289,7 @@ func (m *Model) resetUIStateToDefaults() {
 	m.runFollowsLatest = false
 	m.runListCursor = 0
 	m.runStatusFilter = ""
+	m.runSelections = make(map[app.RunTarget]runSelectionState)
 	m.runViewports = make(map[runViewportKey]runViewportState)
 	m.followMode, m.pinnedFollow = true, true
 	m.logPaused = false

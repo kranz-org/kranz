@@ -36,6 +36,9 @@ func (m *Model) syncRunTarget() bool {
 		carry := m.currentRunViewportState()
 		if !initial {
 			m.saveRunViewport()
+			m.runSelections[m.runTarget] = runSelectionState{
+				Mode: m.runMode, Run: m.selectedRun, FollowsLatest: m.runFollowsLatest,
+			}
 		}
 		m.runTarget = target
 		m.selectedRun = 0
@@ -44,6 +47,10 @@ func (m *Model) syncRunTarget() bool {
 		if target.Kind == app.RunKindAction {
 			m.runMode = runViewSingle
 			m.runFollowsLatest = true
+		}
+		if selection, exists := m.runSelections[target]; exists {
+			m.runMode, m.selectedRun, m.runFollowsLatest = selection.Mode, selection.Run, selection.FollowsLatest
+			m.reconcileRestoredRunSelection()
 		}
 		if !initial {
 			key := m.runViewportKey()
