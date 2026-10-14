@@ -55,6 +55,12 @@ const (
 	runViewSingle
 )
 
+type runSelectionState struct {
+	Mode          runViewMode
+	Run           uint32
+	FollowsLatest bool
+}
+
 type runViewportKey struct {
 	Target app.RunTarget
 	Mode   runViewMode
@@ -298,6 +304,7 @@ type Model struct {
 	runFollowsLatest bool
 	runListCursor    int
 	runStatusFilter  string
+	runSelections    map[app.RunTarget]runSelectionState
 	runViewports     map[runViewportKey]runViewportState
 	exportTarget     app.RunTarget
 	exportRun        uint32
@@ -546,6 +553,7 @@ func NewModelWithOptions(cfg *config.Config, version string, options ModelOption
 		listMode:             listServices,
 		logSearcher:          kranzlog.NewSearcher(),
 		pinnedSearcher:       kranzlog.NewSearcher(),
+		runSelections:        make(map[app.RunTarget]runSelectionState),
 		runViewports:         make(map[runViewportKey]runViewportState),
 		searchInput:          newSearchInput(),
 		paramInput:           newParamInput(),

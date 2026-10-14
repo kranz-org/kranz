@@ -40,6 +40,77 @@ func TestSingleRunViewerNavigatesStableServiceRuns(t *testing.T) {
 	}
 }
 
+func TestRunSelectionSurvivesServiceFocusChanges(t *testing.T) {
+	for _, selection := range []string{"latest", "history", "combined"} {
+		t.Run(selection, func(t *testing.T) {
+			model := newTestModel()
+			defer model.Shutdown()
+			finishTestServiceRun(t, model, "api", 0, "first output")
+			finishTestServiceRun(t, model, "api", 0, "second output")
+			model.refreshServices()
+			pressKey(model, 'x')
+			switch selection {
+			case "history":
+				model.moveRun(-1, false)
+			case "combined":
+				pressKey(model, 'x')
+			}
+			model.moveFocus(1)
+			if got := model.runViewLabel(); got != "ALL RUNS" {
+				t.Fatalf("unvisited service inherited selection: %q", got)
+			}
+			pressKey(model, 'x')
+			finishTestServiceRun(t, model, "api", 0, "third output")
+			model.refreshServices()
+			model.moveFocus(0)
+			want := "ALL RUNS"
+			switch selection {
+			case "latest":
+				want = "RUN #3/3"
+			case "history":
+				want = "RUN #1/3 · [L] LATEST"
+			}
+			if got := model.runViewLabel(); got != want {
+				t.Fatalf("returned selection = %q, want %q", got, want)
+			}
+			if selection == "history" {
+				plain := ansi.Strip(model.renderLogPanel(model.FocusedService(), 90, 12))
+				if !strings.Contains(plain, "first output") || strings.Contains(plain, "second output") || strings.Contains(plain, "third output") {
+					t.Fatalf("restored history leaked another run:\n%s", plain)
+				}
+			}
+		})
+	}
+}
+
+func TestRunSelectionsSurviveRuntimeStateRestore(t *testing.T) {
+	model := newTestModel()
+	defer model.Shutdown()
+	finishTestServiceRun(t, model, "api", 0, "first output")
+	finishTestServiceRun(t, model, "api", 0, "second output")
+	model.refreshServices()
+	model.selectLatestRun()
+	model.moveRun(-1, false)
+	model.moveFocus(1)
+	model.syncRunTarget()
+	captured := model.captureUIState()
+	model.resetUIStateToDefaults()
+	if len(model.runSelections) != 0 {
+		t.Fatal("new runtime inherited run selections")
+	}
+	model.applyUIState(captured)
+	model.selectLatestRun()
+	model.moveFocus(0)
+	if got := model.runViewLabel(); got != "RUN #1/2 · [L] LATEST" {
+		t.Fatalf("runtime restore lost inactive service selection: %q", got)
+	}
+	model.moveFocus(1)
+	model.syncRunTarget()
+	if saved := captured.runSelections[app.ServiceRunTarget("worker")]; saved.Mode != runViewCombined {
+		t.Fatal("runtime snapshot shares mutable selections with model")
+	}
+}
+
 func TestRunLabelsSeparateAutoUpdatingLatestAndHistoryViews(t *testing.T) {
 	model := newTestModel()
 	defer model.Shutdown()
