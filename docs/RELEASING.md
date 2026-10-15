@@ -8,8 +8,8 @@ workflow; generated binaries are never checked into the repository.
 
 1. Confirm that the public `kranz-org/kranz` repository uses `main` as its
    default branch and contains only reviewed release-ready history.
-2. Make `main` the default branch. Require the `Lint`, `Go (ubuntu-latest)`, and
-   `Go (macos-latest)` checks before merging, require pull requests, and prevent
+2. Make `main` the default branch. Require the `Lint`, `Go ubuntu-latest`, and
+   `Go macos-latest` checks before merging, require pull requests, and prevent
    force pushes and branch deletion.
 3. Enable private vulnerability reporting, Dependabot security updates, secret
    scanning, and push protection in the repository security settings.
@@ -33,6 +33,11 @@ workflow; generated binaries are never checked into the repository.
 
 ## Prepare a release
 
+Resolve and merge the release's feature, fix and dependency pull requests
+first. Prepare the final changelog and release guide on a dedicated release
+branch, wait for its required CI and merge it. Create the tag from the resulting
+clean, synchronized `main` only after its own CI passes.
+
 1. Move user-visible entries from `Unreleased` into a versioned section in
    `CHANGELOG.md`, including the release date.
 2. Confirm the working tree is clean and `main` is up to date.
@@ -42,7 +47,7 @@ workflow; generated binaries are never checked into the repository.
    make verify
    make lint
    make release-check
-   make snapshot RELEASE_VERSION=0.16.2 # use the release being prepared
+   make snapshot RELEASE_VERSION=0.17.0 # use the release being prepared
    ./dist/kranz_darwin_arm64_v8.0/kranz --version # choose the local platform build
    make packages-verify
    PACKAGE_ARCH=arm64 make packages-verify
@@ -59,9 +64,9 @@ workflow; generated binaries are never checked into the repository.
 4. Create an annotated tag without pushing it automatically:
 
    ```bash
-   make tag RELEASE_VERSION=0.16.2 # use the release being published
-   git show v0.16.2
-   git push origin v0.16.2
+   make tag RELEASE_VERSION=0.17.0 # use the release being published
+   git show v0.17.0
+   git push origin v0.17.0
    ```
 
 ## Verify the published release
@@ -73,8 +78,8 @@ replaces generated commit notes with the matching version section from
 the release before announcing it:
 
 ```bash
-gh release view v0.16.2
-gh release download v0.16.2 \
+gh release view v0.17.0
+gh release download v0.17.0 \
   --pattern 'checksums.txt' \
   --pattern '*.tar.gz' \
   --pattern '*.deb' \
