@@ -345,6 +345,62 @@ func TestDoubleClickOpensServiceAndGroup(t *testing.T) {
 	}
 }
 
+func TestDoubleClickTogglesActionParams(t *testing.T) {
+	for _, kind := range []config.ActionOwnerKind{config.ActionOwnerService, config.ActionOwnerGroup} {
+		t.Run(string(kind), func(t *testing.T) {
+			actions := map[string]config.Action{
+				"inspect": {Argv: config.ArgvList{"/bin/echo", "{{target}}"}, Params: map[string]config.ActionParam{
+					"target": {Type: "text"},
+				}},
+				"verify": {Argv: config.ArgvList{"/bin/echo", "{{target}}"}, Params: map[string]config.ActionParam{
+					"target": {Type: "text"},
+				}},
+				"plain": {Command: "true"},
+			}
+			cfg := &config.Config{Project: "Action clicks"}
+			if kind == config.ActionOwnerService {
+				cfg.Services = map[string]config.Service{"tools": {Actions: actions}}
+			} else {
+				cfg.ActionGroups = map[string]config.ActionGroup{"tools": {Actions: actions}}
+			}
+			model := NewModel(cfg, "test")
+			defer model.Shutdown()
+			model.width, model.height, model.ready = 120, 40, true
+			model.expandedActionOwner[actionOwnerKey(kind, "tools")] = true
+			id := config.ActionID{OwnerKind: kind, Owner: "tools", Name: "inspect"}
+
+			clickRenderedText(t, model, "     "+actionStatusIndicator(app.ActionReady)+" inspect")
+			if model.focusedAction == nil || *model.focusedAction != id || model.expandedActionParams[id] {
+				t.Fatal("single click did not focus action with parameters collapsed")
+			}
+			clickRenderedText(t, model, "     "+actionStatusIndicator(app.ActionReady)+" inspect")
+			if !model.expandedActionParams[id] {
+				t.Fatal("double click did not expand action parameters")
+			}
+			clickRenderedText(t, model, "     "+actionStatusIndicator(app.ActionReady)+" inspect")
+			clickRenderedText(t, model, "     "+actionStatusIndicator(app.ActionReady)+" inspect")
+			if model.expandedActionParams[id] {
+				t.Fatal("double click did not collapse action parameters")
+			}
+
+			clickRenderedText(t, model, "     "+actionStatusIndicator(app.ActionReady)+" verify")
+			clickRenderedText(t, model, "     "+actionStatusIndicator(app.ActionReady)+" inspect")
+			if model.expandedActionParams[id] {
+				t.Fatal("clicks on different actions expanded parameters")
+			}
+			clickRenderedText(t, model, "     "+actionStatusIndicator(app.ActionReady)+" plain")
+			clickRenderedText(t, model, "     "+actionStatusIndicator(app.ActionReady)+" plain")
+			for _, name := range []string{"inspect", "verify", "plain"} {
+				actionID := config.ActionID{OwnerKind: kind, Owner: "tools", Name: name}
+				state, _ := model.app.ActionState(actionID)
+				if state.Status != app.ActionReady {
+					t.Fatalf("clicking %s changed action state to %s", name, state.Status)
+				}
+			}
+		})
+	}
+}
+
 func TestDoubleClickRequiresConsecutiveRowClicks(t *testing.T) {
 	model := NewModel(&config.Config{Project: "Service actions", Services: map[string]config.Service{
 		"app": {Actions: map[string]config.Action{"inspect": {Command: "true"}}},
