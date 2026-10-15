@@ -130,6 +130,8 @@ func (m *Model) captureUIState() runtimeUIState {
 // Passing the zero value applies Kranz's ordinary defaults, which is what a
 // runtime visited for the first time in this process gets.
 func (m *Model) applyUIState(state runtimeUIState) {
+	m.logSelection = nil
+	m.logClick = logClickState{}
 	if !state.populated {
 		m.resetUIStateToDefaults()
 		return

@@ -21,6 +21,15 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m.beginShutdown()
 	}
+	if m.logSelection != nil && m.logSelection.active {
+		if !m.logSelection.saving {
+			msg = normalizeShortcutKey(msg)
+		}
+		return m.handleSelectionKey(msg)
+	}
+	if m.logSelection != nil {
+		m.logSelection = nil
+	}
 	if key.Matches(msg, m.keys.Shell) {
 		return m, m.openCommandShell()
 	}
@@ -86,6 +95,10 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) handleNormalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.String() == "y" && (m.panelFocus == panelLogs || m.panelFocus == panelPinnedLogs) {
+		m.beginLogSelection()
+		return m, nil
+	}
 	if key.Matches(msg, m.keys.Reload) {
 		return m, tea.Batch(m.reloadConfig(true), m.probeTerminalBackground(true))
 	}

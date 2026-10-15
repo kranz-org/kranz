@@ -2,6 +2,24 @@
 
 All notable changes to Kranz are documented here. The project follows [Semantic Versioning](https://semver.org/), and release notes are generated from conventional commit subjects.
 
+## Unreleased
+
+### Added
+
+- Select log fragments with mouse drag, token/line clicks, or keyboard line
+  ranges in main/pinned service and action panels, in Combined/Single views.
+- Copy clean source text or Markdown context, retain frozen bounded selections
+  for retry, and save clean fragments with overwrite confirmation and recoverable
+  write errors. Wraps, Unicode, filters and incoming output preserve selection.
+
+### Fixed
+
+- Send OSC 52 through the shared terminal writer in alternate-screen dashboards
+  (bare launch and `attach`), including existing run export. Report requests as sent,
+  enforce a 64 KiB budget without truncation, and report output failures.
+- Use one readable log projection for control characters, tabs and grapheme
+  wrapping; carriage return/backspace output shows overwritten text consistently.
+
 ## [Unreleased]
 
 ## [0.16.5] - 2026-10-07
