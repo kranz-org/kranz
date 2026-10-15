@@ -287,10 +287,13 @@ func TestLogSelectionViewportOnlyAndNowrapFullLine(t *testing.T) {
 	}
 }
 func TestLogSelectionFrameFitsThemesAndSizes(t *testing.T) {
+	restoreDefaultTheme(t)
 	m := selectionTestModel(t, "ERROR example", "\t雪 é 👩‍💻")
 	selectAllSnapshot(m)
-	for _, theme := range []string{"default", "dracula", "nord"} {
-		_, _ = applyAppearance(theme, "", backgroundTerminal, colorModeAuto, true)
+	for _, theme := range []string{DefaultTheme, "dracula", "nord"} {
+		if _, err := applyAppearance(theme, "", backgroundTerminal, colorModeAuto, true); err != nil {
+			t.Fatal(err)
+		}
 		for _, width := range []int{64, 80, 120} {
 			m.width = width
 			view := m.View()
