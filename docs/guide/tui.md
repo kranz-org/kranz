@@ -204,7 +204,9 @@ terminal controls, generated prefixes, borders and padding. Soft wraps do not
 add line breaks, and no final newline is added. `a` selects only visible viewport
 text; full-line keyboard selection includes the entire logical line.
 
-The active panel shows **SELECT · frozen** with line/byte counts. Its bounded
+The active panel shows **SELECT · frozen** with line/byte counts. Selected text
+uses a theme accent fill that contrasts with the canvas, including near-white
+custom backgrounds; its text color is chosen separately for readability. Its bounded
 snapshot stays stable during incoming logs, retention eviction, resize and wrap
 changes. Filters omit hidden records; highlight includes intermediate records.
 The snapshot budget is 1 MiB of readable text and metadata or 20,000 logical

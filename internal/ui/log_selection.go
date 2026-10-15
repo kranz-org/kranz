@@ -8,7 +8,6 @@ import (
 	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/kranz-org/kranz/internal/app"
 	"github.com/kranz-org/kranz/internal/config"
@@ -371,7 +370,7 @@ func (m *Model) renderLogSelection(width, height int) string {
 		for _, cell := range row.visual.cells {
 			selected := s.lines[row.line].selectable && cell.start >= 0 && !pointLess(logPoint{row.line, cell.start}, a) && pointLess(logPoint{row.line, cell.start}, b)
 			if selected {
-				text.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("0")).Background(lipgloss.Color("15")).Render(cell.text))
+				text.WriteString(LogTextSelectionStyle.Render(cell.text))
 			} else {
 				text.WriteString(styleLogLine(cell.text))
 			}

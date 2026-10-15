@@ -61,6 +61,7 @@ var (
 	ParamCommandIdleStyle lipgloss.Style
 	ParamDisabledStyle    lipgloss.Style
 	ParamFieldFocusStyle  lipgloss.Style
+	LogTextSelectionStyle lipgloss.Style
 	SelectionStyle        lipgloss.Style
 	ContextBarStyle       lipgloss.Style
 	PrimaryButtonStyle    lipgloss.Style
@@ -186,6 +187,8 @@ func applyPalette(theme Theme) {
 	// The field under the cursor is filled rather than pointed at, so a form
 	// reads as a form and the eye lands on the whole row.
 	ParamFieldFocusStyle = lipgloss.NewStyle().Foreground(ColorSelectText).Background(ColorSelection)
+	selectionBackground, selectionText := logTextSelectionColors(theme)
+	LogTextSelectionStyle = lipgloss.NewStyle().Background(lipgloss.Color(selectionBackground)).Foreground(lipgloss.Color(selectionText))
 	SelectionStyle = lipgloss.NewStyle().Foreground(ColorSelectText).Background(ColorSelection).Bold(true)
 	ContextBarStyle = lipgloss.NewStyle().Foreground(ColorDim)
 	PrimaryButtonStyle = lipgloss.NewStyle().Foreground(ColorAccentText).Bold(true).Padding(0, 1)

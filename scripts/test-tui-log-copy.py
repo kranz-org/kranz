@@ -6,6 +6,7 @@ Requires tmux and a POSIX shell. Uses only a disposable synthetic runtime and
 an isolated tmux server with set-clipboard on; prints no host paths or IDs.
 """
 import os
+import re
 from pathlib import Path
 import shlex
 import shutil
@@ -32,6 +33,11 @@ services:
     shell: sh
     command: 'printf "prefix https://example.test/path suffix\n雪é👩‍💻\tend\n"; while :; do sleep 1; printf "incoming sample\n"; done'
 '''
+        background = os.environ.get("KRANZ_COPY_SMOKE_BACKGROUND", "")
+        if background:
+            if not re.fullmatch(r"#[0-9a-fA-F]{6}", background):
+                raise ValueError("synthetic canvas must be hex")
+            config += 'ui:\n  theme: kranz\n  accent: "#7AA2F7"\n  background: "' + background + '"\n'
         (root / "kranz.yml").write_text(config)
         (root / "paste.py").write_text('''import os,sys,tty
 tty.setraw(0)
