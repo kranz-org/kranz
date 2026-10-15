@@ -6,8 +6,6 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [0.17.0] - 2026-10-15
 
-Changes since [0.16.5](https://github.com/kranz-org/kranz/compare/v0.16.5...v0.17.0).
-
 ### Added
 
 - Select and copy log fragments in main and pinned service/action panels,
