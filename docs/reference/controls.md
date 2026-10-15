@@ -270,3 +270,33 @@ A restart reuses the project directory and configuration paths Kranz already
 had for that runtime; it does not repeat any command a user typed. If it
 fails, the reason stays on screen and either action can be tried again. Both
 options are also available by clicking their label.
+
+## Select and copy log fragments
+
+In a focused main or pinned log panel, press `y` or drag to select text.
+Dragging can start in empty space, including row padding or below the logs.
+A plain click only focuses. Double click selects a non-whitespace token; triple
+click selects a logical line. Click outside the selection to clear it;
+Shift-click extends an existing selection.
+Generated timestamps and source labels are excluded from copied text.
+Service and action logs support both Combined and Single run views.
+
+| While selecting | Action |
+| --- | --- |
+| `Up/Down`, `j/k` | Replace the selection with one logical line |
+| `Shift+Up/Down` | Extend the line range |
+| `PageUp/PageDown` | Move by a page of lines |
+| `Alt+PageUp/PageDown` | Extend the range by a page (Shift-page is not decoded by the terminal library) |
+| `Home/End`, with `Shift` to extend | First/last snapshot line |
+| `a` | Select visible viewport text, including partial wrapped lines |
+| `w` | Toggle wrap; preserve the selected source offsets |
+| `Enter` | Copy selected text |
+| `Esc` | Done; restore previous follow/pause or browse position |
+
+Copy keeps the selection for retry. Scrolling uses the frozen snapshot;
+other panels and services keep updating. Selection never crosses panel borders.
+Keyboard selection chooses full logical lines, including an invisible nowrap
+tail; mouse selection chooses grapheme boundaries. `Ctrl+C` keeps interrupt/quit
+semantics. `c` is inactive while selecting; leave selection before clearing logs.
+Lifecycle shortcuts require leaving selection first. `e`/`Shift+E`
+continue to export a whole run outside selection.

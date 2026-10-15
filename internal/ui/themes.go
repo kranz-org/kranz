@@ -134,6 +134,25 @@ func normalizeTheme(theme Theme) Theme {
 	return theme
 }
 
+// logTextSelectionColors makes a selected fragment distinct from the canvas,
+// separately from making its text readable. Keep the theme accent's hue and
+// move it toward the more contrasting endpoint only as far as necessary. In
+// particular, never use terminal palette "white" as a fixed selection fill.
+func logTextSelectionColors(theme Theme) (background, foreground string) {
+	background = theme.Accent
+	if contrastRatio(background, theme.Surface) < 3 {
+		endpoint := readableTextOn(theme.Surface, background)
+		for step := 1; step <= 20; step++ {
+			candidate := mixHex(theme.Accent, endpoint, float64(step)/20)
+			if contrastRatio(candidate, theme.Surface) >= 3 {
+				background = candidate
+				break
+			}
+		}
+	}
+	return background, readableTextOn(background, theme.Text)
+}
+
 // readableTextOn returns a foreground that reads on an arbitrary background:
 // the preferred colour when it already contrasts, otherwise whichever of black
 // or white contrasts more. ensureContrast is not enough on its own here — it

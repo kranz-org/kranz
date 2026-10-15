@@ -51,6 +51,10 @@ func (m *Model) handleCurrentRuntimeLostMsg(msg currentRuntimeLostMsg) (tea.Mode
 	if msg.sessionGen != m.sessionGeneration || m.exiting || m.mode == ModeRuntimeLost {
 		return m, nil
 	}
+	if m.logSelection != nil && m.logSelection.active {
+		m.logSelection.disconnected = true
+		m.logSelection.dragging = false
+	}
 	m.mode = ModeRuntimeLost
 	m.recoveryReason = "Runtime stopped"
 	m.recoveryErr = ""

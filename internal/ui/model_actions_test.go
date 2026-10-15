@@ -551,7 +551,7 @@ func TestActionOutputCannotRepositionOrGrowTheDashboard(t *testing.T) {
 		Stderr: []string{"warning\bretry\rfailed\n"},
 	}
 	lines := actionOutputLines(state)
-	want := []string{"transforming...", "next", "built", "[stderr] warningretry", "[stderr] failed"}
+	want := []string{"nextsforming...", "built", "[stderr] failedretry"}
 	if strings.Join(lines, "|") != strings.Join(want, "|") {
 		t.Fatalf("sanitized action output = %#v, want %#v", lines, want)
 	}

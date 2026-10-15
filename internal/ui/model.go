@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -235,6 +236,9 @@ type portDetailsMsg struct {
 
 // Model owns Kranz's Bubble Tea state and runtime service integrations.
 type Model struct {
+	logClick         logClickState
+	logSelection     *logSelection
+	terminalOutput   io.Writer
 	cfg              *config.Config
 	version          string
 	workingDirectory string
@@ -460,9 +464,10 @@ type Model struct {
 
 // ModelOptions supplies user-level preferences and their persistence path.
 type ModelOptions struct {
-	Settings     usersettings.Settings
-	SettingsPath string
-	ConfigPaths  []string
+	TerminalOutput io.Writer
+	Settings       usersettings.Settings
+	SettingsPath   string
+	ConfigPaths    []string
 	// DarkBackground is detected by the executable. Nil keeps the historical
 	// dark default for embedders and deterministic tests.
 	DarkBackground *bool
@@ -526,6 +531,7 @@ func NewModelWithOptions(cfg *config.Config, version string, options ModelOption
 	rpcClient, _ := application.(*kranzruntime.Client)
 
 	model := &Model{
+		terminalOutput:       options.TerminalOutput,
 		cfg:                  application.Config(),
 		version:              version,
 		workingDirectory:     workingDirectory,
@@ -641,10 +647,30 @@ func (m *Model) RequestedExitCode() int {
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		if m.logSelection != nil {
+			m.logSelection.dragging = false
+			if !m.logSelection.active {
+				m.logSelection = nil
+			}
+		}
 		m.width, m.height, m.ready = msg.Width, msg.Height, true
 		m.syncSearchInputWidth()
 		return m, m.scanFocusedPorts(false)
+	case tea.BlurMsg:
+		if m.logSelection != nil {
+			m.logSelection.dragging = false
+			if !m.logSelection.active {
+				m.logSelection = nil
+			}
+		}
+		return m, nil
 	case tea.FocusMsg:
+		if m.logSelection != nil {
+			m.logSelection.dragging = false
+			if !m.logSelection.active {
+				m.logSelection = nil
+			}
+		}
 		// Some terminals (observed with Zed's integrated terminal) drop mouse
 		// tracking mode when a tab or macOS workspace loses and regains focus.
 		// Re-assert it immediately; the tick watchdog below also recovers when
@@ -712,6 +738,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.addNotification("shell", "Returned to Kranz", config.LogInfo)
 		}
 		return m, tea.Batch(tea.ClearScreen, m.probeTerminalBackground(true))
+	case selectionScrollMsg:
+		return m.handleSelectionScroll(msg)
+	case clipboardResultMsg:
+		if msg.err != nil {
+			m.addNotification(msg.source, "Clipboard output failed; check terminal clipboard permissions and retry", config.LogError)
+		} else {
+			m.addNotification(msg.source, fmt.Sprintf("Sent %d lines / %d bytes to clipboard", msg.lines, msg.bytes), config.LogInfo)
+		}
+		return m, nil
 	case runExportResultMsg:
 		if msg.err != nil {
 			m.addNotification("export", "Run export failed: "+msg.err.Error(), config.LogError)
@@ -767,6 +802,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.refreshServices()
 		if requested, _ := m.app.ProjectExitRequested(); requested && !m.projectExitHandled {
+			if m.logSelection != nil && m.logSelection.active {
+				m.logSelection.disconnected = true
+				m.logSelection.dragging = false
+				m.mode = ModeRuntimeLost
+				return m, m.pollServices()
+			}
 			m.projectExitHandled = true
 			return m.beginShutdown()
 		}
