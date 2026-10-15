@@ -25,7 +25,11 @@ func (m *Model) View() string {
 
 	var content string
 	exact := false
-	switch m.mode {
+	mode := m.mode
+	if m.logSelection != nil && m.logSelection.active {
+		mode = ModeNormal
+	}
+	switch mode {
 	case ModeHelp:
 		content = m.renderHelpView()
 	case ModeHealthHistory:
@@ -176,6 +180,9 @@ func (m *Model) renderDashboardBlock(footer string) frameBlock {
 	leftWidth := m.dashboardLeftWidth()
 	rightWidth := m.width - leftWidth
 	panelHeight := m.height - 2
+	if m.logSelection != nil && m.logSelection.active {
+		panelHeight = m.height - 1 - lenSelectionFooter(m)
+	}
 
 	header := m.renderHeader()
 	leftPanel := m.renderServiceColumn(leftWidth, panelHeight)
@@ -252,7 +259,10 @@ func displayVersion(version string) string {
 
 // renderStatusBar renders lifecycle actions and contextual log/search state.
 func (m *Model) renderStatusBar() string {
-	buttons := m.actionButtons()
+	if m.logSelection != nil && m.logSelection.active {
+		return m.selectionFooter()
+	}
+	buttons := m.dashboardActionButtons()
 	parts := make([]string, 0, len(buttons))
 	for _, button := range buttons {
 		parts = append(parts, button.rendered)
@@ -269,9 +279,7 @@ func (m *Model) renderStatusBar() string {
 }
 
 func actionSeparator() string {
-	// Buttons already carry horizontal padding, so a single muted cell creates
-	// the same visual rhythm as lazygit without wasting narrow-terminal space.
-	return ContextBarStyle.Render("│")
+	return " "
 }
 
 type actionButton struct {
@@ -423,7 +431,7 @@ func (m *Model) actionButtons() []actionButton {
 
 func (m *Model) actionAt(x int) string {
 	left := 0
-	buttons := m.actionButtons()
+	buttons := m.dashboardActionButtons()
 	for index, button := range buttons {
 		right := left + lipgloss.Width(button.rendered)
 		if x >= left && x < right {
@@ -605,4 +613,15 @@ func padPlainLine(line string, width int) string {
 		line += strings.Repeat(" ", width-lipgloss.Width(line))
 	}
 	return line
+}
+
+func (m *Model) dashboardActionButtons() []actionButton {
+	if m.panelFocus == panelLogs || m.panelFocus == panelPinnedLogs {
+		return []actionButton{
+			{action: "select-logs", rendered: SecondaryButtonStyle.Render("[y] Select & copy")},
+			{action: "clear-logs", rendered: SecondaryButtonStyle.Render("[c] Clear")},
+			{action: "quit", rendered: DangerButtonStyle.Render("Quit: q")},
+		}
+	}
+	return m.actionButtons()
 }

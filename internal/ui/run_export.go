@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -52,11 +51,7 @@ func (m *Model) copySelectedRun() tea.Cmd {
 		return nil
 	}
 	payload := formatRunExport(export)
-	encoded := base64.StdEncoding.EncodeToString([]byte(payload))
-	m.addNotification("export", fmt.Sprintf("Copied %s#%d to clipboard", runTargetLabel(target), run), config.LogInfo)
-	// OSC 52 is the terminal-native clipboard protocol and works identically
-	// for `up` and `attach`; it writes only after the explicit keypress.
-	return tea.Printf("%s", "\x1b]52;c;"+encoded+"\a")
+	return m.sendClipboard(payload, "export")
 }
 
 func (m *Model) openRunExport() tea.Cmd {

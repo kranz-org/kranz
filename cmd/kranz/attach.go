@@ -67,7 +67,8 @@ func runAttachedTUI(client *kranzruntime.Client, cfg *config.Config, record kran
 	programReady := make(chan struct{})
 	focusReported := make(chan struct{})
 	var focusOnce sync.Once
-	model := ui.NewModelWithOptions(cfg, version, ui.ModelOptions{Settings: userSettings, SettingsPath: settingsPath, ConfigPaths: cfg.Paths, DarkBackground: &darkBackground, App: client, DetachOnExit: true, ProgramReady: func() { close(programReady) },
+	terminalOutput := ui.NewTerminalOutput(os.Stdout)
+	model := ui.NewModelWithOptions(cfg, version, ui.ModelOptions{TerminalOutput: terminalOutput, Settings: userSettings, SettingsPath: settingsPath, ConfigPaths: cfg.Paths, DarkBackground: &darkBackground, App: client, DetachOnExit: true, ProgramReady: func() { close(programReady) },
 		FocusReported: func() { focusOnce.Do(func() { close(focusReported) }) },
 		Registry:      registry, SessionRecord: record, RestartRuntime: makeRestartRuntime(options)})
 	defer func() {
@@ -79,7 +80,7 @@ func runAttachedTUI(client *kranzruntime.Client, cfg *config.Config, record kran
 		// thing still referencing the live connection.
 		runErr = errors.Join(runErr, model.CloseCurrentConnection())
 	}()
-	program := tea.NewProgram(model, dashboardProgramOptions()...)
+	program := tea.NewProgram(model, append(dashboardProgramOptions(), tea.WithOutput(terminalOutput))...)
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer signal.Stop(signals)

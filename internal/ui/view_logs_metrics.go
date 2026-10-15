@@ -3,7 +3,6 @@ package ui
 import (
 	"strings"
 
-	"github.com/charmbracelet/x/ansi"
 	"github.com/kranz-org/kranz/internal/app"
 	"github.com/kranz-org/kranz/internal/config"
 )
@@ -103,7 +102,7 @@ func (c *logRowMetrics) totalActionRows(view actionLogView, width int) int {
 		c.actionRunning != view.running || (len(view.output) > 0 && (first == 0 || last == 0)) {
 		c.actionRows = make([]int, view.len()+1)
 		for index := 0; index < view.len(); index++ {
-			c.actionRows[index+1] = c.actionRows[index] + strings.Count(ansi.Hardwrap(styleLogLine(view.line(index)), width, true), "\n") + 1
+			c.actionRows[index+1] = c.actionRows[index] + projectedRowCount(view.line(index), width, true)
 		}
 		c.actionFirst, c.actionLast, c.actionRun = first, last, view.selectedRun
 		c.actionPrefix, c.actionMarker, c.actionRunning = prefix, view.marker, view.running
@@ -117,10 +116,7 @@ func (c *logRowMetrics) pinnedActionRowCount(m *Model, entry config.LogEntry, wi
 			return count
 		}
 	}
-	count := 1
-	if m.wrapLogs {
-		count += strings.Count(ansi.Hardwrap(styleLogLine(m.pinnedActionDisplayLine(entry)), width, true), "\n")
-	}
+	count := projectedRowCount(m.pinnedActionDisplayLine(entry), width, m.wrapLogs)
 	if entry.Sequence > 0 {
 		c.counts[entry.Sequence] = count
 	}
@@ -167,13 +163,5 @@ func (c *logRowMetrics) forget(entries []config.LogEntry) {
 // countLogEntryRows must agree exactly with logEntryVisualRows, which is what
 // keeps the scrollbar honest about output nobody has styled yet.
 func (m *Model) countLogEntryRows(entry config.LogEntry, contentWidth int) int {
-	count := 0
-	for _, segment := range strings.Split(m.displayLogEntry(entry), "\n") {
-		if !m.wrapLogs {
-			count++
-			continue
-		}
-		count += strings.Count(ansi.Hardwrap(styleLogLine(segment), contentWidth, true), "\n") + 1
-	}
-	return count
+	return projectedRowCount(m.displayLogEntry(entry), contentWidth, m.wrapLogs)
 }

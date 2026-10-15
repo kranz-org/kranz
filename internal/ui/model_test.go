@@ -46,16 +46,20 @@ func TestMainViewExposesPrimaryActionAndReadableState(t *testing.T) {
 	}
 }
 
-func TestStatusBarSeparatesEveryAction(t *testing.T) {
+func TestStatusBarActionsHaveNoDividers(t *testing.T) {
 	model := newTestModel()
 	defer model.Shutdown()
 	model.width = 120
 	bar := ansi.Strip(model.renderStatusBar())
-	want := len(model.actionButtons()) - 1
-	if got := strings.Count(bar, "│"); got != want {
-		t.Fatalf("status separators = %d, want %d:\n%s", got, want, bar)
+	if strings.Contains(bar, "│") {
+		t.Fatal("action bar still has vertical dividers")
 	}
 	for _, button := range model.actionButtons() {
+		label := strings.TrimSpace(ansi.Strip(button.rendered))
+		index := strings.Index(bar, label)
+		if index < 0 || model.actionAt(lipgloss.Width(bar[:index])) != button.action {
+			t.Fatalf("button %q has an incorrect mouse target", label)
+		}
 		if label := ansi.Strip(button.rendered); !strings.Contains(label, ": ") {
 			t.Errorf("action label does not use lazygit key separator: %q", label)
 		}
