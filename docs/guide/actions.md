@@ -30,7 +30,7 @@ services:
 ```
 
 Service actions inherit `dir`, `shell`, `env`, and `env_files`. Expand a service
-with `Enter`, focus an action, and press `s`. Output, exit code, and duration are
+with `Enter` or a double click, focus an action, and press `s`. Output, exit code, and duration are
 retained separately from service logs.
 
 Run the action again and both results remain independently addressable. `[` and
@@ -39,6 +39,9 @@ opens the full run history. The selected run keeps its own scroll and search
 position, so comparing two executions does not lose your place.
 
 ## Typed parameters
+
+Press `Enter` or double-click a parameterized action to expand or collapse its
+parameters. A single click focuses it; `s` runs it.
 
 Use parameters when several actions differ only by a target, count, flag, or
 environment value. One declaration becomes the source of truth for the TUI,
