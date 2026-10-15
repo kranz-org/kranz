@@ -542,6 +542,25 @@ func TestForceDownRecoversUnreachableBackgroundRuntime(t *testing.T) {
 	}
 }
 
+// followLogBuffer lets the test wait for observable streaming without racing
+// the subprocess's stdout copier or assuming a fixed process startup time.
+type followLogBuffer struct {
+	mu   sync.Mutex
+	data bytes.Buffer
+}
+
+func (b *followLogBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.data.Write(p)
+}
+
+func (b *followLogBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.data.String()
+}
+
 func TestLogsSnapshotFollowAndClientInterrupt(t *testing.T) {
 	directory := t.TempDir()
 	name := fmt.Sprintf("test-logs-%d", os.Getpid())
@@ -611,19 +630,38 @@ func TestLogsSnapshotFollowAndClientInterrupt(t *testing.T) {
 		t.Fatalf("JSON logs exit=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
 	}
 
-	data, _ := json.Marshal([]string{"-p", name, "logs", "emitter", "--follow", "--tail=0"})
+	data, _ := json.Marshal([]string{"-p", name, "logs", "emitter", "--follow", "--tail=1"})
 	follow := exec.Command(os.Args[0], "-test.run=^TestBackgroundHelperProcess$")
 	follow.Env = append(os.Environ(), "KRANZ_TEST_BACKGROUND_HELPER=1", "KRANZ_TEST_BACKGROUND_ARGS="+base64.StdEncoding.EncodeToString(data))
-	var followOut, followErr bytes.Buffer
+	var followOut followLogBuffer
+	var followErr bytes.Buffer
 	follow.Stdout, follow.Stderr = &followOut, &followErr
 	if err := follow.Start(); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(200 * time.Millisecond)
+	defer func() {
+		if follow.ProcessState == nil {
+			_ = follow.Process.Kill()
+			_ = follow.Wait()
+		}
+	}()
+	waitForOutput := func(label string) {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for !strings.Contains(followOut.String(), label) {
+			if time.Now().After(deadline) {
+				t.Fatalf("follow did not emit %q: %s", label, followOut.String())
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	// The initial snapshot proves the child has connected before the restart;
+	// fresh output proves it has entered the signal-aware follow loop.
+	waitForOutput("[emitter#1 ")
 	if code := execute([]string{"-p", name, "restart", "emitter"}, io.Discard, &stderr); code != 0 {
 		t.Fatalf("restart during follow exit=%d stderr=%s", code, stderr.String())
 	}
-	time.Sleep(300 * time.Millisecond)
+	waitForOutput("[emitter#2 ")
 	if err := follow.Process.Signal(os.Interrupt); err != nil {
 		t.Fatal(err)
 	}
