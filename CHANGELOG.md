@@ -4,6 +4,33 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### Added
+
+- Select log fragments with mouse drag, token/line clicks, or keyboard line
+  ranges in main/pinned service and action panels, in Combined/Single views.
+- Copy selected source text with Enter and retain frozen bounded selections
+  for retry. Wraps, Unicode, filters and incoming output preserve selection.
+- Show a Clear button beside Select & copy in log panels, using the existing
+  log-clearing confirmation.
+
+### Fixed
+
+- Allow log selections to start in empty space and reset click counting after
+  dragging or leaving selection, so quick repeated selection works consistently.
+- Separate footer buttons with whitespace instead of vertical dividers.
+- Extend mouse selections through short and empty log lines when dragging
+  through the padding to their right.
+- Clear log selections consistently on plain clicks, including empty space,
+  metadata, panel borders, headers and unused footer space.
+- Give selected log text a theme accent fill with separate contrast guarantees
+  against the canvas and inside the selection, including near-white backgrounds;
+  use native reverse video in 16-color terminals to avoid palette collisions.
+- Send OSC 52 through the shared terminal writer in alternate-screen dashboards
+  (bare launch and `attach`), including existing run export. Report requests as sent,
+  enforce a 64 KiB budget without truncation, and report output failures.
+- Use one readable log projection for control characters, tabs and grapheme
+  wrapping; carriage return/backspace output shows overwritten text consistently.
+
 ## [0.16.5] - 2026-10-07
 
 ### Changed

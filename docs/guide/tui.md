@@ -186,3 +186,41 @@ overrides, log navigation, health history, notifications, shell handoff, mouse
 interaction, and shutdown behavior. The guides for [actions](./actions),
 [lifecycle](./lifecycle), [logs, runs, and ports](./logs-and-ports), and
 [appearance](./appearance) include focused recordings of those workflows.
+
+## Copy a fragment
+
+Focus a log panel with `3`. Drag over a URL or error, or press `y` to select the
+last visible logical line. Extend a keyboard selection with `Shift+Up/Down`.
+You can also start dragging in empty space to the right of or below the text.
+Press `Enter` to copy selected text.
+Click outside the selection to clear it; `Shift`-click extends it.
+Outside selection mode, `[c] Clear` opens the log-clearing confirmation.
+While text is selected, `c` does nothing; press `Esc` to leave selection first.
+For example, selecting these messages yields exactly:
+
+```text
+Connection refused
+    at connect (client.js:42)
+```
+
+Clean text retains indentation, tabs and application timestamps. It excludes
+terminal controls, generated prefixes, borders and padding. Soft wraps do not
+add line breaks, and no final newline is added. `a` selects only visible viewport
+text; full-line keyboard selection includes the entire logical line.
+
+The active panel shows **SELECT · frozen** with line/byte counts. Selected text
+uses a theme accent fill that contrasts with the canvas, including near-white
+custom backgrounds; its text color is chosen separately for readability. Its bounded
+snapshot stays stable during incoming logs, retention eviction, resize and wrap
+changes. Filters omit hidden records; highlight includes intermediate records.
+The snapshot budget is 1 MiB of readable text and metadata or 20,000 logical
+lines. Larger views are refused as a whole: choose a run or narrow the filter.
+A bounded “New logs” indicator reports incoming data without claiming a count.
+
+Copy preserves selection for retry. `Esc` restores the previous follow/pause or
+nearest retained browsing position. Changing panels, target/run/runtime or search
+ends selection. After disconnect or source removal, captured text remains
+available for copying; Done returns to normal recovery.
+
+See [selection controls](../reference/controls#select-and-copy-log-fragments)
+and [clipboard troubleshooting](./troubleshooting#nothing-pasted-from-the-tui).

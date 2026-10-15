@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
 	"github.com/kranz-org/kranz/internal/app"
 	"github.com/kranz-org/kranz/internal/config"
 )
@@ -16,6 +15,9 @@ import (
 // ordinary service output.
 
 func (m *Model) renderLogColumn(width, height int) string {
+	if m.selectionActive(panelLogs) && !m.hasPinnedRunView() {
+		return m.renderLogSelection(width, height)
+	}
 	pinnedTarget, hasPinned := m.pinnedRunTarget()
 	if !hasPinned {
 		if m.focusedAction != nil {
@@ -33,7 +35,9 @@ func (m *Model) renderLogColumn(width, height int) string {
 	}
 	focused := m.FocusedService()
 	bottom := m.renderLogPanel(focused, width, bottomHeight)
-	if m.focusedAction != nil {
+	if m.selectionActive(panelLogs) {
+		bottom = m.renderLogSelection(width, bottomHeight)
+	} else if m.focusedAction != nil {
 		bottom = m.renderActionLogPanel(width, bottomHeight)
 	} else if m.focusedActionGroup != "" {
 		bottom = m.renderActionGroupLogPanel(width, bottomHeight)
@@ -56,6 +60,9 @@ func (m *Model) renderActionGroupLogPanel(width, height int) string {
 }
 
 func (m *Model) renderActionLogPanel(width, height int) string {
+	if m.selectionActive(panelLogs) {
+		return m.renderLogSelection(width, height)
+	}
 	contentWidth := max(1, width-2)
 	contentHeight := max(1, height-2)
 	id, action, state, exists := m.focusedActionDefinition()
@@ -115,7 +122,7 @@ func (m *Model) renderActionLogPanel(width, height int) string {
 		rows := make([]string, 0, end-start)
 		for position := start; position < end; position++ {
 			index := sourceEntryIndex(indices, position)
-			row := ansi.Truncate(styleLogLine(content.line(index)), contentWidth, "…")
+			row := projectedTextRows(content.line(index), contentWidth, false)[0]
 			if m.searchMode == searchHighlight && matchSet[index] {
 				row = SearchHighlightStyle.Render(preserveStyleAfterReset(row, SearchHighlightStyle))
 			}
@@ -168,7 +175,7 @@ func styleActionRowWindow(view actionLogView, prefixRows, indices []int, selecti
 			consumed += count
 			continue
 		}
-		visual := strings.Split(ansi.Hardwrap(styleLogLine(view.line(index)), width, true), "\n")
+		visual := projectedTextRows(view.line(index), width, true)
 		for offset, row := range visual {
 			absolute := consumed + offset
 			if absolute >= start && absolute < end {
@@ -295,20 +302,7 @@ func appendSafeActionOutput(lines []string, output, prefix string) []string {
 	if output == "" {
 		return append(lines, prefix)
 	}
-	output = ansi.Strip(output)
-	output = strings.ReplaceAll(output, "\r\n", "\n")
-	output = strings.ReplaceAll(output, "\r", "\n")
-	parts := strings.Split(output, "\n")
-	if len(parts) > 0 && parts[len(parts)-1] == "" {
-		parts = parts[:len(parts)-1]
-	}
-	for _, part := range parts {
-		part = strings.Map(func(character rune) rune {
-			if character == '\t' || (character >= ' ' && character != '\x7f') {
-				return character
-			}
-			return -1
-		}, part)
+	for _, part := range strings.Split(readableLog(output), "\n") {
 		lines = append(lines, prefix+part)
 	}
 	return lines
@@ -341,6 +335,13 @@ func (m *Model) renderPinnedRunPanel(target app.RunTarget, width, height int) st
 }
 
 func (m *Model) renderLogPanelMode(svc *app.ServiceSnapshot, width, height int, pinned bool) string {
+	panel := panelLogs
+	if pinned {
+		panel = panelPinnedLogs
+	}
+	if m.selectionActive(panel) {
+		return m.renderLogSelection(width, height)
+	}
 	if !pinned {
 		m.syncRunTarget()
 	}
@@ -547,18 +548,7 @@ func (m *Model) styleLogRowWindow(window logRowWindow) []string {
 
 // logEntryVisualRows expands one entry into the terminal rows it occupies.
 func (m *Model) logEntryVisualRows(entry config.LogEntry, contentWidth int) []string {
-	var rows []string
-	for _, segment := range strings.Split(m.displayLogEntry(entry), "\n") {
-		styled := styleLogLine(segment)
-		visualLines := []string{ansi.Truncate(styled, contentWidth, "…")}
-		if m.wrapLogs {
-			visualLines = strings.Split(ansi.Hardwrap(styled, contentWidth, true), "\n")
-		}
-		for _, visualLine := range visualLines {
-			rows = append(rows, ansi.Truncate(visualLine, contentWidth, ""))
-		}
-	}
-	return rows
+	return projectedTextRows(m.displayLogEntry(entry), contentWidth, m.wrapLogs)
 }
 
 func (m *Model) scrollLogs(direction int) {
@@ -607,7 +597,7 @@ func (m *Model) scrollLogs(direction int) {
 }
 
 func (m *Model) currentLogPanelHeight() int {
-	height := max(1, m.height-2)
+	height := max(1, m.height-1-m.dashboardFooterHeight())
 	if m.hasPinnedRunView() {
 		_, height = m.logColumnLayout(height)
 	}
@@ -615,7 +605,7 @@ func (m *Model) currentLogPanelHeight() int {
 }
 
 func (m *Model) pinnedLogPanelHeight() int {
-	height := max(1, m.height-2)
+	height := max(1, m.height-1-m.dashboardFooterHeight())
 	if !m.hasPinnedRunView() {
 		return height
 	}
@@ -708,12 +698,7 @@ func (m *Model) displayedLogLineCount() int {
 func visualLogRowCount(lines []string, width int, wrap bool) int {
 	count := 0
 	for _, line := range lines {
-		for _, segment := range strings.Split(strings.ReplaceAll(line, "\r", ""), "\n") {
-			count++
-			if wrap {
-				count += strings.Count(ansi.Hardwrap(styleLogLine(segment), width, true), "\n")
-			}
-		}
+		count += projectedRowCount(line, width, wrap)
 	}
 	return count
 }
@@ -821,13 +806,13 @@ func (m *Model) serviceLogLines(svc *app.ServiceSnapshot) []string {
 func logEntryLines(entries []config.LogEntry) []string {
 	lines := make([]string, len(entries))
 	for index, entry := range entries {
-		lines[index] = strings.TrimRight(ansi.Strip(entry.Raw), "\r\n")
+		lines[index] = readableLog(entry.Raw)
 	}
 	return lines
 }
 
 func (m *Model) displayLogEntry(entry config.LogEntry) string {
-	line := strings.TrimRight(strings.ReplaceAll(ansi.Strip(entry.Raw), "\r", ""), "\n")
+	line := readableLog(entry.Raw)
 	if !m.showLogTime || entry.Timestamp.IsZero() {
 		return line
 	}

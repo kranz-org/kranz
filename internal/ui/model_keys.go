@@ -21,6 +21,13 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m.beginShutdown()
 	}
+	if m.logSelection != nil && m.logSelection.active {
+		msg = normalizeShortcutKey(msg)
+		return m.handleSelectionKey(msg)
+	}
+	if m.logSelection != nil {
+		m.logSelection = nil
+	}
 	if key.Matches(msg, m.keys.Shell) {
 		return m, m.openCommandShell()
 	}
@@ -86,6 +93,10 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) handleNormalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.String() == "y" && (m.panelFocus == panelLogs || m.panelFocus == panelPinnedLogs) {
+		m.beginLogSelection()
+		return m, nil
+	}
 	if key.Matches(msg, m.keys.Reload) {
 		return m, tea.Batch(m.reloadConfig(true), m.probeTerminalBackground(true))
 	}
@@ -352,6 +363,9 @@ func (m *Model) triggerAction(action string) (tea.Model, tea.Cmd) {
 		return m.restartSelectedService()
 	case "all":
 		m.toggleAllSelection()
+		return m, nil
+	case "clear-logs":
+		m.beginClearLogs()
 		return m, nil
 	case "quit":
 		m.mode = ModeConfirmQuit

@@ -189,3 +189,27 @@ configuration problem in your own project.
 If it is a Kranz problem, please
 [open an issue](https://github.com/kranz-org/kranz/issues) with your
 configuration and the version from `kranz --version`.
+
+## Nothing pasted from the TUI
+
+Nothing pasted? Check terminal clipboard permissions and retry.
+Kranz sends an OSC 52 clipboard request to the terminal running the dashboard (bare launch or `attach`).
+“Sent” confirms output transport, **not** the terminal's clipboard write.
+Retry Copy; it keeps the same selection. Kranz does not read
+the clipboard to verify delivery or automatically run remote clipboard helpers.
+
+Clipboard requests are limited to 64 KiB of UTF-8 text before base64 encoding.
+Larger selections are refused without truncation; select a smaller fragment. Some terminals impose smaller limits or disable OSC 52. With SSH, enable
+clipboard writes in the local terminal. With tmux, check its `set-clipboard`
+policy and terminal support for `Ms`; nested sessions and terminal policies may
+still block delivery. Application tests alone cannot establish those settings.
+
+Native terminal selection is another option: Option commonly overrides mouse
+tracking in iTerm2, and Shift does so in kitty and Windows Terminal. Modifiers
+and preferences differ. Kranz retains mouse focus recovery; right click does
+not automatically copy. Native Windows execution is outside this feature.
+
+In 16-color terminals (for example `TERM=linux`), log selection uses reverse
+video over the panel's normal text/background instead of approximating an RGB
+accent. 256-color and truecolor terminals use the theme accent with contrast
+correction. Set `TERM`/`COLORTERM` to match the terminal's actual capabilities.

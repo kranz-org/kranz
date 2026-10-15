@@ -72,6 +72,9 @@ func renderedTextRegionHit(rendered string, x, y int, label string, leftCells, r
 // keyboard input. Keeping both paths aligned prevents click-only behavior from
 // drifting away from documented shortcuts.
 func (m *Model) handleMouseMsg(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if model, cmd, handled := m.handleLogSelectionMouse(msg); handled {
+		return model, cmd
+	}
 	if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
 		m.mousePressSequence++
 	}
@@ -96,6 +99,10 @@ func (m *Model) handleDashboardMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if msg.Y == m.height-dashboardFooterRows {
 		if renderedTextHit(rendered, msg.X, msg.Y, "[/] regex") {
 			return m, m.openSearchEditor()
+		}
+		if m.actionAt(msg.X) == "select-logs" {
+			m.beginLogSelection()
+			return m, nil
 		}
 		return m.triggerAction(m.actionAt(msg.X))
 	}
@@ -193,7 +200,7 @@ func (m *Model) logPanelFocusAt(y int) panelFocus {
 	if !m.hasPinnedRunView() {
 		return panelLogs
 	}
-	topHeight, _ := m.logColumnLayout(m.height - dashboardHeaderRows - dashboardFooterRows)
+	topHeight, _ := m.logColumnLayout(m.height - dashboardHeaderRows - m.dashboardFooterHeight())
 	if y < dashboardHeaderRows+topHeight {
 		return panelPinnedLogs
 	}
@@ -654,6 +661,8 @@ func keyMessage(name string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyEsc}
 	case "tab":
 		return tea.KeyMsg{Type: tea.KeyTab}
+	case "ctrl+s":
+		return tea.KeyMsg{Type: tea.KeyCtrlS}
 	case "ctrl+u":
 		return tea.KeyMsg{Type: tea.KeyCtrlU}
 	default:

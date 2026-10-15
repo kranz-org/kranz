@@ -277,6 +277,9 @@ func (m *Model) pinnedEntries(target app.RunTarget) []config.LogEntry {
 }
 
 func (m *Model) renderPinnedActionRunPanel(target app.RunTarget, width, height int) string {
+	if m.selectionActive(panelPinnedLogs) {
+		return m.renderLogSelection(width, height)
+	}
 	contentWidth, contentHeight := max(1, width-2), max(1, height-2)
 	title := "[3] PINNED ACTION [Shift+3 UNPIN]" + ContextBarStyle.Render(" │ ") + ServiceNameStyle.Render(runTargetLabel(target)) +
 		" " + RunningBadgeStyle.Render(m.pinnedRunViewLabel())
@@ -344,11 +347,7 @@ func (m *Model) stylePinnedActionRowWindow(entries []config.LogEntry, indices []
 			consumed += count
 			continue
 		}
-		styled := styleLogLine(m.pinnedActionDisplayLine(entry))
-		visual := []string{ansi.Truncate(styled, width, "…")}
-		if m.wrapLogs {
-			visual = strings.Split(ansi.Hardwrap(styled, width, true), "\n")
-		}
+		visual := projectedTextRows(m.pinnedActionDisplayLine(entry), width, m.wrapLogs)
 		for offset, row := range visual {
 			absolute := consumed + offset
 			if absolute < start || absolute >= end {
