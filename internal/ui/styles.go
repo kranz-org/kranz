@@ -1,7 +1,10 @@
 // Package ui contains the Kranz terminal interface.
 package ui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
+)
 
 var (
 	ColorGreen          lipgloss.Color
@@ -189,6 +192,15 @@ func applyPalette(theme Theme) {
 	ParamFieldFocusStyle = lipgloss.NewStyle().Foreground(ColorSelectText).Background(ColorSelection)
 	selectionBackground, selectionText := logTextSelectionColors(theme)
 	LogTextSelectionStyle = lipgloss.NewStyle().Background(lipgloss.Color(selectionBackground)).Foreground(lipgloss.Color(selectionText))
+	if lipgloss.ColorProfile() == termenv.ANSI {
+		// RGB accent/canvas pairs can quantize to the same one of sixteen colors.
+		// Invert the panel's normal foreground/background instead, letting the
+		// terminal apply its actual palette (including a terminal-owned canvas).
+		LogTextSelectionStyle = lipgloss.NewStyle().Foreground(ColorGrey).Reverse(true)
+		if !TerminalCanvas {
+			LogTextSelectionStyle = LogTextSelectionStyle.Background(ColorDarkBg)
+		}
+	}
 	SelectionStyle = lipgloss.NewStyle().Foreground(ColorSelectText).Background(ColorSelection).Bold(true)
 	ContextBarStyle = lipgloss.NewStyle().Foreground(ColorDim)
 	PrimaryButtonStyle = lipgloss.NewStyle().Foreground(ColorAccentText).Bold(true).Padding(0, 1)

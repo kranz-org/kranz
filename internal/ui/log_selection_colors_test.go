@@ -64,3 +64,33 @@ func TestLogTextSelectionRendersThemeColorsOnNearWhiteAndDarkCanvas(t *testing.T
 		}
 	}
 }
+
+func TestLogTextSelectionUsesReverseVideoWithSixteenColors(t *testing.T) {
+	restoreDefaultTheme(t)
+	profile := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.ANSI)
+	defer lipgloss.SetColorProfile(profile)
+	for _, canvas := range []string{"", "#FAF9F5", "#151A21", "#777777"} {
+		for _, dark := range []bool{false, true} {
+			for _, terminalCanvas := range []bool{false, true} {
+				_, err := ApplyThemeVariant(DefaultTheme, "#FEFEFE", canvas, dark, terminalCanvas)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !LogTextSelectionStyle.GetReverse() {
+					t.Fatal("16-color selection is not inverted")
+				}
+				if LogTextSelectionStyle.GetForeground() != ColorGrey {
+					t.Fatal("reverse video lost the panel's normal foreground")
+				}
+				if !terminalCanvas && LogTextSelectionStyle.GetBackground() != ColorDarkBg {
+					t.Fatal("reverse video lost the painted canvas")
+				}
+				output := LogTextSelectionStyle.Render("selection")
+				if !strings.Contains(output, "\x1b[") || strings.Contains(output, "38;2;") || strings.Contains(output, "48;2;") || strings.Contains(output, "38;5;") || strings.Contains(output, "48;5;") {
+					t.Fatal("16-color selection emitted incompatible colors")
+				}
+			}
+		}
+	}
+}

@@ -26,7 +26,13 @@ def run_smoke(binary):
         root = Path(directory)
         state = root / "state"
         state.mkdir()
-        env = dict(os.environ, TMPDIR=str(state), TERM="xterm-256color")
+        terminal = os.environ.get("KRANZ_COPY_SMOKE_TERM", "xterm-256color")
+        if terminal not in {"xterm-256color", "linux"}:
+            raise ValueError("unsupported synthetic terminal profile")
+        # The agent/CI shell may disable colors; this disposable terminal test
+        # must exercise real color attributes rather than silently test ASCII.
+        env = dict(os.environ, TMPDIR=str(state), TERM=terminal,
+                   NO_COLOR="", CLICOLOR="1", CLICOLOR_FORCE="")
         config = r'''project: selection-smoke
 services:
   sample:
@@ -90,13 +96,18 @@ open(sys.argv[1],"wb").write(data)
         try:
             command([binary, "-C", directory, "up", "--start", "-d"])
             started = True
-            attach = shlex.join(["env", "TMPDIR=" + str(state), binary, "-C", directory, "attach"])
+            attach = shlex.join(["env", "TMPDIR=" + str(state), "TERM=" + terminal, "COLORTERM=", binary, "-C", directory, "attach"])
             tm("-f", "/dev/null", "new-session", "-d", "-x", "120", "-y", "30",
                "-s", "smoke", "-n", "tui", "-c", directory, attach)
             tm("set-option", "-g", "set-clipboard", "on")
             wait_for(lambda: "incoming sample" in frame())
             for value in ["3", "y", "Home", "Down", "Down"]:
                 key(value)
+            if terminal == "linux":
+                colored = tm("capture-pane", "-p", "-e", "-t", "smoke:tui.0").stdout.decode()
+                if not re.search(r"\x1b\[(?:[0-9]+;)*7(?:;[0-9]+)*m", colored):
+                    raise RuntimeError("16-color selection omitted reverse video")
+                print("PASS: 16-color reverse-video selection")
             paste("prefix https://example.test/path suffix", "keyboard-line-paste")
             # SGR mouse events go to the real application's PTY, not a model mock.
             for sequence in ["\x1b[<0;52;5M", "\x1b[<32;76;5M", "\x1b[<0;76;5m"]:
@@ -149,5 +160,6 @@ if __name__ == "__main__":
         sys.exit(run_smoke(str(Path(sys.argv[1] if len(sys.argv) > 1 else "bin/kranz-dev").resolve())))
     except Exception as error:
         # Errors may contain temporary paths or runtime IDs; never print them.
-        print("FAIL: terminal smoke (" + type(error).__name__ + "); no private output retained")
+        detail = str(error) if isinstance(error, RuntimeError) else type(error).__name__
+        print("FAIL: terminal smoke (" + detail + "); no private output retained")
         sys.exit(1)

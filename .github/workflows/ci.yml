@@ -53,9 +53,9 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Install fish
+      - name: Install fish and tmux
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install --yes fish
+        run: sudo apt-get update && sudo apt-get install --yes fish tmux
 
       - name: Check formatting
         run: test -z "$(gofmt -l .)"
@@ -71,3 +71,10 @@ jobs:
 
       - name: Build
         run: go build -trimpath ./cmd/kranz
+
+      - name: TUI selection paste in 16-color terminal
+        if: runner.os == 'Linux'
+        env:
+          KRANZ_COPY_SMOKE_TERM: linux
+          KRANZ_COPY_SMOKE_BACKGROUND: '#FAF9F5'
+        run: python3 scripts/test-tui-log-copy.py ./kranz

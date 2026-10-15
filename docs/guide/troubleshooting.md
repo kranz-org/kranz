@@ -209,3 +209,8 @@ Native terminal selection is another option: Option commonly overrides mouse
 tracking in iTerm2, and Shift does so in kitty and Windows Terminal. Modifiers
 and preferences differ. Kranz retains mouse focus recovery; right click does
 not automatically copy. Native Windows execution is outside this feature.
+
+In 16-color terminals (for example `TERM=linux`), log selection uses reverse
+video over the panel's normal text/background instead of approximating an RGB
+accent. 256-color and truecolor terminals use the theme accent with contrast
+correction. Set `TERM`/`COLORTERM` to match the terminal's actual capabilities.

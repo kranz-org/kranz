@@ -15,7 +15,8 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 ### Fixed
 
 - Give selected log text a theme accent fill with separate contrast guarantees
-  against the canvas and inside the selection, including near-white backgrounds.
+  against the canvas and inside the selection, including near-white backgrounds;
+  use native reverse video in 16-color terminals to avoid palette collisions.
 - Send OSC 52 through the shared terminal writer in alternate-screen dashboards
   (bare launch and `attach`), including existing run export. Report requests as sent,
   enforce a 64 KiB budget without truncation, and report output failures.
