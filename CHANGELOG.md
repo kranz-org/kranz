@@ -1,8 +1,10 @@
 # Changelog
 
-All notable changes to Kranz are documented here. The project follows [Semantic Versioning](https://semver.org/), and release notes are generated from conventional commit subjects.
+All notable changes to Kranz are documented here. The project follows [Semantic Versioning](https://semver.org/), and release notes are published from the version sections below.
 
 ## [Unreleased]
+
+## [0.17.0] - 2026-10-15
 
 ### Added
 
@@ -15,6 +17,9 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ### Fixed
 
+- Double-click an action to expand or collapse its parameters, matching Enter.
+- Keep the TUI responsive while loading and navigating large log histories.
+- Preserve the selected service log run when moving focus between panels.
 - Allow log selections to start in empty space and reset click counting after
   dragging or leaving selection, so quick repeated selection works consistently.
 - Separate footer buttons with whitespace instead of vertical dividers.
@@ -30,6 +35,11 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
   enforce a 64 KiB budget without truncation, and report output failures.
 - Use one readable log projection for control characters, tabs and grapheme
   wrapping; carriage return/backspace output shows overwritten text consistently.
+
+### Changed
+
+- Update terminal text and system dependencies, including ANSI and Unicode
+  width handling, and refresh the documentation workflow's Node.js setup action.
 
 ## [0.16.5] - 2026-10-07
 
@@ -1020,7 +1030,13 @@ artifacts.
 - Explicit global-user and project-config save destinations in the live theme picker.
 - Native compatibility for common Process Compose configurations.
 
-[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/kranz-org/kranz/compare/v0.16.5...v0.17.0
+[0.16.5]: https://github.com/kranz-org/kranz/compare/v0.16.4...v0.16.5
+[0.16.4]: https://github.com/kranz-org/kranz/compare/v0.16.3...v0.16.4
+[0.16.3]: https://github.com/kranz-org/kranz/compare/v0.16.2...v0.16.3
+[0.16.2]: https://github.com/kranz-org/kranz/compare/v0.16.1...v0.16.2
+[0.16.1]: https://github.com/kranz-org/kranz/compare/v0.16.0...v0.16.1
 [0.16.0]: https://github.com/kranz-org/kranz/compare/v0.15.2...v0.16.0
 [0.15.2]: https://github.com/kranz-org/kranz/compare/v0.15.1...v0.15.2
 [0.15.1]: https://github.com/kranz-org/kranz/compare/v0.15.0...v0.15.1
