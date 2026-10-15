@@ -29,10 +29,10 @@ def run_smoke(binary):
         terminal = os.environ.get("KRANZ_COPY_SMOKE_TERM", "xterm-256color")
         if terminal not in {"xterm-256color", "linux"}:
             raise ValueError("unsupported synthetic terminal profile")
-        # The agent/CI shell may disable colors; this disposable terminal test
-        # must exercise real color attributes rather than silently test ASCII.
+        # The parent shell may disable colors or mark itself as noninteractive CI.
+        # The disposable PTY must exercise real attributes, not ASCII fallback.
         env = dict(os.environ, TMPDIR=str(state), TERM=terminal,
-                   NO_COLOR="", CLICOLOR="1", CLICOLOR_FORCE="")
+                   NO_COLOR="", CLICOLOR="1", CLICOLOR_FORCE="", CI="")
         config = r'''project: selection-smoke
 services:
   sample:
