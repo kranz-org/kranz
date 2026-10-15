@@ -273,10 +273,12 @@ options are also available by clicking their label.
 
 ## Select and copy log fragments
 
-In a focused main or pinned log panel, press `y` or drag across message text.
+In a focused main or pinned log panel, press `y` or drag to select text.
+Dragging can start in empty space, including row padding or below the logs.
 A plain click only focuses. Double click selects a non-whitespace token; triple
-click selects a logical line. Shift-click extends an existing selection.
-Generated timestamps and source labels are metadata: start a drag in the body.
+click selects a logical line. Click outside the selection to clear it;
+Shift-click extends an existing selection.
+Generated timestamps and source labels are excluded from copied text.
 Service and action logs support both Combined and Single run views.
 
 | While selecting | Action |
@@ -288,14 +290,13 @@ Service and action logs support both Combined and Single run views.
 | `Home/End`, with `Shift` to extend | First/last snapshot line |
 | `a` | Select visible viewport text, including partial wrapped lines |
 | `w` | Toggle wrap; preserve the selected source offsets |
-| `Enter`, `y` | Send clean text through OSC 52 |
-| `Shift+Y` | Send text with target/run, timestamps, sources and filter context |
-| `Ctrl+S` | Save the same clean text to a file; confirm replacement |
+| `Enter` | Copy selected text |
 | `Esc` | Done; restore previous follow/pause or browse position |
 
-Copy keeps the selection for retry or Save. Scrolling uses the frozen snapshot;
+Copy keeps the selection for retry. Scrolling uses the frozen snapshot;
 other panels and services keep updating. Selection never crosses panel borders.
 Keyboard selection chooses full logical lines, including an invisible nowrap
 tail; mouse selection chooses grapheme boundaries. `Ctrl+C` keeps interrupt/quit
-semantics. Lifecycle shortcuts require leaving selection first. `e`/`Shift+E`
+semantics. `c` is inactive while selecting; leave selection before clearing logs.
+Lifecycle shortcuts require leaving selection first. `e`/`Shift+E`
 continue to export a whole run outside selection.

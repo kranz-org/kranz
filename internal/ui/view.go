@@ -23,9 +23,6 @@ func (m *Model) View() string {
 		return AppStyle.Render("Loading...")
 	}
 
-	if m.logSelection != nil && m.logSelection.active && m.logSelection.saving {
-		return frameToTerminal(m.renderSelectionSave(), m.width, m.height)
-	}
 	var content string
 	exact := false
 	mode := m.mode
@@ -282,9 +279,7 @@ func (m *Model) renderStatusBar() string {
 }
 
 func actionSeparator() string {
-	// Buttons already carry horizontal padding, so a single muted cell creates
-	// the same visual rhythm as lazygit without wasting narrow-terminal space.
-	return ContextBarStyle.Render("│")
+	return " "
 }
 
 type actionButton struct {
@@ -622,7 +617,11 @@ func padPlainLine(line string, width int) string {
 
 func (m *Model) dashboardActionButtons() []actionButton {
 	if m.panelFocus == panelLogs || m.panelFocus == panelPinnedLogs {
-		return []actionButton{{action: "select-logs", rendered: SecondaryButtonStyle.Render("[y] Select & copy")}, {action: "quit", rendered: DangerButtonStyle.Render("Quit: q")}}
+		return []actionButton{
+			{action: "select-logs", rendered: SecondaryButtonStyle.Render("[y] Select & copy")},
+			{action: "clear-logs", rendered: SecondaryButtonStyle.Render("[c] Clear")},
+			{action: "quit", rendered: DangerButtonStyle.Render("Quit: q")},
+		}
 	}
 	return m.actionButtons()
 }

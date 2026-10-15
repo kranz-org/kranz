@@ -22,9 +22,7 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.beginShutdown()
 	}
 	if m.logSelection != nil && m.logSelection.active {
-		if !m.logSelection.saving {
-			msg = normalizeShortcutKey(msg)
-		}
+		msg = normalizeShortcutKey(msg)
 		return m.handleSelectionKey(msg)
 	}
 	if m.logSelection != nil {
@@ -365,6 +363,9 @@ func (m *Model) triggerAction(action string) (tea.Model, tea.Cmd) {
 		return m.restartSelectedService()
 	case "all":
 		m.toggleAllSelection()
+		return m, nil
+	case "clear-logs":
+		m.beginClearLogs()
 		return m, nil
 	case "quit":
 		m.mode = ModeConfirmQuit

@@ -116,10 +116,7 @@ func (c *logRowMetrics) pinnedActionRowCount(m *Model, entry config.LogEntry, wi
 			return count
 		}
 	}
-	count := 1
-	if m.wrapLogs {
-		count += projectedRowCount(m.pinnedActionDisplayLine(entry), width, true) - 1
-	}
+	count := projectedRowCount(m.pinnedActionDisplayLine(entry), width, m.wrapLogs)
 	if entry.Sequence > 0 {
 		c.counts[entry.Sequence] = count
 	}

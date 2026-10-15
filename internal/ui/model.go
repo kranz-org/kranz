@@ -2,7 +2,6 @@ package ui
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -743,27 +742,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleSelectionScroll(msg)
 	case clipboardResultMsg:
 		if msg.err != nil {
-			m.addNotification(msg.source, "Clipboard output failed; use Save", config.LogError)
+			m.addNotification(msg.source, "Clipboard output failed; check terminal clipboard permissions and retry", config.LogError)
 		} else {
 			m.addNotification(msg.source, fmt.Sprintf("Sent %d lines / %d bytes to clipboard", msg.lines, msg.bytes), config.LogInfo)
-		}
-		return m, nil
-	case selectionSaveResultMsg:
-		if m.logSelection != msg.selection {
-			return m, nil
-		}
-		s := m.logSelection
-		s.writing = false
-		if errors.Is(msg.err, os.ErrExist) {
-			s.overwrite = true
-		} else if msg.err != nil {
-			s.overwrite = false
-			m.addNotification("selection", "Save failed; check the path and permissions, then retry", config.LogError)
-		} else {
-			s.saving = false
-			s.overwrite = false
-			m.exportInput.Blur()
-			m.addNotification("selection", "Selection saved", config.LogInfo)
 		}
 		return m, nil
 	case runExportResultMsg:

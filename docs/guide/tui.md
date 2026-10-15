@@ -191,7 +191,11 @@ interaction, and shutdown behavior. The guides for [actions](./actions),
 
 Focus a log panel with `3`. Drag over a URL or error, or press `y` to select the
 last visible logical line. Extend a keyboard selection with `Shift+Up/Down`.
-Press `Enter` to send clean text, `Shift+Y` for context, or `Ctrl+S` to save it.
+You can also start dragging in empty space to the right of or below the text.
+Press `Enter` to copy selected text.
+Click outside the selection to clear it; `Shift`-click extends it.
+Outside selection mode, `[c] Clear` opens the log-clearing confirmation.
+While text is selected, `c` does nothing; press `Esc` to leave selection first.
 For example, selecting these messages yields exactly:
 
 ```text
@@ -216,9 +220,7 @@ A bounded “New logs” indicator reports incoming data without claiming a coun
 Copy preserves selection for retry. `Esc` restores the previous follow/pause or
 nearest retained browsing position. Changing panels, target/run/runtime or search
 ends selection. After disconnect or source removal, captured text remains
-available for Copy/Save; Done returns to normal recovery. Save writes on the
-TUI client's host, so an SSH client saves on the remote host. Write errors keep
-the selection; existing files require explicit overwrite confirmation.
+available for copying; Done returns to normal recovery.
 
 See [selection controls](../reference/controls#select-and-copy-log-fragments)
 and [clipboard troubleshooting](./troubleshooting#nothing-pasted-from-the-tui).

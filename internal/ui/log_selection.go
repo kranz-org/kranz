@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"time"
 	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -36,7 +35,7 @@ type logSelection struct {
 	cachedWrap                  bool
 	panel                       panelFocus
 	target                      app.RunTarget
-	label, scope, search        string
+	label, scope                string
 	lines                       []selectionLine
 	anchor, cursor              logPoint
 	start                       int
@@ -48,8 +47,6 @@ type logSelection struct {
 	scrollDirection             int
 	scrollQueued                bool
 	disconnected                bool
-	saving, overwrite, writing  bool
-	savePath                    string
 }
 
 func (m *Model) selectionActive(panel panelFocus) bool {
@@ -162,13 +159,7 @@ func (m *Model) captureLogSelection(panel panelFocus) *logSelection {
 	if panel == panelPinnedLogs && m.pinnedRunMode == runViewCombined || panel != panelPinnedLogs && m.runMode == runViewCombined {
 		scope = "combined"
 	}
-	s := &logSelection{priorFollow: follow, priorPaused: m.logPaused, priorRun: runSelectionState{m.runMode, m.selectedRun, m.runFollowsLatest}, panel: panel, target: target, label: runTargetLabel(target), scope: scope, search: "unfiltered"}
-	if searcher != nil && searcher.HasPattern() {
-		s.search = "highlight"
-		if mode == searchFilter {
-			s.search = "filtered; hidden records omitted"
-		}
-	}
+	s := &logSelection{priorFollow: follow, priorPaused: m.logPaused, priorRun: runSelectionState{m.runMode, m.selectedRun, m.runFollowsLatest}, panel: panel, target: target, label: runTargetLabel(target), scope: scope}
 	entries := m.cachedLogEntries(target)
 	if len(entries) > 0 {
 		s.capturedLast = entries[len(entries)-1].Sequence
@@ -194,36 +185,46 @@ func (m *Model) captureLogSelection(panel panelFocus) *logSelection {
 		}
 	}
 	bytes := 0
+	// Main action views filter individual output lines; pinned actions and
+	// service panels filter complete records before splitting them for display.
+	filterLines := panel == panelLogs && target.Kind == app.RunKindAction
 	for _, entry := range entries {
 		if len(entry.Raw) > selectionMaxBytes {
 			m.addNotification("selection", "View exceeds snapshot budget (1 MiB / 20000 lines); choose a single run or narrow the filter", config.LogWarn)
 			return nil
 		}
 		text := readableLog(entry.Raw)
-		if target.Kind != app.RunKindAction && searcher != nil && searcher.HasPattern() && mode == searchFilter && len(searcher.Search([]string{text})) == 0 {
+		if !filterLines && searcher != nil && searcher.HasPattern() && mode == searchFilter && len(searcher.Search([]string{text})) == 0 {
 			continue
 		}
 		prefix := ""
 		if m.showLogTime && !entry.Timestamp.IsZero() && (panel == panelPinnedLogs || target.Kind != app.RunKindAction) {
 			prefix = "[" + entry.Timestamp.Local().Format("15:04:05.000") + "] "
 		}
+		sourcePrefix := ""
 		if target.Kind == app.RunKindAction && entry.Source == "stderr" {
-			prefix = "[stderr] " + prefix
+			sourcePrefix = "[stderr] "
 		}
 		if entry.Source == "kranz" && strings.HasPrefix(text, "[Kranz] ") {
 			prefix += "[Kranz] "
 			text = strings.TrimPrefix(text, "[Kranz] ")
 		}
-		for _, line := range strings.Split(text, "\n") {
-			if target.Kind == app.RunKindAction && searcher != nil && searcher.HasPattern() && mode == searchFilter && len(searcher.Search([]string{prefix + line})) == 0 {
+		for part, line := range strings.Split(text, "\n") {
+			linePrefix := prefix
+			// pinnedActionDisplayLine prepends stderr once per record, while
+			// the main action view prefixes every logical output line.
+			if panel != panelPinnedLogs || part == 0 {
+				linePrefix = sourcePrefix + linePrefix
+			}
+			if filterLines && searcher != nil && searcher.HasPattern() && mode == searchFilter && len(searcher.Search([]string{linePrefix + line})) == 0 {
 				continue
 			}
-			bytes += len(line) + len(prefix)
+			bytes += len(line) + len(linePrefix)
 			if bytes > selectionMaxBytes || len(s.lines) >= selectionMaxLines {
 				m.addNotification("selection", "View exceeds snapshot budget (1 MiB / 20000 lines); choose a single run or narrow the filter", config.LogWarn)
 				return nil
 			}
-			s.lines = append(s.lines, selectionLine{line, prefix, entry, entry.Sequence != 0})
+			s.lines = append(s.lines, selectionLine{line, linePrefix, entry, entry.Sequence != 0})
 		}
 	}
 	selectable := false
@@ -275,6 +276,7 @@ func (m *Model) beginLogSelection() {
 func (m *Model) endLogSelection() {
 	s := m.logSelection
 	m.logSelection = nil
+	m.logClick = logClickState{}
 	if s != nil && s.disconnected {
 		m.mode = ModeRuntimeLost
 		return
@@ -347,7 +349,6 @@ func (m *Model) endLogSelection() {
 	if lost {
 		m.addNotification("selection", "Earlier records are no longer available; showing the nearest retained position", config.LogWarn)
 	}
-
 }
 func (m *Model) selectionViewport(s *logSelection, rows []selectionRow) int {
 	// Preserve the source offset at the top when width or wrap changes.
@@ -397,7 +398,6 @@ func (m *Model) renderLogSelection(width, height int) string {
 		}
 		entries := m.cachedLogEntries(s.target)
 		if len(entries) > 0 {
-
 			if entries[len(entries)-1].Sequence > s.capturedLast {
 				title = strings.Replace(title, "SELECT · frozen", "SELECT · frozen · New logs", 1)
 			}
@@ -406,7 +406,7 @@ func (m *Model) renderLogSelection(width, height int) string {
 	return renderTitledPanel(m.panelStyle(s.panel), m.panelTitleStyle(s.panel), max(1, width-2), max(1, height-2), title, visible)
 }
 func (m *Model) selectionFooter() string {
-	groups := []string{"[Enter/y] Copy", "[Y] With context", "[Ctrl+S] Save", "[Esc] Done"}
+	groups := []string{"[Enter] Copy", "[Esc] Done"}
 	rows := renderModalShortcutRows(groups, m.width, ContextBarStyle)
 	m.notifMu.RLock()
 	toast := m.toastMessage
@@ -419,9 +419,6 @@ func (m *Model) selectionFooter() string {
 func (m *Model) handleSelectionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	s := m.logSelection
 	s.dragging = false
-	if s.saving {
-		return m.handleSelectionSaveKey(msg)
-	}
 	k := msg.String()
 	extend := strings.HasPrefix(k, "shift+")
 	base := strings.TrimPrefix(k, "shift+")
@@ -432,14 +429,8 @@ func (m *Model) handleSelectionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch k {
 	case "esc":
 		m.endLogSelection()
-	case "enter", "y":
+	case "enter":
 		return m, m.sendClipboard(s.text(), "selection")
-	case "Y":
-		return m, m.sendClipboard(s.context(), "selection")
-	case "ctrl+s":
-		s.saving = true
-		m.exportInput.SetValue("kranz-selection.log")
-		return m, m.exportInput.Focus()
 	case "w":
 		m.wrapLogs = !m.wrapLogs
 	case "a":
@@ -457,7 +448,7 @@ func (m *Model) handleSelectionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			s.cursor = logPoint{rows[end-1].line, rows[end-1].visual.end}
 			s.fullLines = false
 		}
-	case "tab", "shift+tab", "1", "2", "3", "#", "/", "x", "[", "]", "v", "l", "F", "c", "p":
+	case "tab", "shift+tab", "1", "2", "3", "#", "/", "x", "[", "]", "v", "l", "F", "p":
 		m.endLogSelection()
 		if s.disconnected {
 			return m, nil
@@ -501,41 +492,6 @@ func (m *Model) handleSelectionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
-}
-func (s *logSelection) context() string {
-	text := s.text()
-	fence := "```"
-	for strings.Contains(text, fence) {
-		fence += "`"
-	}
-	a, b := s.bounds()
-	sources := map[string]bool{}
-	var first, last time.Time
-	for i := a.line; i <= b.line; i++ {
-		line := s.lines[i]
-		if !line.selectable {
-			continue
-		}
-		sources[line.entry.Source] = true
-		if !line.entry.Timestamp.IsZero() {
-			if first.IsZero() {
-				first = line.entry.Timestamp
-			}
-			last = line.entry.Timestamp
-		}
-	}
-	var sourceNames []string
-	for name := range sources {
-		if name != "" {
-			sourceNames = append(sourceNames, name)
-		}
-	}
-	sort.Strings(sourceNames)
-	header := fmt.Sprintf("Kranz logs — %s, %s\n", s.label, s.scope)
-	if !first.IsZero() {
-		header += fmt.Sprintf("Captured: %s–%s\n", first.Format(time.RFC3339Nano), last.Format(time.RFC3339Nano))
-	}
-	return header + "View: " + s.search + "\nSources: " + strings.Join(sourceNames, ", ") + "\n\n" + fence + "text\n" + text + "\n" + fence
 }
 
 // A token is a maximal non-whitespace span; punctuation remains part of it.

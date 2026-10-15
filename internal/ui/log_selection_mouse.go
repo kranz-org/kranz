@@ -27,6 +27,12 @@ func (m *Model) logBodyAt(x, y int) (panelFocus, int, int, bool) {
 	return panel, x - m.dashboardLeftWidth() - 1, y - top - 1, true
 }
 func (m *Model) selectionHit(s *logSelection, x, y int) (logPoint, int, bool) {
+	return m.selectionPointAt(s, x, y, false)
+}
+
+// Gestures may start and end in padding. Map it to a source boundary without
+// copying generated prefixes or the panel's empty screen rows.
+func (m *Model) selectionPointAt(s *logSelection, x, y int, clampEnd bool) (logPoint, int, bool) {
 	panel, cx, cy, ok := m.logBodyAt(x, y)
 	if !ok || panel != s.panel {
 		return logPoint{}, 0, false
@@ -37,45 +43,63 @@ func (m *Model) selectionHit(s *logSelection, x, y int) (logPoint, int, bool) {
 		start = m.selectionViewport(s, rows)
 	}
 	index := start + cy
-	if index < 0 || index >= len(rows) {
+	if index < 0 || len(rows) == 0 || index >= len(rows) && !clampEnd {
 		return logPoint{}, 0, false
+	}
+	if index >= len(rows) {
+		index = len(rows) - 1
+		for index >= 0 && !s.lines[rows[index].line].selectable {
+			index--
+		}
+		if index < 0 {
+			return logPoint{}, 0, false
+		}
+		row := rows[index]
+		end := max(0, row.visual.end)
+		return logPoint{row.line, end}, end, true
 	}
 	row := rows[index]
 	if !s.lines[row.line].selectable {
 		return logPoint{}, 0, false
 	}
-	column := 0
+	column, sourceEnd := 0, -1
 	for _, c := range row.visual.cells {
 		if cx >= column && cx < column+c.width {
 			if c.start < 0 {
+				if clampEnd {
+					offset := max(0, row.visual.start)
+					if sourceEnd >= 0 {
+						offset = sourceEnd
+					}
+					return logPoint{row.line, offset}, offset, true
+				}
 				return logPoint{}, 0, false
 			}
 			return logPoint{row.line, c.start}, c.end, true
 		}
 		column += c.width
+		if c.end >= 0 {
+			sourceEnd = c.end
+		}
+	}
+	if clampEnd {
+		end := max(0, row.visual.end)
+		return logPoint{row.line, end}, end, true
 	}
 	return logPoint{}, 0, false
 }
 func (m *Model) handleLogSelectionMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd, bool) {
 	s := m.logSelection
-	if s != nil && s.saving {
-		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
-			rendered := m.View()
-			for _, binding := range []mouseKeyBinding{{"[Enter] Write file", "enter"}, {"[Enter] Overwrite", "enter"}, {"[Esc] Cancel", "esc"}} {
-				if renderedTextHit(rendered, msg.X, msg.Y, binding.label) {
-					model, cmd := m.handleSelectionKey(keyMessage(binding.key))
-					return model, cmd, true
-				}
-			}
-		}
-		return m, nil, true
-	}
 	if msg.Action == tea.MouseActionRelease {
 		if s != nil {
-			s.dragging = false
+			// A plain click collapses the range at press, then restores the live
+			// or browsed view at release. A drag or repeated click keeps it.
 			if !s.active {
 				m.logSelection = nil
+			} else if s.dragging && m.logClick.count <= 1 && s.anchor == s.cursor {
+				m.endLogSelection()
 			}
+			s.dragging = false
 		}
 		return m, nil, s != nil
 	}
@@ -83,12 +107,14 @@ func (m *Model) handleLogSelectionMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd, b
 		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
 			if msg.Y >= m.height-lenSelectionFooter(m) {
 				rendered := m.View()
-				for _, binding := range []mouseKeyBinding{{"[Enter/y] Copy", "enter"}, {"[Y] With context", "Y"}, {"[Ctrl+S] Save", "ctrl+s"}, {"[Esc] Done", "esc"}} {
+				for _, binding := range []mouseKeyBinding{{"[Enter] Copy", "enter"}, {"[Esc] Done", "esc"}} {
 					if renderedTextHit(rendered, msg.X, msg.Y, binding.label) {
 						model, cmd := m.handleSelectionKey(keyMessage(binding.key))
 						return model, cmd, true
 					}
 				}
+				m.endLogSelection()
+				m.logClick = logClickState{}
 				return m, nil, true
 			}
 			if msg.X >= 0 && msg.X < m.dashboardLeftWidth() && msg.Y >= dashboardHeaderRows && msg.Y < m.height-m.dashboardFooterHeight() {
@@ -103,9 +129,12 @@ func (m *Model) handleLogSelectionMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd, b
 			if ok && panel != s.panel {
 				m.endLogSelection()
 				m.panelFocus = panel
-				return m, nil, true
+				if s.disconnected {
+					return m, nil, true
+				}
+				return m.handleLogSelectionMouse(msg)
 			}
-			p, end, hit := m.selectionHit(s, msg.X, msg.Y)
+			p, end, hit := m.selectionPointAt(s, msg.X, msg.Y, true)
 			if hit {
 				if msg.Shift {
 					if s.fullLines {
@@ -118,7 +147,9 @@ func (m *Model) handleLogSelectionMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd, b
 					return m, nil, true
 				}
 				m.startSelectionGesture(s, p, end, msg)
-
+			} else {
+				m.endLogSelection()
+				m.logClick = logClickState{}
 			}
 			return m, nil, true
 		}
@@ -144,13 +175,17 @@ func (m *Model) handleLogSelectionMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd, b
 		direction := m.selectionEdgeDirection(s, msg.X, msg.Y)
 		s.scrollDirection = direction
 		if direction != 0 && !s.scrollQueued {
+			m.logClick = logClickState{}
 			s.active = true
 			s.scrollQueued = true
 			return m, selectionScrollTick(s), true
 		}
 
-		p, end, ok := m.selectionHit(s, msg.X, msg.Y)
+		p, end, ok := m.selectionPointAt(s, msg.X, msg.Y, true)
 		if ok && (msg.X != s.pressX || msg.Y != s.pressY) {
+			// A drag is not the first click of a double/triple click. Keeping
+			// its press here made a quick clearing click select a token instead.
+			m.logClick = logClickState{}
 			s.active = true
 			s.fullLines = false
 			if pointLess(p, s.pressPoint) {
@@ -175,7 +210,7 @@ func (m *Model) handleLogSelectionMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd, b
 		if s == nil {
 			return m, nil, false
 		}
-		p, end, hit := m.selectionHit(s, msg.X, msg.Y)
+		p, end, hit := m.selectionPointAt(s, msg.X, msg.Y, true)
 		if !hit {
 			m.panelFocus = panel
 			return m, nil, true
@@ -202,6 +237,7 @@ func countNewlines(s string) int {
 type logClickState struct {
 	panel    panelFocus
 	sequence uint64
+	line     int
 	offset   int
 	at       time.Time
 	count    int
@@ -211,14 +247,19 @@ func (m *Model) startSelectionGesture(s *logSelection, p logPoint, end int, msg 
 	now := time.Now()
 	last := m.logClick
 	count := 1
-	if last.panel == s.panel && last.sequence == s.lines[p.line].entry.Sequence && last.offset == p.offset && now.Sub(last.at) < doubleClickInterval {
+	_, _, textHit := m.selectionHit(s, msg.X, msg.Y)
+	if textHit && last.count < 3 && last.panel == s.panel && last.sequence == s.lines[p.line].entry.Sequence && last.line == p.line && last.offset == p.offset && now.Sub(last.at) < doubleClickInterval {
 		count = last.count + 1
 	}
-	m.logClick = logClickState{s.panel, s.lines[p.line].entry.Sequence, p.offset, now, count}
+	m.logClick = logClickState{panel: s.panel, sequence: s.lines[p.line].entry.Sequence, line: p.line, offset: p.offset, at: now, count: count}
+	if !textHit {
+		m.logClick = logClickState{}
+	}
 	s.anchor, s.cursor = p, p
 	s.pressPoint, s.pressEnd = p, end
 	s.pressX, s.pressY = msg.X, msg.Y
 	s.dragging = true
+	s.scrollDirection = 0
 	s.fullLines = false
 	if count == 2 {
 		s.active = true
@@ -244,8 +285,8 @@ func (m *Model) selectionEdgeDirection(s *logSelection, x, y int) int {
 		top += ph
 	}
 	bottom := top + m.selectionHeight(s.panel) - 1
-	// Only the border and the outer half of the edge row start autoscroll;
-	// the interior remains a dead zone with no timer.
+	// Only positions beyond the body start autoscroll; body rows remain a
+	// dead zone so the pointer can stop on the first or last visible line.
 	if y < top {
 		return -1
 	}

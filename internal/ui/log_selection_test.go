@@ -7,7 +7,6 @@ import (
 	"errors"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -95,6 +94,69 @@ func TestLogSelectionMouseSubstringAndReverse(t *testing.T) {
 		}
 	}
 }
+
+func TestLogSelectionDragThroughShortAndEmptyRowPadding(t *testing.T) {
+	for _, reverse := range []bool{false, true} {
+		t.Run(map[bool]string{false: "forward", true: "reverse"}[reverse], func(t *testing.T) {
+			m := selectionTestModel(t, "long first line", "short", "", "last")
+			x := m.dashboardLeftWidth() + 1
+			startY := 2
+			if reverse {
+				startY = 5
+			}
+			mouseSelection(m, x+1, startY, tea.MouseActionPress)
+			for _, row := range []int{1, 2} {
+				mouseSelection(m, m.width-2, 2+row, tea.MouseActionMotion)
+				s := m.logSelection
+				if s == nil || !s.active || s.cursor.line != row || s.cursor.offset != len(s.lines[row].text) {
+					t.Fatalf("drag did not reach end of row %d", row)
+				}
+			}
+			mouseSelection(m, m.width-2, 4, tea.MouseActionRelease)
+			want := "ong first line\nshort\n"
+			if reverse {
+				want = "\nla"
+			}
+			if got := m.logSelection.text(); got != want {
+				t.Fatalf("text=%q; want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestLogSelectionDragPaddingRespectsWrappedRowEnd(t *testing.T) {
+	m := selectionTestModel(t, "start", strings.Repeat("x", 100))
+	m.wrapLogs = true
+	x := m.dashboardLeftWidth() + 1
+	mouseSelection(m, x, 2, tea.MouseActionPress)
+	s := m.logSelection
+	rows := s.rows(m.currentLogContentWidth(), true)
+	last := len(rows) - 1
+	mouseSelection(m, m.width-2, 2+last, tea.MouseActionMotion)
+	if s.cursor != (logPoint{rows[last].line, rows[last].visual.end}) {
+		t.Fatal("wrapped padding mapped to wrong source offset")
+	}
+	if s.text() != "start\n"+strings.Repeat("x", 100) {
+		t.Fatal("wrapped drag omitted source text")
+	}
+}
+
+func TestLogSelectionShiftClickPaddingAndRemovedSave(t *testing.T) {
+	m := selectionTestModel(t, "first", "short")
+	selectAllSnapshot(m)
+	s := m.logSelection
+	s.fullLines = false
+	s.anchor, s.cursor = logPoint{0, 0}, logPoint{0, 2}
+	_, _ = m.Update(tea.MouseMsg{X: m.width - 2, Y: 3, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, Shift: true})
+	if s.text() != "first\nshort" {
+		t.Fatal("Shift-click padding did not extend selection")
+	}
+	_, cmd := m.handleKeyMsg(keyMessage("ctrl+s"))
+	if cmd != nil || m.logSelection != s || strings.Contains(ansi.Strip(m.View()), "Save") {
+		t.Fatal("removed save action changed selection or remains visible")
+	}
+}
+
 func TestLogSelectionClickDoubleTripleAndMetadata(t *testing.T) {
 	m := selectionTestModel(t, "head https://example.test/path tail")
 	x, y := m.dashboardLeftWidth()+1+10, 2
@@ -117,8 +179,80 @@ func TestLogSelectionClickDoubleTripleAndMetadata(t *testing.T) {
 	m.showLogTime = true
 	m.logClick = logClickState{}
 	mouseSelection(m, m.dashboardLeftWidth()+2, y, tea.MouseActionPress)
+	if m.logSelection != nil && m.logSelection.active {
+		t.Fatal("metadata click activated selection before dragging")
+	}
+	mouseSelection(m, m.dashboardLeftWidth()+2, y, tea.MouseActionRelease)
 	if m.logSelection != nil {
-		t.Fatal("metadata started selection")
+		t.Fatal("metadata click froze logs")
+	}
+}
+
+func TestLogSelectionDragStartsInEmptySpace(t *testing.T) {
+	for _, start := range []string{"right padding", "empty line", "below logs", "metadata"} {
+		t.Run(start, func(t *testing.T) {
+			m := selectionTestModel(t, "first", "short", "")
+			m.showLogTime = start == "metadata"
+			x, y := m.width-2, 3
+			want := "first\nshort"
+			switch start {
+			case "empty line":
+				y = 4
+				want += "\n"
+			case "below logs":
+				y = 8
+				want += "\n"
+			case "metadata":
+				x = m.dashboardLeftWidth() + 1
+				y = 2
+				want = "first\nshort"
+			}
+			mouseSelection(m, x, y, tea.MouseActionPress)
+			if m.logSelection == nil || m.logSelection.active {
+				t.Fatal("empty-space press did not prepare a drag")
+			}
+			toX, toY := m.dashboardLeftWidth()+1, 2
+			if start == "metadata" {
+				toX, toY = m.width-2, 3
+			}
+			mouseSelection(m, toX, toY, tea.MouseActionMotion)
+			mouseSelection(m, toX, toY, tea.MouseActionRelease)
+			if m.logSelection == nil || !m.logSelection.active || m.logSelection.text() != want {
+				t.Fatalf("drag from %s did not select expected text", start)
+			}
+		})
+	}
+}
+
+func TestLogSelectionRepeatedDragClearAndReselect(t *testing.T) {
+	for _, reset := range []string{"esc", "text click", "padding click"} {
+		t.Run(reset, func(t *testing.T) {
+			m := selectionTestModel(t, "alpha beta", "short")
+			x := m.dashboardLeftWidth() + 1
+			for cycle := range 5 {
+				// Deliberately do not wait for the double-click timeout between
+				// gestures or insert keyboard selection to reset mouse state.
+				mouseSelection(m, x, 2, tea.MouseActionPress)
+				mouseSelection(m, x+4, 2, tea.MouseActionMotion)
+				mouseSelection(m, x+4, 2, tea.MouseActionRelease)
+				if m.logSelection == nil || m.logSelection.text() != "alpha" {
+					t.Fatalf("cycle %d failed to reselect", cycle)
+				}
+				if reset == "esc" {
+					_, _ = m.handleKeyMsg(keyMessage("esc"))
+				} else {
+					clearX := x
+					if reset == "padding click" {
+						clearX = m.width - 2
+					}
+					mouseSelection(m, clearX, 2, tea.MouseActionPress)
+					mouseSelection(m, clearX, 2, tea.MouseActionRelease)
+				}
+				if m.logSelection != nil {
+					t.Fatalf("cycle %d failed to clear", cycle)
+				}
+			}
+		})
 	}
 }
 func TestLogSelectionCaptureAtPressAndMissingRelease(t *testing.T) {
@@ -136,6 +270,98 @@ func TestLogSelectionCaptureAtPressAndMissingRelease(t *testing.T) {
 		t.Fatal("focus loss retained active drag")
 	}
 }
+
+func TestLogSelectionPlainClickClearsEverySurface(t *testing.T) {
+	for _, surface := range []string{"text", "padding", "empty row", "timestamp", "header", "border", "divider", "footer", "services"} {
+		t.Run(surface, func(t *testing.T) {
+			m := selectionTestModel(t, "first", "second")
+			m.showLogTime = true
+			selectAllSnapshot(m)
+			s := m.logSelection
+			x, y := m.dashboardLeftWidth()+1, 2
+			switch surface {
+			case "text":
+				x += lipgloss.Width(s.lines[0].prefix) + 1
+			case "padding":
+				x = m.width - 2
+			case "empty row":
+				y += 3
+			case "timestamp":
+			case "header":
+				y = dashboardHeaderRows
+			case "border":
+				x = m.width - 1
+			case "divider":
+				x = m.dashboardLeftWidth()
+			case "footer":
+				x, y = m.width-1, m.height-1
+			case "services":
+				x = 1
+			}
+			mouseSelection(m, x, y, tea.MouseActionPress)
+			mouseSelection(m, x, y, tea.MouseActionRelease)
+			if m.logSelection != nil {
+				t.Fatal("plain click retained selection")
+			}
+			if !m.followMode {
+				t.Fatal("click did not restore follow mode")
+			}
+		})
+	}
+}
+
+func TestLogSelectionClickRestoresBrowseAndDisconnectedRecovery(t *testing.T) {
+	for _, disconnected := range []bool{false, true} {
+		m := selectionTestModel(t, "first", "second")
+		m.followMode, m.logPaused, m.logAnchor = false, true, 2
+		selectAllSnapshot(m)
+		m.logSelection.disconnected = disconnected
+		x := m.dashboardLeftWidth() + 1
+		mouseSelection(m, x, 2, tea.MouseActionPress)
+		mouseSelection(m, x, 2, tea.MouseActionRelease)
+		if m.logSelection != nil || m.followMode || !m.logPaused || m.logAnchor != 2 {
+			t.Fatal("plain click lost prior browse state")
+		}
+		if disconnected && m.mode != ModeRuntimeLost {
+			t.Fatal("plain click skipped recovery")
+		}
+	}
+}
+
+func TestLogSelectionNewDragReplacesExistingRange(t *testing.T) {
+	m := selectionTestModel(t, "alpha beta")
+	selectAllSnapshot(m)
+	x := m.dashboardLeftWidth() + 1
+	mouseSelection(m, x+6, 2, tea.MouseActionPress)
+	mouseSelection(m, x+9, 2, tea.MouseActionMotion)
+	mouseSelection(m, x+9, 2, tea.MouseActionRelease)
+	if m.logSelection == nil || m.logSelection.text() != "beta" || m.logSelection.dragging {
+		t.Fatal("new drag did not replace selected text")
+	}
+}
+
+func TestLogSelectionCopyUsesOnlyEnterAndCleanText(t *testing.T) {
+	m := selectionTestModel(t, "``` sample", "second")
+	selectAllSnapshot(m)
+	var output bytes.Buffer
+	m.terminalOutput = NewTerminalOutput(&output)
+	for _, key := range []string{"y", "Y"} {
+		_, cmd := m.handleKeyMsg(keyMessage(key))
+		if cmd != nil || output.Len() != 0 {
+			t.Fatalf("removed shortcut %s still copied", key)
+		}
+	}
+	_, cmd := m.handleKeyMsg(keyMessage("enter"))
+	if cmd == nil {
+		t.Fatal("Enter did not copy")
+	}
+	_, _ = m.Update(cmd())
+	want := "\x1b]52;c;" + base64.StdEncoding.EncodeToString([]byte("``` sample\nsecond")) + "\a"
+	if output.String() != want {
+		t.Fatal("copy changed selected text")
+	}
+}
+
 func TestLogSelectionKeyboardScopeAndTransitions(t *testing.T) {
 	m := selectionTestModel(t, "first", "second", "third")
 	_, _ = m.handleKeyMsg(keyMessage("y"))
@@ -224,9 +450,6 @@ func TestLogSelectionActionsBothPanelsAndRunViews(t *testing.T) {
 		if strings.Contains(s.text(), "[stderr]") || strings.Contains(s.text(), "printf") || !strings.Contains(s.text(), "problem") {
 			t.Fatalf("action text=%q", s.text())
 		}
-		if combined && !strings.Contains(s.context(), "combined") {
-			t.Fatal("combined mislabeled")
-		}
 		m.endLogSelection()
 	}
 	m.togglePinnedLog()
@@ -236,7 +459,7 @@ func TestLogSelectionActionsBothPanelsAndRunViews(t *testing.T) {
 		t.Fatal("pinned action empty")
 	}
 }
-func TestLogSelectionDisconnectPreservesCopyAndSave(t *testing.T) {
+func TestLogSelectionDisconnectPreservesCopy(t *testing.T) {
 	m := selectionTestModel(t, "captured")
 	selectAllSnapshot(m)
 	s := m.logSelection
@@ -305,7 +528,7 @@ func TestLogSelectionFrameFitsThemesAndSizes(t *testing.T) {
 					t.Fatalf("line wider than %d", width)
 				}
 			}
-			for _, label := range []string{"Copy", "With context", "Save", "Done"} {
+			for _, label := range []string{"[Enter] Copy", "Done"} {
 				if !strings.Contains(ansi.Strip(view), label) {
 					t.Fatalf("missing %s at %d", label, width)
 				}
@@ -378,7 +601,7 @@ func TestLogSelectionClipboardBudgetFailureAndExactCommand(t *testing.T) {
 		t.Fatal("write failure ignored")
 	}
 	_, _ = m.Update(result)
-	if m.logSelection == nil || !strings.Contains(m.toastMessage, "Save") {
+	if m.logSelection == nil || !strings.Contains(m.toastMessage, "retry") {
 		t.Fatal("failed copy lost retry")
 	}
 }
@@ -386,65 +609,6 @@ func TestLogSelectionClipboardBudgetFailureAndExactCommand(t *testing.T) {
 type failingSelectionWriter struct{}
 
 func (failingSelectionWriter) Write([]byte) (int, error) { return 0, io.ErrClosedPipe }
-func TestLogSelectionSaveSameTextOverwriteAndFailure(t *testing.T) {
-	m := selectionTestModel(t, "  first", "\tlast")
-	selectAllSnapshot(m)
-	s := m.logSelection
-	dir := t.TempDir()
-	m.workingDirectory = dir
-	_, _ = m.handleKeyMsg(keyMessage("ctrl+s"))
-	m.exportInput.SetValue("fragment.log")
-	_, cmd := m.handleKeyMsg(keyMessage("enter"))
-	_, _ = m.Update(cmd())
-	payload, err := os.ReadFile(filepath.Join(dir, "fragment.log"))
-	if err != nil || string(payload) != s.text() {
-		t.Fatalf("saved=%q err=%v", payload, err)
-	}
-	if s.saving || m.logSelection != s {
-		t.Fatal("save lost selection")
-	}
-	_, _ = m.handleKeyMsg(keyMessage("ctrl+s"))
-	m.exportInput.SetValue("fragment.log")
-	_, cmd = m.handleKeyMsg(keyMessage("enter"))
-	_, _ = m.Update(cmd())
-	if !s.overwrite {
-		t.Fatal("overwrite lacked confirmation")
-	}
-	_, cmd = m.handleKeyMsg(keyMessage("enter"))
-	_, _ = m.Update(cmd())
-	if s.saving {
-		t.Fatal("overwrite failed")
-	}
-	_, _ = m.handleKeyMsg(keyMessage("ctrl+s"))
-	m.exportInput.SetValue("missing/fragment.log")
-	_, cmd = m.handleKeyMsg(keyMessage("enter"))
-	_, _ = m.Update(cmd())
-	if !s.saving || m.logSelection != s || s.text() != string(payload) {
-		t.Fatal("write failure lost snapshot")
-	}
-	_, _ = m.handleKeyMsg(keyMessage("esc"))
-	if s.saving || m.logSelection != s {
-		t.Fatal("cancel lost selection")
-	}
-	if err := writeSelectionFile(filepath.Join(dir, "absent"), "x", true); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("overwrite created unconfirmed path: %v", err)
-	}
-}
-func TestLogSelectionContextFenceAndMetadata(t *testing.T) {
-	m := selectionTestModel(t, "``` dangerous fence", "safe")
-	selectAllSnapshot(m)
-	s := m.logSelection
-	s.search = "filtered; hidden records omitted"
-	context := s.context()
-	if !strings.Contains(context, "````text\n``` dangerous fence\nsafe\n````") || !strings.Contains(context, "combined") || !strings.Contains(context, "hidden records omitted") {
-		t.Fatalf("context=%q", context)
-	}
-	for _, forbidden := range []string{"Runtime:", "PID:", "Client:", "Command:"} {
-		if strings.Contains(context, forbidden) {
-			t.Fatal("unexpected metadata")
-		}
-	}
-}
 func TestLogSelectionPriorPauseAndRuntimeScope(t *testing.T) {
 	m := selectionTestModel(t, "first", "second")
 	m.followMode = false
@@ -477,16 +641,13 @@ func TestLogSelectionBudgetAndSyntheticRows(t *testing.T) {
 		t.Fatal("oversized snapshot silently trimmed")
 	}
 }
-func TestLogSelectionCaptureTimestampIsContextOnly(t *testing.T) {
+func TestLogSelectionExcludesGeneratedTimestamp(t *testing.T) {
 	m := selectionTestModel(t)
 	m.showLogTime = true
 	appendTestLogAt(m, "api", time.Date(2026, 10, 14, 9, 0, 0, 0, time.UTC), "[12:34:56.789] app timestamp")
 	selectAllSnapshot(m)
 	if m.logSelection.text() != "[12:34:56.789] app timestamp" {
 		t.Fatal("app timestamp lost or generated copied")
-	}
-	if !strings.Contains(m.logSelection.context(), "2026-10-14T09:00:00Z") {
-		t.Fatal("captured time missing")
 	}
 }
 
@@ -544,17 +705,36 @@ func TestLogSelectionEdgeScrollAndStaleTimer(t *testing.T) {
 func TestLogSelectionFooterMouseAndClearTransition(t *testing.T) {
 	m := selectionTestModel(t, "sample")
 	m.beginLogSelection()
-	clickRenderedText(t, m, "[Ctrl+S] Save")
-	if !m.logSelection.saving {
-		t.Fatal("Save footer did not open input")
+	s := m.logSelection
+	_, cmd := m.handleKeyMsg(keyMessage("c"))
+	if cmd != nil || m.mode != ModeNormal || m.logSelection != s || s.text() != "sample" {
+		t.Fatal("Clear must be inactive while text is selected")
 	}
-	clickRenderedText(t, m, "[Esc] Cancel")
-	if m.logSelection.saving {
-		t.Fatal("Cancel footer did not retain selection")
+	clickRenderedText(t, m, "[Esc] Done")
+	if m.logSelection != nil {
+		t.Fatal("Done footer did not clear selection")
 	}
 	_, _ = m.handleKeyMsg(keyMessage("c"))
-	if m.logSelection != nil || m.mode != ModeConfirmClearLogs {
+	if m.mode != ModeConfirmClearLogs {
 		t.Fatal("clear skipped existing confirmation")
+	}
+}
+
+func TestLogPanelClearButtonUsesExistingConfirmation(t *testing.T) {
+	for _, panel := range []panelFocus{panelLogs, panelPinnedLogs} {
+		m := selectionTestModel(t, "keep until confirmed")
+		if panel == panelPinnedLogs {
+			m.togglePinnedLog()
+		}
+		m.panelFocus = panel
+		clickRenderedText(t, m, "[c] Clear")
+		if m.mode != ModeConfirmClearLogs {
+			t.Fatal("Clear button skipped confirmation")
+		}
+		_, _ = m.handleKeyMsg(keyMessage("esc"))
+		if m.mode != ModeNormal || !strings.Contains(ansi.Strip(m.View()), "keep until confirmed") {
+			t.Fatal("cancelling Clear changed log text")
+		}
 	}
 }
 
@@ -673,5 +853,60 @@ func TestLogSelectionGeneratedSourcePrefixesAreMetadata(t *testing.T) {
 	selectAllSnapshot(m)
 	if m.logSelection.text() != "Starting\n[Kranz] application text" {
 		t.Fatalf("generated source badge copied or application content lost: %q", m.logSelection.text())
+	}
+}
+
+func TestPinnedActionSelectionMatchesFilteredMultilineView(t *testing.T) {
+	m := selectionTestModel(t)
+	id := config.ActionID{OwnerKind: config.ActionOwnerGroup, Owner: "ops", Name: "sample"}
+	target := app.ActionRunTarget(id)
+	m.pinnedTarget, m.pinnedRunMode = target, runViewCombined
+	m.panelFocus = panelPinnedLogs
+	m.showLogTime = true
+	m.logEntries[target] = []config.LogEntry{{Sequence: 1, Source: "stderr", Raw: "keep first\nsecond", Timestamp: time.Unix(1, 0)}}
+	m.pinnedSearchMode = searchFilter
+	if err := m.pinnedSearcher.SetPattern("keep"); err != nil {
+		t.Fatal(err)
+	}
+	entry := m.logEntries[target][0]
+	want := projectedTextRows(m.pinnedActionDisplayLine(entry), m.currentLogContentWidth(), m.wrapLogs)
+	selectAllSnapshot(m)
+	s := m.logSelection
+	if s == nil || s.text() != "keep first\nsecond" {
+		t.Fatal("selection omitted a visible line from the matching record")
+	}
+	rows := s.rows(m.currentLogContentWidth(), m.wrapLogs)
+	if len(rows) != len(want) {
+		t.Fatalf("selection rows = %d; visible rows = %d", len(rows), len(want))
+	}
+	for i, row := range rows {
+		if visualRowText(row.visual) != ansi.Strip(want[i]) {
+			t.Fatalf("row %d moved when selection started", i)
+		}
+	}
+}
+
+func TestPinnedActionMultilineRowCountWithoutWrap(t *testing.T) {
+	m := selectionTestModel(t)
+	m.wrapLogs = false
+	entry := config.LogEntry{Sequence: 1, Raw: "first\nsecond"}
+	metrics := &logRowMetrics{counts: make(map[uint64]int)}
+	got := metrics.pinnedActionRowCount(m, entry, 40)
+	want := len(projectedTextRows(m.pinnedActionDisplayLine(entry), 40, false))
+	if got != want {
+		t.Fatalf("row count = %d; rendered rows = %d", got, want)
+	}
+}
+
+func TestLogSelectionClicksOnDifferentLinesOfOneRecord(t *testing.T) {
+	m := selectionTestModel(t)
+	m.logEntries[app.ServiceRunTarget("api")] = []config.LogEntry{{Sequence: 1, Raw: "first\nsecond"}}
+	x := m.dashboardLeftWidth() + 1
+	for _, y := range []int{2, 3} {
+		mouseSelection(m, x, y, tea.MouseActionPress)
+		mouseSelection(m, x, y, tea.MouseActionRelease)
+		if m.logSelection != nil {
+			t.Fatal("clicks on different logical lines were treated as a double click")
+		}
 	}
 }

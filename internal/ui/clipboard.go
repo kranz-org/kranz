@@ -39,7 +39,7 @@ type clipboardResultMsg struct {
 
 func (m *Model) sendClipboard(payload, source string) tea.Cmd {
 	if len(payload) > clipboardMaxBytes {
-		m.addNotification(source, fmt.Sprintf("%d bytes exceeds clipboard budget (64 KiB); use Save", len(payload)), config.LogWarn)
+		m.addNotification(source, fmt.Sprintf("%d bytes exceeds clipboard budget (64 KiB); select a smaller fragment", len(payload)), config.LogWarn)
 		return nil
 	}
 	writer := m.terminalOutput

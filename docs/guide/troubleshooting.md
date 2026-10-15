@@ -192,15 +192,14 @@ configuration and the version from `kranz --version`.
 
 ## Nothing pasted from the TUI
 
-Nothing pasted? Check terminal clipboard permissions, or save the selection.
+Nothing pasted? Check terminal clipboard permissions and retry.
 Kranz sends an OSC 52 clipboard request to the terminal running the dashboard (bare launch or `attach`).
 “Sent” confirms output transport, **not** the terminal's clipboard write.
-Retry Copy or choose `Ctrl+S`; both keep the same selection. Kranz does not read
+Retry Copy; it keeps the same selection. Kranz does not read
 the clipboard to verify delivery or automatically run remote clipboard helpers.
 
 Clipboard requests are limited to 64 KiB of UTF-8 text before base64 encoding.
-Larger selections are refused without truncation; Save retains the full clean
-text. Some terminals impose smaller limits or disable OSC 52. With SSH, enable
+Larger selections are refused without truncation; select a smaller fragment. Some terminals impose smaller limits or disable OSC 52. With SSH, enable
 clipboard writes in the local terminal. With tmux, check its `set-clipboard`
 policy and terminal support for `Ms`; nested sessions and terminal policies may
 still block delivery. Application tests alone cannot establish those settings.

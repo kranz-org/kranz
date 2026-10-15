@@ -84,12 +84,14 @@ open(sys.argv[1],"wb").write(data)
             tm("new-window", "-d", "-t", "smoke", "-n", "paste", "-c", directory, shell)
             time.sleep(0.2)
             key("Enter")
-            tm("paste-buffer", "-t", "smoke:paste.0")
+            # Preserve LF bytes: tmux otherwise turns them into Enter (CR).
+            tm("paste-buffer", "-r", "-t", "smoke:paste.0")
             time.sleep(0.15)
             tm("send-keys", "-t", "smoke:paste.0", "C-d")
             wait_for(destination.exists)
-            if destination.read_bytes() != expected.encode():
-                raise RuntimeError("pasted text differs")
+            actual = destination.read_bytes()
+            if actual != expected.encode():
+                raise RuntimeError(f"{label}: pasted text differs ({len(actual)} bytes, expected {len(expected.encode())})")
             print("PASS: " + label)
 
         started = False
@@ -109,6 +111,39 @@ open(sys.argv[1],"wb").write(data)
                     raise RuntimeError("16-color selection omitted reverse video")
                 print("PASS: 16-color reverse-video selection")
             paste("prefix https://example.test/path suffix", "keyboard-line-paste")
+            if "[Enter] Copy" not in frame() or "With context" in frame():
+                raise RuntimeError("selection footer did not simplify copying")
+            for cycle, reset in enumerate(["Escape", "click", "Escape"]):
+                if reset == "Escape":
+                    key("Escape")
+                else:
+                    tm("send-keys", "-t", "smoke:tui.0", "-l", "\x1b[<0;45;5M\x1b[<0;45;5m")
+                wait_for(lambda: "SELECT" not in frame())
+                if "[c] Clear" not in frame():
+                    raise RuntimeError("log clear button missing after reset")
+                # Start in padding immediately after reset, without entering
+                # keyboard selection or waiting out the double-click timeout.
+                tm("send-keys", "-t", "smoke:tui.0", "-l",
+                   "\x1b[<0;119;6M\x1b[<32;45;5M\x1b[<0;45;5m")
+                wait_for(lambda: "SELECT" in frame())
+                paste("prefix https://example.test/path suffix\n雪é👩‍💻\tend",
+                      f"reselect-from-padding-{cycle + 1}")
+            # Real presses/releases must also clear over non-text cells, where
+            # hit-testing previously swallowed clicks and kept the snapshot.
+            for label, x, y in [("text", 53, 5), ("padding", 119, 5),
+                                ("empty-row", 80, 25), ("header", 80, 2),
+                                ("border", 120, 5), ("footer", 120, 30)]:
+                for sequence in [f"\x1b[<0;{x};{y}M", f"\x1b[<0;{x};{y}m"]:
+                    tm("send-keys", "-t", "smoke:tui.0", "-l", sequence)
+                    time.sleep(0.15)
+                wait_for(lambda: "SELECT" not in frame())
+                print("PASS: click-clears-" + label)
+                for value in ["3", "y", "Home", "Down", "Down"]:
+                    key(value)
+            for sequence in ["\x1b[<0;45;5M", "\x1b[<32;119;6M", "\x1b[<0;119;6m"]:
+                tm("send-keys", "-t", "smoke:tui.0", "-l", sequence)
+                time.sleep(0.15)
+            paste("prefix https://example.test/path suffix\n雪é👩‍💻\tend", "drag-through-short-row-padding")
             # SGR mouse events go to the real application's PTY, not a model mock.
             for sequence in ["\x1b[<0;52;5M", "\x1b[<32;76;5M", "\x1b[<0;76;5m"]:
                 tm("send-keys", "-t", "smoke:tui.0", "-l", sequence)
@@ -119,15 +154,6 @@ open(sys.argv[1],"wb").write(data)
             time.sleep(0.3)
             key("w")
             paste("https://example.test/path", "resize-wrap-retry")
-            key("C-s")
-            key("C-u")
-            tm("send-keys", "-t", "smoke:tui.0", "-l", "fragment.txt")
-            time.sleep(0.2)
-            key("Enter")
-            wait_for(lambda: (root / "fragment.txt").exists())
-            if (root / "fragment.txt").read_text() != "https://example.test/path":
-                raise RuntimeError("saved text differs")
-            print("PASS: save-exact-clean-text")
             key("Escape")
             if "SELECT" in frame():
                 raise RuntimeError("Done did not leave selection")
