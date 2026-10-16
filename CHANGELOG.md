@@ -7,6 +7,7 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 ### Fixed
 
 - Action status messages stay at the right of the log selection controls without adding a footer row.
+- Clearing a log selection keeps the position reached by scrolling during selection instead of jumping back to its starting position.
 
 ## [0.17.0] - 2026-10-15
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -806,7 +807,8 @@ func TestLogSelectionRetainedBrowseAnchorAfterEvictionAndResize(t *testing.T) {
 	m.logOffset = 8
 	m.beginLogSelection()
 	s := m.logSelection
-	seq := s.lines[s.restoreTop.line].entry.Sequence
+	s.scrollTo(logPoint{s.top.line - 3, s.top.offset})
+	seq := s.lines[s.top.line].entry.Sequence
 	entries := m.logEntries[s.target]
 	m.logEntries[s.target] = append([]config.LogEntry(nil), entries[5:]...)
 	m.width = 80
@@ -907,6 +909,146 @@ func TestLogSelectionClicksOnDifferentLinesOfOneRecord(t *testing.T) {
 		mouseSelection(m, x, y, tea.MouseActionRelease)
 		if m.logSelection != nil {
 			t.Fatal("clicks on different logical lines were treated as a double click")
+		}
+	}
+}
+
+func TestLogSelectionExitKeepsScrolledViewport(t *testing.T) {
+	for _, panel := range []panelFocus{panelLogs, panelPinnedLogs} {
+		for _, follow := range []bool{false, true} {
+			for _, direction := range []int{-1, 1} {
+				for _, method := range []string{"drag", "wheel", "keyboard"} {
+					t.Run(fmt.Sprintf("panel=%d/follow=%v/direction=%d/%s", panel, follow, direction, method), func(t *testing.T) {
+						var lines []string
+						for i := range 80 {
+							lines = append(lines, fmt.Sprintf("synthetic line %03d", i))
+						}
+						m := selectionTestModel(t, lines...)
+						m.followMode = follow
+						m.logAnchor, m.logOffset = 80, 20
+						m.logPaused = !follow
+						if panel == panelPinnedLogs {
+							m.togglePinnedLog()
+							m.pinnedFollow = follow
+							m.pinnedAnchor, m.pinnedOffset = 80, 20
+						}
+						m.panelFocus = panel
+						m.beginLogSelection()
+						s := m.logSelection
+						// A live view starts at the bottom: scroll upward first so
+						// both directions can move without reaching a boundary.
+						if follow && direction > 0 {
+							s.top = logPoint{30, 0}
+						}
+						before := s.top
+						switch method {
+						case "drag":
+							x := m.dashboardLeftWidth() + 2
+							top := dashboardHeaderRows + 1
+							if panel == panelLogs && m.hasPinnedRunView() {
+								ph, _ := m.logColumnLayout(m.height - 1 - m.dashboardFooterHeight())
+								top += ph
+							}
+							mouseSelection(m, x, top+1, tea.MouseActionPress)
+							y := top - 1
+							if direction > 0 {
+								y = top + m.selectionHeight(panel)
+							}
+							mouseSelection(m, x, y, tea.MouseActionMotion)
+							_, _ = m.handleSelectionScroll(selectionScrollMsg{s})
+							mouseSelection(m, x, y, tea.MouseActionRelease)
+						case "wheel":
+							button := tea.MouseButtonWheelUp
+							if direction > 0 {
+								button = tea.MouseButtonWheelDown
+							}
+							_, _ = m.Update(tea.MouseMsg{X: m.dashboardLeftWidth() + 2, Y: 3, Action: tea.MouseActionPress, Button: button})
+						case "keyboard":
+							key := "home"
+							if direction > 0 {
+								key = "end"
+							}
+							_, _ = m.handleKeyMsg(keyMessage(key))
+						}
+						if s.top == before {
+							t.Fatal("selection did not scroll")
+						}
+						rows := s.rows(m.currentLogContentWidth(), m.wrapLogs)
+						top := rows[m.selectionViewport(s, rows)]
+						want := s.lines[top.line].entry.Sequence
+						appendTestLog(m, "api", "incoming after scroll")
+						_, _ = m.handleKeyMsg(keyMessage("esc"))
+						fresh := m.captureLogSelection(panel)
+						rows = fresh.rows(m.currentLogContentWidth(), m.wrapLogs)
+						got := fresh.lines[rows[fresh.start].line].entry.Sequence
+						if got != want {
+							t.Fatalf("viewport jumped to sequence %d; want %d", got, want)
+						}
+						if panel == panelLogs && (m.followMode || m.logPaused != !follow) || panel == panelPinnedLogs && m.pinnedFollow {
+							t.Fatal("scrolled selection resumed follow or changed pause")
+						}
+					})
+				}
+			}
+		}
+	}
+}
+
+func TestActionLogSelectionScrolledPositionBothPanelsAndRunViews(t *testing.T) {
+	for _, panel := range []panelFocus{panelLogs, panelPinnedLogs} {
+		for _, mode := range []runViewMode{runViewSingle, runViewCombined} {
+			t.Run(fmt.Sprintf("panel=%d/mode=%d", panel, mode), func(t *testing.T) {
+				id := config.ActionID{OwnerKind: config.ActionOwnerGroup, Owner: "ops", Name: "sample"}
+				var output strings.Builder
+				for i := range 80 {
+					fmt.Fprintf(&output, "synthetic line %03d\\n", i)
+				}
+				m := NewModel(&config.Config{Project: "sample", ActionGroups: map[string]config.ActionGroup{"ops": {Actions: map[string]config.Action{"sample": {Command: "printf '" + output.String() + "'"}}}}}, "test")
+				t.Cleanup(func() { _ = m.Shutdown() })
+				m.width, m.height, m.ready = 100, 30, true
+				m.focusedAction = &id
+				m.focusedActionGroup = ""
+				m.listMode = listServices
+				m.panelFocus = panelLogs
+				for range 2 {
+					if _, err := m.app.RunAction(context.Background(), id); err != nil {
+						t.Fatal(err)
+					}
+				}
+				m.refreshServices()
+				m.syncRunTarget()
+				m.selectLatestRun()
+				m.runMode = mode
+				if panel == panelPinnedLogs {
+					m.togglePinnedLog()
+				}
+				m.panelFocus = panel
+				m.beginLogSelection()
+				s := m.logSelection
+				if s == nil {
+					t.Fatal("action snapshot unavailable")
+				}
+				x, y := m.dashboardLeftWidth()+2, dashboardHeaderRows+1
+				if panel == panelLogs && m.hasPinnedRunView() {
+					ph, _ := m.logColumnLayout(m.height - 1 - m.dashboardFooterHeight())
+					y += ph
+				}
+				for range 4 {
+					_, _ = m.Update(tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionPress, Button: tea.MouseButtonWheelUp})
+				}
+				if !s.scrolled {
+					t.Fatal("action selection did not scroll")
+				}
+				rows := s.rows(m.currentLogContentWidth(), m.wrapLogs)
+				line := s.lines[rows[m.selectionViewport(s, rows)].line]
+				clickRenderedText(t, m, "[Esc] Done")
+				fresh := m.captureLogSelection(panel)
+				rows = fresh.rows(m.currentLogContentWidth(), m.wrapLogs)
+				got := fresh.lines[rows[fresh.start].line]
+				if got.entry.Sequence != line.entry.Sequence || got.text != line.text {
+					t.Fatal("clearing action selection changed the visible source line")
+				}
+			})
 		}
 	}
 }

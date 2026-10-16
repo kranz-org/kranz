@@ -166,7 +166,7 @@ func (m *Model) handleLogSelectionMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd, b
 				start = min(max(0, len(rows)-m.selectionHeight(s.panel)), start+1)
 			}
 			if len(rows) > 0 {
-				s.top = logPoint{rows[start].line, max(0, rows[start].visual.start)}
+				s.scrollTo(logPoint{rows[start].line, max(0, rows[start].visual.start)})
 			}
 			return m, nil, true
 		}
@@ -307,7 +307,7 @@ func (m *Model) handleSelectionScroll(msg selectionScrollMsg) (tea.Model, tea.Cm
 	if next == start {
 		return m, nil
 	}
-	s.top = logPoint{rows[next].line, max(0, rows[next].visual.start)}
+	s.scrollTo(logPoint{rows[next].line, max(0, rows[next].visual.start)})
 	index := next
 	if s.scrollDirection > 0 {
 		index = min(len(rows)-1, next+m.selectionHeight(s.panel)-1)
