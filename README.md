@@ -141,7 +141,8 @@ for every command, option, output contract, and exit code.
 - Typed action parameters shared by TUI, CLI, MCP, and prerequisites
 - Prerequisites that must succeed before a service starts
 - Runtime port discovery and ownership-aware conflict handling
-- Searchable, pinnable, timestamped logs in a keyboard and mouse TUI
+- Searchable, pinnable, timestamped logs in a keyboard and mouse TUI;
+  selection controls share the footer with right-aligned action status
 - In-place switching between live local runtimes with per-runtime TUI state
 - Bounded per-service and per-action run history with provenance, exact output
   retention state, navigation, deletion, and export
