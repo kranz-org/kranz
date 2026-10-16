@@ -27,7 +27,7 @@ type selectionRow struct {
 type logSelection struct {
 	cachedRows                  []selectionRow
 	capturedLast                uint64
-	restoreTop                  logPoint
+	scrolled                    bool
 	priorFollow, priorPaused    bool
 	priorRun                    runSelectionState
 	cachedWidth                 int
@@ -46,6 +46,11 @@ type logSelection struct {
 	scrollDirection             int
 	scrollQueued                bool
 	disconnected                bool
+}
+
+func (s *logSelection) scrollTo(top logPoint) {
+	s.scrolled = s.scrolled || top != s.top
+	s.top = top
 }
 
 func (m *Model) selectionActive(panel panelFocus) bool {
@@ -240,7 +245,6 @@ func (m *Model) captureLogSelection(panel panelFocus) *logSelection {
 	if len(rows) > 0 {
 		s.top = logPoint{rows[s.start].line, max(0, rows[s.start].visual.start)}
 	}
-	s.restoreTop = s.top
 	return s
 }
 func (m *Model) selectionHeight(panel panelFocus) int {
@@ -289,7 +293,9 @@ func (m *Model) endLogSelection() {
 	} else {
 		m.pinnedFollow = s.priorFollow
 	}
-	if s.priorFollow {
+	// Resume live following only when selection left the viewport in place.
+	// A scrolled snapshot returns to its current source position instead.
+	if s.priorFollow && !s.scrolled {
 		return
 	}
 	if s.panel == panelLogs && m.runTarget == s.target {
@@ -301,9 +307,9 @@ func (m *Model) endLogSelection() {
 	if fresh == nil {
 		return
 	}
-	original := s.lines[s.restoreTop.line].entry.Sequence
+	original := s.lines[s.top.line].entry.Sequence
 	part := 0
-	for i := s.restoreTop.line - 1; i >= 0 && s.lines[i].entry.Sequence == original; i-- {
+	for i := s.top.line - 1; i >= 0 && s.lines[i].entry.Sequence == original; i-- {
 		part++
 	}
 	found := -1
@@ -328,7 +334,7 @@ func (m *Model) endLogSelection() {
 		}
 		if row.line == found {
 			desired = i
-			if row.visual.end > s.restoreTop.offset {
+			if row.visual.end > s.top.offset {
 				break
 			}
 		}
@@ -483,7 +489,7 @@ func (m *Model) handleSelectionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			start = index - m.selectionHeight(s.panel) + 1
 		}
 		if start < len(rows) {
-			s.top = logPoint{rows[start].line, max(0, rows[start].visual.start)}
+			s.scrollTo(logPoint{rows[start].line, max(0, rows[start].visual.start)})
 		}
 	}
 	return m, nil
