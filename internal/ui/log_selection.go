@@ -7,7 +7,6 @@ import (
 	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/x/ansi"
 	"github.com/kranz-org/kranz/internal/app"
 	"github.com/kranz-org/kranz/internal/config"
 )
@@ -408,12 +407,8 @@ func (m *Model) renderLogSelection(width, height int) string {
 func (m *Model) selectionFooter() string {
 	groups := []string{"[Enter] Copy", "[Esc] Done"}
 	rows := renderModalShortcutRows(groups, m.width, ContextBarStyle)
-	m.notifMu.RLock()
-	toast := m.toastMessage
-	m.notifMu.RUnlock()
-	if toast != "" {
-		rows = append(rows, ContextBarStyle.Render(ansi.Truncate(toast, m.width, "…")))
-	}
+	last := len(rows) - 1
+	rows[last] = m.appendStatusContext(rows[last])
 	return strings.Join(rows, "\n")
 }
 func (m *Model) handleSelectionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

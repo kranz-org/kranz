@@ -269,6 +269,10 @@ func (m *Model) renderStatusBar() string {
 	}
 	left := strings.Join(parts, actionSeparator())
 
+	return m.appendStatusContext(left)
+}
+
+func (m *Model) appendStatusContext(left string) string {
 	context := m.contextMessage()
 	space := m.width - lipgloss.Width(left) - lipgloss.Width(context)
 	if space < 1 {

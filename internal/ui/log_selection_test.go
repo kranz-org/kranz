@@ -421,7 +421,7 @@ func TestLogSelectionPinnedRunAndOtherPanelClick(t *testing.T) {
 	}
 	top, _ := m.logColumnLayout(m.height - 1 - m.dashboardFooterHeight())
 	mouseSelection(m, m.dashboardLeftWidth()+2, 2+top, tea.MouseActionPress)
-	if m.logSelection != nil || m.panelFocus != panelLogs {
+	if m.selectionActive(panelPinnedLogs) || m.selectionActive(panelLogs) || m.panelFocus != panelLogs {
 		t.Fatal("other panel click carried selection")
 	}
 }
@@ -908,5 +908,41 @@ func TestLogSelectionClicksOnDifferentLinesOfOneRecord(t *testing.T) {
 		if m.logSelection != nil {
 			t.Fatal("clicks on different logical lines were treated as a double click")
 		}
+	}
+}
+
+func TestLogSelectionFooterKeepsStatusOnControlRow(t *testing.T) {
+	restoreDefaultTheme(t)
+	for _, theme := range []string{"light", "dark"} {
+		t.Run(theme, func(t *testing.T) {
+			m := selectionTestModel(t, "output")
+			if _, err := ApplyThemeForBackground(DefaultTheme, "", theme == "dark"); err != nil {
+				t.Fatal(err)
+			}
+			for _, width := range []int{64, 100, 160} {
+				m.width = width
+				m.height = 14
+				for _, running := range []bool{false, true} {
+					m.operation = ""
+					m.toastMessage = "sample succeeded in 1.78s"
+					if running {
+						m.operation = "running sample"
+					}
+					selectAllSnapshot(m)
+					footer := ansi.Strip(m.renderStatusBar())
+					status := strings.TrimSpace(m.contextMessage())
+					if strings.Contains(footer, "\n") || !strings.Contains(footer, "[Enter] Copy") || !strings.Contains(footer, "[Esc] Done") {
+						t.Fatalf("controls/status gained a row at width %d: %q", width, footer)
+					}
+					if !strings.HasSuffix(footer, status+" ") || ansi.StringWidth(footer) != width {
+						t.Fatalf("status is not aligned right at width %d: %q", width, footer)
+					}
+					if got := lipgloss.Height(m.View()); got != m.height {
+						t.Fatalf("view height = %d, want %d", got, m.height)
+					}
+					m.endLogSelection()
+				}
+			}
+		})
 	}
 }

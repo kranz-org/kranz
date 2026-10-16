@@ -4,6 +4,10 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### Fixed
+
+- Action status messages stay at the right of the log selection controls without adding a footer row.
+
 ## [0.17.0] - 2026-10-15
 
 ### Added
