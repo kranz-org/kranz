@@ -3,9 +3,11 @@ package ui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/kranz-org/kranz/internal/app"
 	"github.com/kranz-org/kranz/internal/config"
 )
 
@@ -171,6 +173,25 @@ func TestExpandedActionLabelsParametersAndCommand(t *testing.T) {
 	collapsed := ansi.Strip(model.renderServicePanel(80, 12))
 	if !strings.Contains(collapsed, "seed ◆") {
 		t.Fatalf("a collapsed parameterized action does not offer its parameters:\n%s", collapsed)
+	}
+}
+
+func TestParameterMarkSurvivesRunMetadataInNarrowList(t *testing.T) {
+	for _, status := range []app.ActionStatus{app.ActionRunning, app.ActionSucceeded, app.ActionFailed} {
+		t.Run(status.String(), func(t *testing.T) {
+			model, id := parameterTreeModel(t)
+			model.actionStates[id] = app.ActionResult{ID: id, Run: 1, Status: status, Duration: time.Second}
+			row := model.serviceListRows()[model.focusedServiceListRow()]
+			for _, width := range []int{17, 80} {
+				line := ansi.Strip(model.renderServiceListRow(model.focusedServiceListRow(), row, width))
+				if !strings.Contains(line, "seed#1 ◆") {
+					t.Fatalf("width %d hides the parameter mark after a run: %q", width, line)
+				}
+				if width == 80 && !strings.Contains(line, "◆  "+status.String()) {
+					t.Fatalf("run status must follow the parameter mark: %q", line)
+				}
+			}
+		})
 	}
 }
 
