@@ -173,17 +173,16 @@ func (m *Model) renderServiceListRow(index int, row actionListRow, width int) st
 		state := m.cachedActionState(row.Action)
 		name := actionRunName(row.Action.Name, state.Run)
 		status := actionStatusIndicator(state.Status) + " " + name
+		// Keep the settings affordance before run metadata so a narrow list
+		// does not truncate it in favour of the status or duration.
+		if m.actionHasParams(row.Action) && !m.expandedActionParams[row.Action] {
+			status += ContextBarStyle.Render(" " + parameterMark)
+		}
 		if state.Status != app.ActionReady {
 			status += ContextBarStyle.Render("  " + state.Status.String())
 		}
 		if state.Duration > 0 && state.Status != app.ActionRunning {
 			status += ContextBarStyle.Render(" · " + formatExactDuration(state.Duration.Round(time.Millisecond)))
-		}
-		// An action whose command can be configured carries the settings mark.
-		// A triangle would read as "expand a list", which is not what opening
-		// it offers.
-		if m.actionHasParams(row.Action) && !m.expandedActionParams[row.Action] {
-			status += ContextBarStyle.Render(" " + parameterMark)
 		}
 		return renderListLine("      "+status, width, focused)
 	case actionRowParam:
