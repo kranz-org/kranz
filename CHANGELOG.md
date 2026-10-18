@@ -4,10 +4,26 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.17.1] - 2026-10-18
+
+### Added
+
+- `Shift+A` selects all retained text in the current log selection snapshot;
+  `a` selects the visible viewport. Both shortcuts appear as clickable controls
+  in the selection footer and respect the selected panel, run and filter.
+
 ### Fixed
 
-- Action status messages stay at the right of the log selection controls without adding a footer row.
-- Clearing a log selection keeps the position reached by scrolling during selection instead of jumping back to its starting position.
+- Log selection counts no longer assemble the full selected text on every
+  redraw, reducing allocations when selecting large snapshots.
+- Action status messages stay at the right of the log selection controls
+  without adding a footer row.
+- Clearing a log selection keeps the position reached by scrolling during
+  selection instead of jumping back to its starting position.
+- Action parameter controls focus on a single click and activate on a double
+  click, so reading a parameter no longer changes its value.
+- The action parameter indicator stays beside the command name, before run
+  status and duration, so it remains visible in narrow lists.
 
 ## [0.17.0] - 2026-10-15
 
@@ -1023,7 +1039,8 @@ artifacts.
 - Explicit global-user and project-config save destinations in the live theme picker.
 - Native compatibility for common Process Compose configurations.
 
-[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.17.1...HEAD
+[0.17.1]: https://github.com/kranz-org/kranz/compare/v0.17.0...v0.17.1
 [0.17.0]: https://github.com/kranz-org/kranz/compare/v0.16.5...v0.17.0
 [0.16.5]: https://github.com/kranz-org/kranz/compare/v0.16.4...v0.16.5
 [0.16.4]: https://github.com/kranz-org/kranz/compare/v0.16.3...v0.16.4
