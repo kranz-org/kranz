@@ -206,7 +206,9 @@ Connection refused
 Clean text retains indentation, tabs and application timestamps. It excludes
 terminal controls, generated prefixes, borders and padding. Soft wraps do not
 add line breaks, and no final newline is added. `a` selects only visible viewport
-text; full-line keyboard selection includes the entire logical line.
+text; `Shift+A` selects the whole frozen snapshot, including offscreen text.
+Both commands are shown in the selection footer and can be clicked.
+Full-line keyboard selection includes the entire logical line.
 
 The active panel shows **SELECT · frozen** with line/byte counts. Selected text
 uses a theme accent fill that contrasts with the canvas, including near-white
@@ -215,6 +217,8 @@ snapshot stays stable during incoming logs, retention eviction, resize and wrap
 changes. Filters omit hidden records; highlight includes intermediate records.
 The snapshot budget is 1 MiB of readable text and metadata or 20,000 logical
 lines. Larger views are refused as a whole: choose a run or narrow the filter.
+Select all covers retained logs for the current panel, run and filter; it does
+not retrieve evicted history or include logs arriving after selection started.
 A bounded “New logs” indicator reports incoming data without claiming a count.
 
 Copy preserves selection for retry. `Esc` restores the previous follow/pause or

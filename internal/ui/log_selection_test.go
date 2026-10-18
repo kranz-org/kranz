@@ -33,9 +33,7 @@ func selectionTestModel(t *testing.T, lines ...string) *Model {
 func selectAllSnapshot(m *Model) {
 	m.beginLogSelection()
 	if m.logSelection != nil {
-		s := m.logSelection
-		s.selectLine(0, false)
-		s.selectLine(len(s.lines)-1, true)
+		_, _ = m.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'A'}})
 	}
 }
 func mouseSelection(m *Model, x, y int, action tea.MouseAction) {
@@ -377,7 +375,7 @@ func TestLogSelectionKeyboardScopeAndTransitions(t *testing.T) {
 	if m.logSelection.text() != "first" {
 		t.Fatalf("line replace=%q", m.logSelection.text())
 	}
-	for _, key := range []string{"s", "r", "A", "S"} {
+	for _, key := range []string{"s", "r", "S"} {
 		_, _ = m.handleKeyMsg(keyMessage(key))
 		if m.mode != ModeNormal || m.logSelection == nil {
 			t.Fatalf("lifecycle %s escaped selection", key)
@@ -510,6 +508,55 @@ func TestLogSelectionViewportOnlyAndNowrapFullLine(t *testing.T) {
 		t.Fatal("nowrap omitted invisible tail")
 	}
 }
+
+func TestLogSelectionAllAndViewportControls(t *testing.T) {
+	for _, panel := range []panelFocus{panelLogs, panelPinnedLogs} {
+		m := selectionTestModel(t, strings.Repeat("雪 é ", 300), "", "last")
+		m.wrapLogs = true
+		m.height = 20
+		if panel == panelPinnedLogs {
+			m.togglePinnedLog()
+			m.panelFocus = panel
+		}
+		m.beginLogSelection()
+		s := m.logSelection
+		top := s.top
+		clickRenderedText(t, m, "[Shift+A] All")
+		want := strings.Repeat("雪 é ", 300) + "\n\nlast"
+		if s.text() != want || !s.fullLines || s.top != top || s.scrolled {
+			t.Fatal("select all omitted offscreen text or moved the viewport")
+		}
+		appendTestLog(m, "api", "new log")
+		clickRenderedText(t, m, "[a] Viewport")
+		if s.text() == want || s.text() == "" || s.fullLines {
+			t.Fatal("viewport control did not narrow the selection")
+		}
+		_, _ = m.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'A'}})
+		if s.text() != want {
+			t.Fatal("Shift+A did not restore the frozen snapshot")
+		}
+	}
+}
+
+func TestLogSelectionCountsMatchPayload(t *testing.T) {
+	s := &logSelection{lines: []selectionLine{
+		{text: "generated"}, {text: "雪 é", selectable: true},
+		{text: "", selectable: true}, {text: "tail", selectable: true}, {text: "marker"},
+	}}
+	for _, points := range [][2]logPoint{
+		{{0, 0}, {4, 6}}, {{3, 2}, {1, 3}}, {{2, 0}, {2, 0}}, {{0, 0}, {0, 0}},
+	} {
+		s.anchor, s.cursor = points[0], points[1]
+		lines, bytes := s.counts()
+		payload := s.text()
+		if lines != strings.Count(payload, "\n")+1 || bytes != len(payload) {
+			t.Fatalf("counts=%d/%d for %q", lines, bytes, payload)
+		}
+		if allocs := testing.AllocsPerRun(10, func() { s.counts() }); allocs != 0 {
+			t.Fatalf("redraw counting allocated: %v", allocs)
+		}
+	}
+}
 func TestLogSelectionFrameFitsThemesAndSizes(t *testing.T) {
 	restoreDefaultTheme(t)
 	m := selectionTestModel(t, "ERROR example", "\t雪 é 👩‍💻")
@@ -640,6 +687,16 @@ func TestLogSelectionBudgetAndSyntheticRows(t *testing.T) {
 	m.logEntries[target] = []config.LogEntry{{Sequence: 2, Raw: strings.Repeat("x", selectionMaxBytes+1)}}
 	if s := m.captureLogSelection(panelLogs); s != nil {
 		t.Fatal("oversized snapshot silently trimmed")
+	}
+	m.logEntries[target] = []config.LogEntry{{Sequence: 3, Raw: strings.Repeat("x\n", selectionMaxLines-1) + "last"}}
+	selectAllSnapshot(m)
+	if m.logSelection == nil || m.logSelection.text() != m.logEntries[target][0].Raw {
+		t.Fatal("select all did not include the full line budget")
+	}
+	m.endLogSelection()
+	m.logEntries[target][0].Raw += "\none too many"
+	if s := m.captureLogSelection(panelLogs); s != nil {
+		t.Fatal("snapshot beyond line budget silently trimmed")
 	}
 }
 func TestLogSelectionExcludesGeneratedTimestamp(t *testing.T) {
@@ -1073,11 +1130,20 @@ func TestLogSelectionFooterKeepsStatusOnControlRow(t *testing.T) {
 					selectAllSnapshot(m)
 					footer := ansi.Strip(m.renderStatusBar())
 					status := strings.TrimSpace(m.contextMessage())
-					if strings.Contains(footer, "\n") || !strings.Contains(footer, "[Enter] Copy") || !strings.Contains(footer, "[Esc] Done") {
-						t.Fatalf("controls/status gained a row at width %d: %q", width, footer)
+					for _, hint := range []string{"[Enter] Copy", "[Shift+A] All", "[a] Viewport", "[Esc] Done"} {
+						if !strings.Contains(footer, hint) {
+							t.Fatalf("missing %q at width %d: %q", hint, width, footer)
+						}
 					}
-					if !strings.HasSuffix(footer, status+" ") || ansi.StringWidth(footer) != width {
+					footerRows := strings.Split(footer, "\n")
+					if ansi.StringWidth(footerRows[len(footerRows)-1]) != width {
 						t.Fatalf("status is not aligned right at width %d: %q", width, footer)
+					}
+					if width >= 100 && !strings.HasSuffix(footer, status+" ") {
+						t.Fatalf("status truncated with room available: %q", footer)
+					}
+					if width == 64 && !strings.Contains(footer, "…") {
+						t.Fatalf("narrow footer did not truncate status: %q", footer)
 					}
 					if got := lipgloss.Height(m.View()); got != m.height {
 						t.Fatalf("view height = %d, want %d", got, m.height)

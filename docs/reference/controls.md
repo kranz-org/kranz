@@ -292,6 +292,7 @@ Service and action logs support both Combined and Single run views.
 | `Alt+PageUp/PageDown` | Extend the range by a page (Shift-page is not decoded by the terminal library) |
 | `Home/End`, with `Shift` to extend | First/last snapshot line |
 | `a` | Select visible viewport text, including partial wrapped lines |
+| `Shift+A` | Select all retained text in the frozen snapshot, respecting the current run and filter |
 | `w` | Toggle wrap; preserve the selected source offsets |
 | `Enter` | Copy selected text |
 | `Esc` | Done; restore previous follow/pause or browse position |

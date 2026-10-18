@@ -99,6 +99,32 @@ func (s *logSelection) text() string {
 	}
 	return strings.Join(lines, "\n")
 }
+
+// Count the selected payload without assembling it on every redraw. Only copy
+// needs the combined string, especially when the whole snapshot is selected.
+func (s *logSelection) counts() (lines, bytes int) {
+	a, b := s.bounds()
+	for i := max(0, a.line); i <= b.line && i < len(s.lines); i++ {
+		if !s.lines[i].selectable {
+			continue
+		}
+		lo, hi := 0, len(s.lines[i].text)
+		if i == a.line {
+			lo = a.offset
+		}
+		if i == b.line {
+			hi = b.offset
+		}
+		lo = min(len(s.lines[i].text), max(0, lo))
+		hi = min(len(s.lines[i].text), max(lo, hi))
+		if lines > 0 {
+			bytes++ // Joining newline.
+		}
+		lines++
+		bytes += hi - lo
+	}
+	return max(1, lines), bytes
+}
 func (s *logSelection) selectLine(i int, extend bool) {
 	i = max(0, min(i, len(s.lines)-1))
 	direction := 1
@@ -383,12 +409,12 @@ func (m *Model) renderLogSelection(width, height int) string {
 		}
 		visible = append(visible, text.String())
 	}
-	payload := s.text()
+	lineCount, byteCount := s.counts()
 	kind := "fragment"
 	if s.fullLines {
 		kind = "lines"
 	}
-	title := fmt.Sprintf("SELECT · frozen · %d lines / %d B · %s · %s · %s", strings.Count(payload, "\n")+1, len(payload), kind, s.label, s.scope)
+	title := fmt.Sprintf("SELECT · frozen · %d lines / %d B · %s · %s · %s", lineCount, byteCount, kind, s.label, s.scope)
 	if s.disconnected {
 		title = strings.Replace(title, "SELECT · frozen", "SELECT · disconnected · frozen", 1)
 	} else {
@@ -411,7 +437,7 @@ func (m *Model) renderLogSelection(width, height int) string {
 	return renderTitledPanel(m.panelStyle(s.panel), m.panelTitleStyle(s.panel), max(1, width-2), max(1, height-2), title, visible)
 }
 func (m *Model) selectionFooter() string {
-	groups := []string{"[Enter] Copy", "[Esc] Done"}
+	groups := []string{"[Enter] Copy", "[Shift+A] All", "[a] Viewport", "[Esc] Done"}
 	rows := renderModalShortcutRows(groups, m.width, ContextBarStyle)
 	last := len(rows) - 1
 	rows[last] = m.appendStatusContext(rows[last])
@@ -434,6 +460,9 @@ func (m *Model) handleSelectionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.sendClipboard(s.text(), "selection")
 	case "w":
 		m.wrapLogs = !m.wrapLogs
+	case "A":
+		s.selectLine(0, false)
+		s.selectLine(len(s.lines)-1, true)
 	case "a":
 		rows := s.rows(m.currentLogContentWidth(), m.wrapLogs)
 		start := m.selectionViewport(s, rows)
