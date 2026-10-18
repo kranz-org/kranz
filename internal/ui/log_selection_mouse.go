@@ -107,7 +107,7 @@ func (m *Model) handleLogSelectionMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd, b
 		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
 			if msg.Y >= m.height-lenSelectionFooter(m) {
 				rendered := m.View()
-				for _, binding := range []mouseKeyBinding{{"[Enter] Copy", "enter"}, {"[Esc] Done", "esc"}} {
+				for _, binding := range []mouseKeyBinding{{"[Enter] Copy", "enter"}, {"[Shift+A] All", "A"}, {"[a] Viewport", "a"}, {"[Esc] Done", "esc"}} {
 					if renderedTextHit(rendered, msg.X, msg.Y, binding.label) {
 						model, cmd := m.handleSelectionKey(keyMessage(binding.key))
 						return model, cmd, true
