@@ -43,6 +43,11 @@ position, so comparing two executions does not lose your place.
 Press `Enter` or double-click a parameterized action to expand or collapse its
 parameters. A single click focuses it; `s` runs it.
 
+A single click on a parameter or option focuses it for reading its details.
+Double-click to toggle a checkbox, expand or collapse options, enter text or
+number editing, or select an option. Keyboard controls remain available through
+`Enter` and `Space`.
+
 Use parameters when several actions differ only by a target, count, flag, or
 environment value. One declaration becomes the source of truth for the TUI,
 CLI, MCP, and prerequisites:
