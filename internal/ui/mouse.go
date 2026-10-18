@@ -221,20 +221,20 @@ func (m *Model) handleLeftColumnClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.listMode == listTags {
 		m.handleTagRowClick(row, listHeight, msg.X)
 	} else {
-		m.handleServiceRowClick(row, listHeight, msg.X)
+		return m, m.handleServiceRowClick(row, listHeight, msg.X)
 	}
 	return m, nil
 }
 
-func (m *Model) handleServiceRowClick(row, listHeight, column int) {
+func (m *Model) handleServiceRowClick(row, listHeight, column int) tea.Cmd {
 	start, end := m.visibleServiceRange(listHeight)
 	index := start + row
 	if index < start || index >= end {
-		return
+		return nil
 	}
 	rows := m.serviceListRows()
 	if index >= len(rows) {
-		return
+		return nil
 	}
 	m.focusServiceListRow(index)
 	owner := ""
@@ -242,7 +242,7 @@ func (m *Model) handleServiceRowClick(row, listHeight, column int) {
 	case actionRowService:
 		if column >= checkboxMinColumn && column <= checkboxMaxColumn {
 			m.toggleFocusedSelection()
-			return
+			return nil
 		}
 		m.selectedTags = nil
 		m.selected = make(map[string]bool)
@@ -252,15 +252,14 @@ func (m *Model) handleServiceRowClick(row, listHeight, column int) {
 	case actionRowAction:
 		owner = "action:" + actionIDKey(rows[index].Action)
 	case actionRowParam, actionRowParamValue:
-		m.toggleFocusedParamRow()
-		return
+		owner = fmt.Sprintf("param:%q:%q:%t:%q", actionIDKey(rows[index].Action), rows[index].Param, rows[index].Kind == actionRowParamValue, rows[index].Value)
 	default:
-		return
+		return nil
 	}
-	m.openListOwnerOnDoubleClick(owner, time.Now())
+	return m.openListOwnerOnDoubleClick(owner, time.Now())
 }
 
-func (m *Model) openListOwnerOnDoubleClick(owner string, now time.Time) {
+func (m *Model) openListOwnerOnDoubleClick(owner string, now time.Time) tea.Cmd {
 	elapsed := now.Sub(m.lastListClickAt)
 	isDoubleClick := owner == m.lastListClickOwner &&
 		m.lastListClickSeq+1 == m.mousePressSequence &&
@@ -270,12 +269,13 @@ func (m *Model) openListOwnerOnDoubleClick(owner string, now time.Time) {
 		m.lastListClickOwner = ""
 		m.lastListClickSeq = 0
 		m.lastListClickAt = time.Time{}
-		_, _ = m.openFocusedListItem()
-		return
+		command, _ := m.openFocusedListItem()
+		return command
 	}
 	m.lastListClickOwner = owner
 	m.lastListClickSeq = m.mousePressSequence
 	m.lastListClickAt = now
+	return nil
 }
 
 func (m *Model) handleTagRowClick(row, listHeight, column int) {

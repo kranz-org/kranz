@@ -621,3 +621,74 @@ func TestRunBelongsToTheActionAndItsCommandOnly(t *testing.T) {
 		t.Fatal("the command row does not offer to run what it shows")
 	}
 }
+
+func TestParameterMouseClicksFocusBeforeActivating(t *testing.T) {
+	for _, control := range []string{"checkbox", "radio", "select", "text", "number", "checkbox-options"} {
+		t.Run(control, func(t *testing.T) {
+			model, id := parameterTreeModel(t)
+			action := model.cfg.ActionGroups["infra"].Actions["seed"]
+			param := config.ActionParam{Type: control, Required: true}
+			model.height = 50
+			switch control {
+			case "radio", "select", "checkbox-options":
+				param.Options = config.ActionParamOptions{{Value: "dev"}, {Value: "prod"}}
+				if control == "checkbox-options" {
+					param.Type = "checkbox"
+				}
+			}
+			action.Params = map[string]config.ActionParam{"target": param}
+			action.ParamOrder = []string{"target"}
+			action.Argv = config.ArgvList{"/bin/echo", "{{target}}"}
+			model.cfg.ActionGroups["infra"].Actions["seed"] = action
+			model.expandedActionParams[id] = true
+			before := model.paramValuesFor(id)["target"]
+			key := actionParamKey(id, "target")
+
+			if cmd := clickRenderedText(t, model, "target:"); cmd != nil {
+				t.Fatal("single click returned an activation command")
+			}
+			if model.focusedParam == nil || model.focusedParam.Name != "target" || model.mode != ModeNormal || model.expandedParamOptions[key] {
+				t.Fatal("single click did not leave a focused, inactive parameter")
+			}
+			if got := model.paramValuesFor(id)["target"]; got.Bool != before.Bool || got.Set != before.Set || got.Text != before.Text || len(got.Strings) != len(before.Strings) {
+				t.Fatal("single click changed the value")
+			}
+			cmd := clickRenderedText(t, model, "target:")
+			switch control {
+			case "checkbox":
+				if !model.paramValuesFor(id)["target"].Bool {
+					t.Fatal("double click did not toggle checkbox")
+				}
+				clickRenderedText(t, model, "target:")
+				if !model.paramValuesFor(id)["target"].Bool {
+					t.Fatal("third click toggled checkbox again")
+				}
+			case "text", "number":
+				if model.mode != ModeParamEdit || !model.paramInput.Focused() || cmd == nil {
+					t.Fatal("double click did not focus editor and return its cursor command")
+				}
+			default:
+				if !model.expandedParamOptions[key] {
+					t.Fatal("double click did not expand options")
+				}
+				clickRenderedText(t, model, "prod")
+				if model.focusedParam == nil || !model.focusedParam.IsValue || model.focusedParam.Value != "prod" || model.paramSelected(id, "target", "prod") {
+					t.Fatal("single option click did not focus without selecting")
+				}
+				// A different option must start its own double click.
+				clickRenderedText(t, model, "dev")
+				if model.paramSelected(id, "target", "dev") {
+					t.Fatal("clicks on different options selected a value")
+				}
+				clickRenderedText(t, model, "prod")
+				if model.paramSelected(id, "target", "prod") {
+					t.Fatal("nonconsecutive option clicks selected a value")
+				}
+				clickRenderedText(t, model, "prod")
+				if !model.paramSelected(id, "target", "prod") {
+					t.Fatal("double option click did not select value")
+				}
+			}
+		})
+	}
+}

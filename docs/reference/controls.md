@@ -34,7 +34,10 @@ modal actions, search controls, and the theme picker.
 
 An action whose command is assembled from values ends in `◆`, and `c` opens
 those values as a form. `Enter` or a double click on the action row toggles
-its parameters. On a parameter, `Enter` opens it: a checkbox toggles, a list of options
+its parameters. A single click on a parameter or option only focuses it, so its
+details can be read without changing the value. Double-click a parameter to toggle
+a checkbox, expand or collapse its options, or edit text and numbers; double-click
+an option to select or toggle it. On a parameter, `Enter` opens it: a checkbox toggles, a list of options
 opens for `Enter` or `Space` on the chosen value, and a text or number parameter becomes
 editable in place, where `Enter` keeps what was typed and `Esc` restores the
 previous value. `Space` marks a value without opening anything, `←` and `→` walk a list of
