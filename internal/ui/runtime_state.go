@@ -13,6 +13,7 @@ import (
 // It is indexed by session ID in Model.uiStateCache, lives only in process
 // memory, and is never written to disk (PRD 3.4).
 type runtimeUIState struct {
+	logCommandBypass [logSlotCount]bool
 	// populated distinguishes "no state captured yet" (a runtime visited for
 	// the first time gets the model's zero-value defaults) from a state that
 	// was genuinely captured and should be applied verbatim.
@@ -68,6 +69,7 @@ func (m *Model) captureUIState() runtimeUIState {
 	m.notifMu.RUnlock()
 
 	state := runtimeUIState{
+		logCommandBypass:    m.logCommandBypass,
 		populated:           true,
 		focusedActionGroup:  m.focusedActionGroup,
 		panelFocus:          m.panelFocus,
@@ -130,6 +132,7 @@ func (m *Model) captureUIState() runtimeUIState {
 // Passing the zero value applies Kranz's ordinary defaults, which is what a
 // runtime visited for the first time in this process gets.
 func (m *Model) applyUIState(state runtimeUIState) {
+	m.logCommandBypass = state.logCommandBypass
 	m.logSelection = nil
 	m.logClick = logClickState{}
 	if !state.populated {

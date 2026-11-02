@@ -3,13 +3,34 @@ package settings
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
+
+	"github.com/kranz-org/kranz/internal/config"
 )
 
 func TestLoadMissingSettingsReturnsEmpty(t *testing.T) {
 	value, err := Load(filepath.Join(t.TempDir(), "missing.yaml"))
 	if err != nil || value != (Settings{}) {
 		t.Fatalf("Load missing = %#v, %v", value, err)
+	}
+}
+
+func TestPersonalLogCommandRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.yaml")
+	want := Settings{Theme: "nord", Logs: &config.LogCommandConfig{Command: `lnav "$KRANZ_LOG_FILE"`, Mode: config.LogCommandTerminal}}
+	if err := Save(path, want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(path)
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatal("personal log command was not preserved")
+	}
+	if err := os.WriteFile(path, []byte("logs:\n  command: cat\n  mode: invalid\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err == nil {
+		t.Fatal("invalid personal log command was accepted")
 	}
 }
 

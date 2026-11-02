@@ -19,6 +19,7 @@ import (
 // Shutdown is the idempotent cleanup boundary for every application exit path.
 func (m *Model) Shutdown() error {
 	m.shutdownOnce.Do(func() {
+		m.stopLogCommands()
 		m.abortAllOperations()
 		if !m.detachOnExit {
 			m.shutdownErr = m.app.Shutdown()

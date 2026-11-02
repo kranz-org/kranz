@@ -155,6 +155,10 @@ func mergeConfig(base, override *Config) error {
 	if override.UI.ColorMode != "" {
 		base.UI.ColorMode = override.UI.ColorMode
 	}
+	if override.UI.Logs != nil {
+		value := *override.UI.Logs
+		base.UI.Logs = &value
+	}
 	mergeDefaults(&base.Defaults, override.Defaults)
 	if base.Services == nil {
 		base.Services = make(map[string]Service)
@@ -206,6 +210,10 @@ func mergeDefaults(base *Defaults, override Defaults) {
 }
 
 func mergeService(base, override Service, mergeDependencies bool) Service {
+	if override.UI.Logs != nil {
+		value := *override.UI.Logs
+		base.UI.Logs = &value
+	}
 	base.Lifecycle = mergeLifecycle(base.Lifecycle, override.Lifecycle)
 	if override.Supervision != "" {
 		base.Supervision = override.Supervision

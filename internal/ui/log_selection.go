@@ -16,6 +16,7 @@ const selectionMaxLines = 20000
 
 type logPoint struct{ line, offset int }
 type selectionLine struct {
+	styles       []logStyleSpan
 	text, prefix string
 	entry        config.LogEntry
 	selectable   bool
@@ -196,8 +197,8 @@ func (m *Model) captureLogSelection(panel panelFocus) *logSelection {
 	}
 	if panel == panelPinnedLogs {
 		entries = m.pinnedEntries(target)
-	} else if run > 0 {
-		entries = m.entriesForRun(target, run)
+	} else {
+		entries = m.mainLogEntries(target)
 	}
 	// Include generated action rows for viewport geometry, never for extraction.
 	if panel == panelLogs && target.Kind == app.RunKindAction {
@@ -254,7 +255,14 @@ func (m *Model) captureLogSelection(panel panelFocus) *logSelection {
 				m.addNotification("selection", "View exceeds snapshot budget (1 MiB / 20000 lines); choose a single run or narrow the filter", config.LogWarn)
 				return nil
 			}
-			s.lines = append(s.lines, selectionLine{line, linePrefix, entry, entry.Sequence != 0})
+			item := selectionLine{text: line, prefix: linePrefix, entry: entry, selectable: entry.Sequence != 0}
+			if m.formattedEntry(entry) {
+				styledParts := strings.Split(m.logEntryContent(entry), "\n")
+				if part < len(styledParts) {
+					_, item.styles = logStyleSpans(styledParts[part])
+				}
+			}
+			s.lines = append(s.lines, item)
 		}
 	}
 	selectable := false
@@ -403,6 +411,8 @@ func (m *Model) renderLogSelection(width, height int) string {
 			selected := s.lines[row.line].selectable && cell.start >= 0 && !pointLess(logPoint{row.line, cell.start}, a) && pointLess(logPoint{row.line, cell.start}, b)
 			if selected {
 				text.WriteString(LogTextSelectionStyle.Render(cell.text))
+			} else if styles := s.lines[row.line].styles; len(styles) > 0 && cell.start >= 0 {
+				text.WriteString(styledVisualLogRow(logVisualRow{cells: []logCell{cell}}, styles))
 			} else {
 				text.WriteString(styleLogLine(cell.text))
 			}

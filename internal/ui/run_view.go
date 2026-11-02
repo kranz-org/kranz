@@ -259,7 +259,7 @@ func (m *Model) pinnedRunViewLabel() string {
 	return fmt.Sprintf("FROZEN · RUNS ≤ #%d", m.pinnedRun)
 }
 
-func (m *Model) pinnedEntries(target app.RunTarget) []config.LogEntry {
+func (m *Model) rawPinnedEntries(target app.RunTarget) []config.LogEntry {
 	entries := m.entriesForRun(target, 0)
 	if m.pinnedRun == 0 {
 		return entries
@@ -283,10 +283,11 @@ func (m *Model) renderPinnedActionRunPanel(target app.RunTarget, width, height i
 	contentWidth, contentHeight := max(1, width-2), max(1, height-2)
 	title := "[3] PINNED ACTION [Shift+3 UNPIN]" + ContextBarStyle.Render(" │ ") + ServiceNameStyle.Render(runTargetLabel(target)) +
 		" " + RunningBadgeStyle.Render(m.pinnedRunViewLabel())
+	title += ContextBarStyle.Render(m.logCommandHint(logSlotPinned, target))
 	entries := m.pinnedEntries(target)
 	if len(entries) == 0 {
 		return renderTitledPanel(m.panelStyle(panelPinnedLogs), m.panelTitleStyle(panelPinnedLogs), contentWidth, contentHeight, title,
-			[]string{"", ContextBarStyle.Render("No retained output for this snapshot")})
+			[]string{"", ContextBarStyle.Render(m.pinnedEmptyLogMessage(target))})
 	}
 	var indices []int
 	matches := []int(nil)

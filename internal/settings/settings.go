@@ -8,16 +8,19 @@ import (
 	"path/filepath"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/kranz-org/kranz/internal/config"
 )
 
 const settingsFileName = "settings.yaml"
 
 // Settings contains optional user overrides. Empty values defer to the project.
 type Settings struct {
-	Theme      string `yaml:"theme,omitempty"`
-	Accent     string `yaml:"accent,omitempty"`
-	Background string `yaml:"background,omitempty"`
-	ColorMode  string `yaml:"color_mode,omitempty"`
+	Logs       *config.LogCommandConfig `yaml:"logs,omitempty"`
+	Theme      string                   `yaml:"theme,omitempty"`
+	Accent     string                   `yaml:"accent,omitempty"`
+	Background string                   `yaml:"background,omitempty"`
+	ColorMode  string                   `yaml:"color_mode,omitempty"`
 }
 
 // DefaultPath returns the platform-native per-user settings path.
@@ -44,6 +47,9 @@ func Load(path string) (Settings, error) {
 	var value Settings
 	if err := yaml.Unmarshal(data, &value); err != nil {
 		return Settings{}, fmt.Errorf("parse settings: %w", err)
+	}
+	if err := config.ValidateLogCommand(value.Logs); err != nil {
+		return Settings{}, fmt.Errorf("logs: %w", err)
 	}
 	return value, nil
 }

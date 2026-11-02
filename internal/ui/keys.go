@@ -7,6 +7,7 @@ import (
 
 // KeyMap defines every keyboard shortcut used by the application.
 type KeyMap struct {
+	LogTool       key.Binding
 	Up            key.Binding
 	Down          key.Binding
 	Left          key.Binding
@@ -52,6 +53,7 @@ type KeyMap struct {
 // DefaultKeyMap returns Kranz's standard keyboard bindings.
 func DefaultKeyMap() KeyMap {
 	return KeyMap{
+		LogTool: key.NewBinding(key.WithKeys("ctrl+g"), key.WithHelp("Ctrl+G", "toggle log processing / open viewer")),
 		Up: key.NewBinding(
 			key.WithKeys("up", "k"),
 			key.WithHelp("↑/k", "up"),

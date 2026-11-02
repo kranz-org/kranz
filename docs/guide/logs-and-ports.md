@@ -46,6 +46,96 @@ service restarts retain the default log history for that service. Output split
 across multiple process writes is reconstructed into complete lines, with a
 bounded buffer for an unfinished line.
 
+## Your own log tools
+
+Connect any command that reads logs on stdin and writes text or ANSI-colored
+text to stdout. Commands run through a shell, so arguments and pipelines work:
+
+```yaml
+ui:
+  logs:
+    command: tspin --print
+    mode: stream
+```
+
+Other examples include `ccze -A`, `hl -P`, `jq --unbuffered -C .`, or your own
+script. Choose options that disable the tool's pager and flush live output.
+Tools that buffer until EOF show their result when the selected run finishes.
+Kranz closes stdin for completed history; a command that has not exited five
+seconds later is stopped and the original output is shown.
+
+The selected service/action and **all runs / run #N** determine the input
+*before* the command runs. Regex filter/highlight, next/previous match,
+wrapping, pause, scrolling, and text selection operate on its output. A pinned
+panel has an independent command and history scope. Changing runs, clearing
+logs, or changing the retained input rebuilds the corresponding presentation;
+late output from the old command is discarded. Browsing and paused views stay
+anchored while new command output appends.
+
+`Ctrl+G` switches the active panel between processed and original output.
+Switching representations starts at the tail; run selections and search
+patterns remain. The header identifies the active representation. A command
+failure falls back to original output with a notification. Displayed command
+output retains the latest 4 MiB / 20000 lines; individual output lines are
+limited to 1 MiB. These limits do not change runtime log retention.
+
+Commands may change, remove, expand, or reorder lines. Such output belongs to
+the selected history scope, but has no invented per-line capture timestamp or
+stdout/stderr attribution. For a tool that only adds colors, enable
+`preserve_lines: true`: Kranz verifies the unchanged text and order and keeps
+capture metadata. A violation falls back to the original logs. Only ANSI text
+styles are rendered; terminal control sequences cannot move or clear the TUI.
+
+Source logs, run summaries, run export (`e` / `Shift+E`), CLI, and MCP remain
+original. Text selection copies the displayed text without ANSI codes.
+
+### Personal and service preferences
+
+Put `logs:` at the root of your [personal settings file](./appearance#two-places-settings-can-live)
+to use the same tool across projects:
+
+```yaml
+logs:
+  command: hl -P
+```
+
+Precedence is service `ui.logs`, personal `logs`, then project `ui.logs`.
+An explicit empty mapping disables an inherited command for a service:
+
+```yaml
+services:
+  api:
+    command: ./server
+    ui:
+      logs: {}
+```
+
+The command runs in the active runtime's project directory and inherits the
+TUI's environment. `shell` selects a shell executable (default `/bin/sh`).
+`KRANZ_LOG_TARGET`, `KRANZ_LOG_SCOPE`, and `KRANZ_LOG_RUN` describe the selected
+history. In project YAML, write `$$` for a dollar sign that should reach the
+shell; project configuration expands environment variables while loading.
+Personal settings are not expanded, so use a single `$` there.
+
+### Interactive viewers
+
+Use terminal mode for a program that owns the screen and keyboard:
+
+```yaml
+ui:
+  logs:
+    command: 'lnav "$$KRANZ_LOG_FILE"'
+    mode: terminal
+```
+
+`Ctrl+G` hands the terminal to the viewer. `KRANZ_LOG_FILE` names a private
+temporary plain-text snapshot of the active panel's selected runs and regex
+filter. Highlight mode includes all selected records. The snapshot is frozen;
+it does not follow later output. Viewer navigation and search use the viewer's
+own keys. Exit it normally to return to Kranz with the same run selection,
+search, pause, and scroll position. Managed services continue running, and the
+temporary file is removed when the viewer closes.
+
 ## Run history
 
 Every start of a service and every invocation of an action is a numbered *run*.

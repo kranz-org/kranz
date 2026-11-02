@@ -24,6 +24,7 @@ modal actions, search controls, and the theme picker.
 | `Space` | Select/unselect a service or tag |
 | `s` | Start dependencies and targets, confirm stop, or run focused action |
 | `Shift+S` | Start/stop only targets without graph expansion |
+| `Ctrl+G` | Toggle configured log processing or open the configured terminal log viewer |
 | `r` | Confirm restart of the focused service |
 | `Shift+R` | Confirm restart of running services |
 | `a` | Select or clear all services |

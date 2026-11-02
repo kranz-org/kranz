@@ -93,6 +93,10 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) handleNormalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if key.Matches(msg, m.keys.LogTool) {
+		return m, m.toggleLogCommand()
+	}
+
 	if msg.String() == "y" && (m.panelFocus == panelLogs || m.panelFocus == panelPinnedLogs) {
 		m.beginLogSelection()
 		return m, nil

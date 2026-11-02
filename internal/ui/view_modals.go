@@ -74,6 +74,7 @@ func helpSections() []helpSection {
 		}},
 		{title: "LOGS & RUN HISTORY", entries: []helpEntry{
 			{"3", "Switch focus between pinned and current logs"},
+			{"Ctrl+G", "Toggle configured log processing or open a terminal viewer"},
 			{"Shift+3", "Pin the current run; if a pin exists, unpin it from any panel"},
 			{"w / i", "Toggle line wrapping or captured-at timestamps"},
 			{"f", "Pause or resume following logs"},

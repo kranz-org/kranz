@@ -236,6 +236,9 @@ type portDetailsMsg struct {
 
 // Model owns Kranz's Bubble Tea state and runtime service integrations.
 type Model struct {
+	logCommands      [logSlotCount]*logCommandView
+	logCommandBypass [logSlotCount]bool
+	logCommandEpoch  uint64
 	logClick         logClickState
 	logSelection     *logSelection
 	terminalOutput   io.Writer
@@ -627,7 +630,7 @@ func (m *Model) Init() tea.Cmd {
 	// The tick is only the backstop; read the appearance once straight away so
 	// startup does not wait a whole interval for the first answer.
 	return tea.Batch(m.pollServices(), m.scanFocusedPorts(true), m.pollSystemAppearance(), m.probeSystemAppearance(),
-		m.watchCurrentClientDone())
+		m.watchCurrentClientDone(), m.syncLogCommands())
 }
 
 func (m *Model) pollServices() tea.Cmd {
@@ -645,7 +648,22 @@ func (m *Model) RequestedExitCode() int {
 
 // Update applies one Bubble Tea event and schedules any resulting operation.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	model, command := m.update(msg)
+	return model, tea.Batch(command, m.syncLogCommands())
+}
+
+func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
+
 	switch msg := msg.(type) {
+	case logCommandChangedMsg:
+		m.handleLogCommandChanged(msg)
+		return m, nil
+	case logViewerFinishedMsg:
+		if msg.err != nil {
+			m.addNotification("logs", "Log viewer closed: "+readableLog(msg.err.Error()), config.LogWarn)
+		}
+		return m, tea.Batch(tea.ClearScreen, m.probeTerminalBackground(true))
+
 	case tea.WindowSizeMsg:
 		if m.logSelection != nil {
 			m.logSelection.dragging = false
