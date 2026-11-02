@@ -304,6 +304,9 @@ func TestConfigMapFrameContract(t *testing.T) {
 func TestConfigMapShortcutIsDiscoverableInHelp(t *testing.T) {
 	found := false
 	for _, section := range helpSections() {
+		if section.title != "APPLICATION" {
+			continue
+		}
 		for _, entry := range section.entries {
 			if entry.key != "m" {
 				continue

@@ -1,7 +1,7 @@
 # Keyboard shortcuts
 
 This is the complete keyboard shortcut reference for the Kranz terminal UI.
-Press `?` inside Kranz to open the same context-aware help without leaving the
+Press `?` inside Kranz to open a compact, scrollable help reference without leaving the
 terminal. Mouse interaction is also available for panels, rows, checkboxes,
 modal actions, search controls, and the theme picker.
 
@@ -14,7 +14,6 @@ modal actions, search controls, and the theme picker.
 | `Tab` / `Shift+Tab` | Focus next or previous panel |
 | `↑` / `↓`, `j` / `k` | Navigate or scroll |
 | `Shift+3` | Pin the current run, or unpin the existing view from any panel |
-| `d` | Delete the selected completed run from Run history after confirmation |
 | `Enter` | Expand/collapse tags, services, actions, or action groups |
 
 ## Lifecycle and actions
@@ -24,7 +23,7 @@ modal actions, search controls, and the theme picker.
 | `Space` | Select/unselect a service or tag |
 | `s` | Start dependencies and targets, confirm stop, or run focused action |
 | `Shift+S` | Start/stop only targets without graph expansion |
-| `r` | Confirm restart of the focused service |
+| `r` | Start a stopped focused service, or confirm its restart |
 | `Shift+R` | Confirm restart of running services |
 | `a` | Select or clear all services |
 | `Shift+A` | Confirm stop all |
@@ -43,7 +42,8 @@ editable in place, where `Enter` keeps what was typed and `Esc` restores the
 previous value. `Space` marks a value without opening anything, `←` and `→` walk a list of
 values or count a number up and down (by ten with `Shift`), and `d` switches a
 parameter off entirely, so it reads `DISABLED` and contributes nothing — which
-is different from holding its default. A parameter that takes a set of
+is different from holding its default. Press `d` again to re-enable it.
+A parameter that takes a set of
 values draws its options as `▣`/`▢` boxes and keeps every one that is checked; a
 parameter that takes one draws them as `◉`/`○`. A typed value is underlined, the
 way an input field is.
@@ -100,6 +100,7 @@ directions.
 | `h` | Health history |
 | `n` | Notifications when highlight search is inactive |
 | `x` | Toggle Combined/Single run |
+| `Shift+X` | Switch all services between their latest run and Combined logs |
 | `[` / `]` | Previous/next run |
 | `Shift+F` / `l` | Previous failed run / latest run |
 | `v` | Open the filterable run list |
@@ -138,10 +139,17 @@ the catalog, or previous-failed navigation pins the selection; it remains
 stable until `l` returns to the latest run. The all-runs view scrolls across
 the complete retained output of service and action runs.
 
-The in-app `?` reference is a compact, scrollable single column split into
-Navigation, Services & Actions, Logs & Run History, Log Search, Appearance, and
-Application sections. Neutral section headings are visually distinct from the
+The in-app `?` reference is a compact, scrollable single column with separate
+sections for navigation, services, action parameters and forms, logs, the run
+list, text selection, search, appearance, and application controls.
+Neutral section headings are visually distinct from the
 accent-coloured shortcuts.
+
+Inside the run list (`v`), use `↑`/`↓` or `j`/`k` to select a run, `Tab` to
+cycle available status filters, and `Enter` to show the selected run. `d`
+deletes a completed run after confirmation; active runs cannot be deleted.
+`Esc`, `q`, or `v` closes the list. If the target has never run, `Enter` or
+`Esc` closes its explanation.
 
 ## Application
 
@@ -153,7 +161,7 @@ accent-coloured shortcuts.
 | `m` | Open the configuration map |
 | `p` | Switch to another local Kranz runtime |
 | `?` | Help |
-| `q` | Always open the quit confirmation |
+| `q` | Open the quit confirmation from the dashboard |
 | `Ctrl+C` | Immediate shutdown |
 
 The quit confirmation shows the complete shutdown plan. `Enter` or `y` stops

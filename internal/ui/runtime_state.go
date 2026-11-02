@@ -44,13 +44,14 @@ type runtimeUIState struct {
 	currentMatch, pinnedMatch    int
 	logPattern, pinnedPattern    string
 
-	runMode          runViewMode
-	selectedRun      uint32
-	runFollowsLatest bool
-	runListCursor    int
-	runStatusFilter  string
-	runSelections    map[app.RunTarget]runSelectionState
-	runViewports     map[runViewportKey]runViewportState
+	runMode              runViewMode
+	allServiceRunsSingle bool
+	selectedRun          uint32
+	runFollowsLatest     bool
+	runListCursor        int
+	runStatusFilter      string
+	runSelections        map[app.RunTarget]runSelectionState
+	runViewports         map[runViewportKey]runViewportState
 
 	notifications []config.Notification
 	toastMessage  string
@@ -94,13 +95,14 @@ func (m *Model) captureUIState() runtimeUIState {
 		searchMode: m.searchMode, pinnedSearchMode: m.pinnedSearchMode,
 		currentMatch: m.currentMatch, pinnedMatch: m.pinnedMatch,
 
-		runMode:          m.runMode,
-		selectedRun:      m.selectedRun,
-		runFollowsLatest: m.runFollowsLatest,
-		runListCursor:    m.runListCursor,
-		runStatusFilter:  m.runStatusFilter,
-		runSelections:    maps.Clone(m.runSelections),
-		runViewports:     copyViewportMap(m.runViewports),
+		runMode:              m.runMode,
+		allServiceRunsSingle: m.allServiceRunsSingle,
+		selectedRun:          m.selectedRun,
+		runFollowsLatest:     m.runFollowsLatest,
+		runListCursor:        m.runListCursor,
+		runStatusFilter:      m.runStatusFilter,
+		runSelections:        maps.Clone(m.runSelections),
+		runViewports:         copyViewportMap(m.runViewports),
 
 		notifications: notifications,
 		toastMessage:  toastMessage,
@@ -221,6 +223,7 @@ func (m *Model) applyUIState(state runtimeUIState) {
 	m.syncRunTarget()
 
 	m.runMode = state.runMode
+	m.allServiceRunsSingle = state.allServiceRunsSingle
 	m.selectedRun = state.selectedRun
 	m.runFollowsLatest = state.runFollowsLatest
 	m.runListCursor = state.runListCursor
@@ -287,6 +290,7 @@ func (m *Model) resetUIStateToDefaults() {
 	m.pinnedLog, m.pinnedTarget, m.pinnedRunMode, m.pinnedRun = "", app.RunTarget{}, runViewCombined, 0
 	m.runTarget = app.RunTarget{}
 	m.runMode = runViewCombined
+	m.allServiceRunsSingle = false
 	m.selectedRun = 0
 	m.runFollowsLatest = false
 	m.runListCursor = 0

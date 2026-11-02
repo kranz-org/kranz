@@ -55,6 +55,33 @@ func rowKinds(rows []actionListRow) []string {
 	return kinds
 }
 
+func TestInlineNumberParameterShiftArrowSteps(t *testing.T) {
+	model := NewModel(&config.Config{Project: "Params", ActionGroups: map[string]config.ActionGroup{
+		"ops": {Actions: map[string]config.Action{
+			"check": {Params: map[string]config.ActionParam{"count": {Type: "number", Default: 5, Arg: "--count"}}, Argv: config.ArgvList{"echo", "{{count}}"}},
+		}},
+	}}, "test")
+	defer model.Shutdown()
+	id := config.ActionID{OwnerKind: config.ActionOwnerGroup, Owner: "ops", Name: "check"}
+	model.expandedActionOwner[actionOwnerKey(config.ActionOwnerGroup, "ops")] = true
+	model.expandedActionParams[id] = true
+	focusRow(t, model, "param:count")
+	for _, step := range []struct {
+		key  tea.KeyType
+		want string
+	}{{tea.KeyShiftRight, "15"}, {tea.KeyShiftLeft, "5"}, {tea.KeyRight, "6"}} {
+		_, _ = model.handleKeyMsg(tea.KeyMsg{Type: step.key})
+		if got := model.paramValuesFor(id)["count"].Text; got != step.want {
+			t.Fatalf("%s: count = %q, want %q", tea.KeyMsg{Type: step.key}.String(), got, step.want)
+		}
+	}
+	model.focusedParam = nil
+	_, _ = model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyShiftLeft})
+	if model.listMode != listServices {
+		t.Fatal("Shift+Left outside a parameter switched lists")
+	}
+}
+
 func focusRow(t *testing.T, model *Model, want string) {
 	t.Helper()
 	rows := model.serviceListRows()
