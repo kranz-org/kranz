@@ -236,6 +236,7 @@ type portDetailsMsg struct {
 
 // Model owns Kranz's Bubble Tea state and runtime service integrations.
 type Model struct {
+	logViewerCleanup func()
 	logCommands      [logSlotCount]*logCommandView
 	logCommandBypass [logSlotCount]bool
 	logCommandEpoch  uint64

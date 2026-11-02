@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -157,6 +158,13 @@ func TestGlobalRunSwitchRebuildsOnlyTheFocusedProcessor(t *testing.T) {
 	finishLogCommands(t, m)
 	if got := strings.Join(m.activeSearchLines(), "|"); !strings.Contains(got, "OLDER") || !strings.Contains(got, "NEWER") {
 		t.Fatal("global combined switch did not restore all processed runs")
+	}
+	m.pinnedRunMode, m.pinnedRun = runViewCombined, 2
+	finishLogCommands(t, m)
+	for _, entry := range m.pinnedEntries(m.pinnedTarget) {
+		if entry.Sequence != 0 && entry.Run != 0 {
+			t.Fatal("combined transformed output was attributed to its run boundary")
+		}
 	}
 }
 
@@ -382,5 +390,36 @@ func TestProcessedRetentionDoesNotLeaveAnEmptyPausedViewport(t *testing.T) {
 	m.handleLogCommandChanged(logCommandChangedMsg{logSlotMain, view, logcommand.Snapshot{First: 1, Lines: []string{"retained output"}, Finished: true}})
 	if m.logAnchor == 0 || m.followMode || !m.logPaused || !strings.Contains(ansi.Strip(m.renderLogPanel(m.FocusedService(), 70, 10)), "retained output") {
 		t.Fatal("evicting the whole old anchor left a blank viewport or resumed following")
+	}
+}
+
+func TestUnexecutedViewerSnapshotIsRemovedOnShutdown(t *testing.T) {
+	directory := t.TempDir()
+	t.Setenv("TMPDIR", directory)
+	m := newTestModel()
+	defer m.Shutdown()
+	m.cfg.UI.Logs = &config.LogCommandConfig{Command: `less "$KRANZ_LOG_FILE"`, Mode: config.LogCommandTerminal}
+	appendTestLog(m, "api", "snapshot text")
+	if m.openLogViewer() == nil {
+		t.Fatal("viewer handoff was not prepared")
+	}
+	files, err := os.ReadDir(directory)
+	if err != nil {
+		t.Fatal("could not inspect snapshot directory")
+	}
+	var snapshot string
+	for _, file := range files {
+		if strings.HasPrefix(file.Name(), "kranz-log-view-") {
+			snapshot = filepath.Join(directory, file.Name())
+		}
+	}
+	if snapshot == "" {
+		t.Fatal("viewer snapshot was not created")
+	}
+	if err := m.Shutdown(); err != nil {
+		t.Fatal("shutdown failed")
+	}
+	if _, err := os.Stat(snapshot); !os.IsNotExist(err) {
+		t.Fatal("unexecuted viewer left its snapshot behind")
 	}
 }

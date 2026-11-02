@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -195,7 +196,7 @@ func (m *Model) syncLogCommands() tea.Cmd {
 			m.logCommandEpoch++
 			view = &logCommandView{key: key, epoch: m.logCommandEpoch,
 				process: logcommand.Start(logcommand.Options{Command: key.command.Command, Shell: key.command.Shell,
-					Directory: m.workingDirectory, Environment: commandEnvironment("KRANZ_LOG_TARGET="+runTargetLabel(key.target), "KRANZ_LOG_SCOPE="+logCommandScopeLabel(key), "KRANZ_LOG_RUN="+strconv.FormatUint(uint64(key.run), 10))})}
+					Directory: m.workingDirectory, Environment: commandEnvironment("KRANZ_LOG_TARGET="+runTargetLabel(key.target), "KRANZ_LOG_SCOPE="+logCommandScopeLabel(key), "KRANZ_LOG_RUN="+strconv.FormatUint(uint64(logCommandRunNumber(key)), 10))})}
 			m.logCommands[slot] = view
 			m.logRowCache[slot] = nil
 		}
@@ -286,7 +287,7 @@ func (m *Model) handleLogCommandChanged(msg logCommandChangedMsg) {
 		}
 	}
 	for index, raw := range msg.output.Lines {
-		entry := config.LogEntry{Run: key.run}
+		entry := config.LogEntry{Run: logCommandRunNumber(key), Level: config.LogInfo}
 		if identity {
 			entry = inputLines[int(msg.output.First)+index]
 		}
@@ -486,7 +487,7 @@ func (m *Model) logViewerCommand() (*exec.Cmd, func(), error) {
 	process := exec.Command(command.Shell, "-c", command.Command)
 	process.Dir = m.workingDirectory
 	process.Env = commandEnvironment("KRANZ_LOG_FILE="+file.Name(), "KRANZ_LOG_TARGET="+runTargetLabel(key.target),
-		"KRANZ_LOG_SCOPE="+logCommandScopeLabel(key), "KRANZ_LOG_RUN="+strconv.FormatUint(uint64(key.run), 10), "KRANZ_LOG_LINES="+strconv.Itoa(strings.Count(text.String(), "\n")))
+		"KRANZ_LOG_SCOPE="+logCommandScopeLabel(key), "KRANZ_LOG_RUN="+strconv.FormatUint(uint64(logCommandRunNumber(key)), 10), "KRANZ_LOG_LINES="+strconv.Itoa(strings.Count(text.String(), "\n")))
 	return process, cleanup, nil
 }
 
@@ -496,6 +497,11 @@ func (m *Model) openLogViewer() tea.Cmd {
 		m.addNotification("logs", readableLog(err.Error()), config.LogWarn)
 		return nil
 	}
+	if m.logViewerCleanup != nil {
+		m.logViewerCleanup()
+	}
+	cleanup = sync.OnceFunc(cleanup)
+	m.logViewerCleanup = cleanup
 	return m.execTerminalProcess(command, func(err error) tea.Msg { cleanup(); return logViewerFinishedMsg{err} })
 }
 
@@ -570,4 +576,13 @@ func (m *Model) processedActionLogRecords(target app.RunTarget, run uint32) []ca
 		return m.cachedActionLogRecords(target, run)
 	}
 	return view.actionLines
+}
+
+// A pinned combined view's run field is an upper boundary, not the identity
+// of every output line. Only single-run scopes can supply a run attribution.
+func logCommandRunNumber(key logCommandKey) uint32 {
+	if key.mode == runViewSingle {
+		return key.run
+	}
+	return 0
 }

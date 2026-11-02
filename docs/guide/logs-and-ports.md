@@ -113,7 +113,7 @@ services:
 The command runs in the active runtime's project directory and inherits the
 TUI's environment. `shell` selects a shell executable (default `/bin/sh`).
 `KRANZ_LOG_TARGET`, `KRANZ_LOG_SCOPE`, and `KRANZ_LOG_RUN` describe the selected
-history. In project YAML, write `$$` for a dollar sign that should reach the
+history; `KRANZ_LOG_RUN` is zero for a combined view. In project YAML, write `$$` for a dollar sign that should reach the
 shell; project configuration expands environment variables while loading.
 Personal settings are not expanded, so use a single `$` there.
 
