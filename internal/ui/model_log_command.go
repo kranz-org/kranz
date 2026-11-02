@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/kranz-org/kranz/internal/app"
@@ -297,15 +298,41 @@ func (m *Model) handleLogCommandChanged(msg logCommandChangedMsg) {
 	if msg.output.First > view.first {
 		// Output eviction has the same anchor correction as source retention.
 		// Width-dependent row counts are measured from the old presentation.
-		dropped := min(int(msg.output.First-view.first), len(view.entries))
+		dropped := msg.output.First - view.first
 		rows := 0
-		for _, entry := range view.entries[:dropped] {
-			rows += m.countLogEntryRows(entry, m.currentLogContentWidth())
+		for _, entry := range view.entries {
+			if entry.Sequence == 0 {
+				continue
+			}
+			if dropped == 0 {
+				break
+			}
+			line := m.displayLogEntry(entry)
+			if key.target.Kind == app.RunKindAction {
+				if msg.slot == logSlotPinned {
+					line = m.pinnedActionDisplayLine(entry)
+				} else {
+					line = m.logEntryContent(entry)
+					if entry.Source == "stderr" {
+						line = "[stderr] " + line
+					}
+				}
+			}
+			rows += projectedRowCount(line, m.currentLogContentWidth(), m.wrapLogs)
+			dropped--
 		}
 		if msg.slot == logSlotPinned {
-			m.pinnedAnchor = max(0, m.pinnedAnchor-rows)
+			if !m.pinnedFollow && m.pinnedAnchor <= rows {
+				m.pinnedAnchor, m.pinnedOffset = max(1, m.pinnedLogPanelHeight()-2), 0
+			} else {
+				m.pinnedAnchor = max(0, m.pinnedAnchor-rows)
+			}
 		} else {
-			m.logAnchor = max(0, m.logAnchor-rows)
+			if !m.followMode && m.logAnchor <= rows {
+				m.logAnchor, m.logOffset = max(1, m.currentLogPanelHeight()-2), 0
+			} else {
+				m.logAnchor = max(0, m.logAnchor-rows)
+			}
 		}
 	}
 	if msg.output.First > 0 && view.first == 0 {
@@ -352,11 +379,29 @@ func (m *Model) logEntryContent(entry config.LogEntry) string {
 	return readableLog(entry.Raw)
 }
 
-func (m *Model) stopLogCommands() {
+func (m *Model) stopLogCommands() []*logcommand.Process {
+	var stopped []*logcommand.Process
 	for slot, view := range m.logCommands {
 		if view != nil {
 			view.process.Cancel()
+			stopped = append(stopped, view.process)
 			m.logCommands[slot] = nil
+		}
+	}
+	return stopped
+}
+
+func waitStoppedLogCommands(processes []*logcommand.Process) {
+	if len(processes) == 0 {
+		return
+	}
+	timer := time.NewTimer(2 * time.Second)
+	defer timer.Stop()
+	for _, process := range processes {
+		select {
+		case <-process.Done:
+		case <-timer.C:
+			return
 		}
 	}
 }
@@ -451,7 +496,7 @@ func (m *Model) openLogViewer() tea.Cmd {
 		m.addNotification("logs", readableLog(err.Error()), config.LogWarn)
 		return nil
 	}
-	return tea.ExecProcess(command, func(err error) tea.Msg { cleanup(); return logViewerFinishedMsg{err} })
+	return m.execTerminalProcess(command, func(err error) tea.Msg { cleanup(); return logViewerFinishedMsg{err} })
 }
 
 func logCommandScopeLabel(key logCommandKey) string {

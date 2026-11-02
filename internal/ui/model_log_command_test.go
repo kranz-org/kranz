@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -131,6 +132,31 @@ func TestLogCommandsIsolatePinnedWindowsAndRejectStaleResults(t *testing.T) {
 	m.handleLogCommandChanged(logCommandChangedMsg{logSlotMain, old, logcommand.Snapshot{Lines: []string{"WRONG SESSION"}, Finished: true}})
 	if strings.Contains(strings.Join(m.activeSearchLines(), "|"), "WRONG SESSION") {
 		t.Fatal("late output crossed runtime sessions")
+	}
+}
+
+func TestGlobalRunSwitchRebuildsOnlyTheFocusedProcessor(t *testing.T) {
+	m := newTestModel()
+	defer m.Shutdown()
+	m.cfg.UI.Logs = &config.LogCommandConfig{Command: `tr '[:lower:]' '[:upper:]'`}
+	finishTestServiceRun(t, m, "api", 0, "older")
+	finishTestServiceRun(t, m, "api", 0, "newer")
+	m.refreshServices()
+	m.pinnedTarget, m.pinnedRunMode, m.pinnedRun = app.ServiceRunTarget("api"), runViewSingle, 1
+	finishLogCommands(t, m)
+	pinned := m.logCommands[logSlotPinned]
+	m.toggleAllServiceRunViews()
+	finishLogCommands(t, m)
+	if got := strings.Join(m.activeSearchLines(), "|"); strings.Contains(got, "OLDER") || !strings.Contains(got, "NEWER") {
+		t.Fatal("global latest-run switch retained combined processed output")
+	}
+	if m.logCommands[logSlotPinned] != pinned {
+		t.Fatal("global run switch restarted a pinned processor")
+	}
+	m.toggleAllServiceRunViews()
+	finishLogCommands(t, m)
+	if got := strings.Join(m.activeSearchLines(), "|"); !strings.Contains(got, "OLDER") || !strings.Contains(got, "NEWER") {
+		t.Fatal("global combined switch did not restore all processed runs")
 	}
 }
 
@@ -298,5 +324,63 @@ func TestLogCommandStylesHaveSafeGeometryForUnicodeTabsAndSelection(t *testing.T
 	safe := styledReadableLog(unsafe)
 	if ansi.Strip(safe) != "safegreen" || strings.Contains(safe, "52;") || strings.Contains(safe, "[2J") || !strings.Contains(safe, "\x1b[32m") {
 		t.Fatal("command styling retained terminal side effects or removed colors")
+	}
+}
+
+func TestTerminalHandoffPreservesTheOutputFile(t *testing.T) {
+	file, err := os.CreateTemp(t.TempDir(), "terminal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = file.Close() }()
+	m := newTestModel()
+	defer m.Shutdown()
+	m.terminalOutput = NewTerminalOutput(NewTerminalOutput(file))
+	command := exec.Command("sh", "-c", "true")
+	if m.execTerminalProcess(command, nil) == nil || command.Stdout != file {
+		t.Fatal("terminal descriptor was hidden behind a pipe writer")
+	}
+	if command.Stdin != nil {
+		t.Fatal("handoff replaced Bubble Tea's terminal input")
+	}
+}
+
+func TestLogCommandPreferencesAndExplicitServiceOptOut(t *testing.T) {
+	m := newTestModel()
+	defer m.Shutdown()
+	target := app.ServiceRunTarget("api")
+	m.cfg.UI.Logs = &config.LogCommandConfig{Command: "project-tool"}
+	if m.effectiveLogCommand(target).Command != "project-tool" {
+		t.Fatal("project tool was ignored")
+	}
+	m.userSettings.Logs = &config.LogCommandConfig{Command: "personal-tool"}
+	if m.effectiveLogCommand(target).Command != "personal-tool" {
+		t.Fatal("personal preference was ignored")
+	}
+	service := m.cfg.Services["api"]
+	service.UI.Logs = &config.LogCommandConfig{Command: "service-tool"}
+	m.cfg.Services["api"] = service
+	if m.effectiveLogCommand(target).Command != "service-tool" {
+		t.Fatal("service override was ignored")
+	}
+	service.UI.Logs = &config.LogCommandConfig{}
+	m.cfg.Services["api"] = service
+	if m.effectiveLogCommand(target).Command != "" {
+		t.Fatal("empty service preference did not disable the inherited tool")
+	}
+}
+
+func TestProcessedRetentionDoesNotLeaveAnEmptyPausedViewport(t *testing.T) {
+	m := newTestModel()
+	defer m.Shutdown()
+	m.width, m.height, m.ready = 100, 20, true
+	m.cfg.UI.Logs = &config.LogCommandConfig{Command: "cat"}
+	appendTestLog(m, "api", "old output")
+	finishLogCommands(t, m)
+	view := m.logCommands[logSlotMain]
+	m.followMode, m.logPaused, m.logAnchor, m.logOffset = false, true, 1, 0
+	m.handleLogCommandChanged(logCommandChangedMsg{logSlotMain, view, logcommand.Snapshot{First: 1, Lines: []string{"retained output"}, Finished: true}})
+	if m.logAnchor == 0 || m.followMode || !m.logPaused || !strings.Contains(ansi.Strip(m.renderLogPanel(m.FocusedService(), 70, 10)), "retained output") {
+		t.Fatal("evicting the whole old anchor left a blank viewport or resumed following")
 	}
 }

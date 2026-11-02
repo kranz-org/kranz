@@ -51,6 +51,7 @@ type Process struct {
 	pending  []byte
 	bytes    int
 	first    uint64
+	group    int
 	finished bool
 	err      error
 }
@@ -76,7 +77,14 @@ func (p *Process) Send(text string, final bool) bool {
 	}
 }
 
-func (p *Process) Cancel() { p.cancel() }
+func (p *Process) Cancel() {
+	p.cancel()
+	p.mu.Lock()
+	if p.group > 0 {
+		_ = syscall.Kill(-p.group, syscall.SIGKILL)
+	}
+	p.mu.Unlock()
+}
 
 func (p *Process) Snapshot() Snapshot {
 	p.mu.Lock()
@@ -126,6 +134,12 @@ func (p *Process) run(options Options) {
 		err = command.Start()
 	}
 	if err == nil {
+		p.mu.Lock()
+		p.group = command.Process.Pid
+		p.mu.Unlock()
+		if p.ctx.Err() != nil {
+			_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+		}
 		writerDone := make(chan struct{})
 		go func() {
 			defer close(writerDone)
@@ -155,7 +169,10 @@ func (p *Process) run(options Options) {
 		err = command.Wait()
 		// A shell can exit before children that inherited its output pipes.
 		// The presentation owns that whole group, including on a successful exit.
+		p.mu.Lock()
 		_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+		p.group = 0
+		p.mu.Unlock()
 		p.cancel()
 		<-writerDone
 	} else if stdin != nil {

@@ -299,6 +299,12 @@ func mergePatchMapping(base, patch *yaml.Node, path []string) error {
 		if current.Kind != incoming.Kind {
 			return fmt.Errorf("%s: override type %s is incompatible with %s", strings.Join(fieldPath, "."), yamlKind(incoming.Kind), yamlKind(current.Kind))
 		}
+		// A log tool is one execution declaration. Replacing its command must
+		// not inherit a viewer mode or line-preservation contract from another.
+		if incoming.Kind == yaml.MappingNode && isLogCommandPath(fieldPath) {
+			base.Content[baseIndex+1] = cloneYAMLNode(incoming)
+			continue
+		}
 		if incoming.Kind == yaml.MappingNode && len(incoming.Content) > 0 {
 			if err := mergePatchMapping(current, incoming, fieldPath); err != nil {
 				return err
@@ -308,6 +314,11 @@ func mergePatchMapping(base, patch *yaml.Node, path []string) error {
 		base.Content[baseIndex+1] = cloneYAMLNode(incoming)
 	}
 	return nil
+}
+
+func isLogCommandPath(path []string) bool {
+	return len(path) == 2 && path[0] == "ui" && path[1] == "logs" ||
+		len(path) == 4 && path[0] == "services" && path[2] == "ui" && path[3] == "logs"
 }
 
 func mappingIndex(mapping *yaml.Node, key string) int {

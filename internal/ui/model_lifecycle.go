@@ -19,7 +19,7 @@ import (
 // Shutdown is the idempotent cleanup boundary for every application exit path.
 func (m *Model) Shutdown() error {
 	m.shutdownOnce.Do(func() {
-		m.stopLogCommands()
+		waitStoppedLogCommands(m.stopLogCommands())
 		m.abortAllOperations()
 		if !m.detachOnExit {
 			m.shutdownErr = m.app.Shutdown()
@@ -779,7 +779,9 @@ func (m *Model) beginCloseAndChoose() (tea.Model, tea.Cmd) {
 	// chooser may install another session only after this command answers, and
 	// that new session must never become the target of the close request.
 	currentApp := m.app
+	stopped := m.stopLogCommands()
 	return m, func() tea.Msg {
+		waitStoppedLogCommands(stopped)
 		return shutdownResultMsg{err: currentApp.Shutdown(), chooseAfterClose: true}
 	}
 }
@@ -797,7 +799,8 @@ func (m *Model) beginExit(operation string) (tea.Model, tea.Cmd) {
 	// would otherwise race that read and could shut down the wrong runtime.
 	// Every switch entry point checks m.exiting before touching m.app.
 	m.exiting = true
-	return m, func() tea.Msg { return shutdownResultMsg{err: m.Shutdown()} }
+	stopped := m.stopLogCommands()
+	return m, func() tea.Msg { waitStoppedLogCommands(stopped); return shutdownResultMsg{err: m.Shutdown()} }
 }
 
 func (m *Model) handleConfirmQuitKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

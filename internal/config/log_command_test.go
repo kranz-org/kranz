@@ -63,3 +63,34 @@ func TestLogCommandValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestLogCommandPatchReplacesTheWholeDeclaration(t *testing.T) {
+	directory := t.TempDir()
+	base := `project: Sample
+overrides: [local.yaml]
+ui:
+  logs:
+    command: viewer
+    mode: terminal
+services:
+  api:
+    command: true
+    ui:
+      logs:
+        command: highlighter
+        preserve_lines: true
+`
+	patch := "ui:\n  logs:\n    command: cat\nservices:\n  api:\n    ui:\n      logs:\n        command: transformer\n"
+	for name, content := range map[string]string{"kranz.yaml": base, "local.yaml": patch} {
+		if err := os.WriteFile(filepath.Join(directory, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	loaded, err := Compose(LoadOptions{Directory: directory, Sources: []string{"kranz.yaml"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.UI.Logs.Command != "cat" || loaded.UI.Logs.Mode != "" || loaded.Services["api"].UI.Logs.PreserveLines {
+		t.Fatal("an override inherited incompatible execution options")
+	}
+}

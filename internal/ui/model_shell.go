@@ -20,7 +20,7 @@ func (m *Model) openCommandShell() tea.Cmd {
 		return func() tea.Msg { return shellFinishedMsg{err: err} }
 	}
 	m.addNotification("shell", "Command shell opened; Ctrl+O returns to Kranz", config.LogInfo)
-	return tea.ExecProcess(command, func(err error) tea.Msg {
+	return m.execTerminalProcess(command, func(err error) tea.Msg {
 		cleanup()
 		return shellFinishedMsg{err: err}
 	})
@@ -111,4 +111,22 @@ func commandEnvironment(overrides ...string) []string {
 		environment = append(environment, value)
 	}
 	return append(environment, overrides...)
+}
+
+// execTerminalProcess preserves the actual terminal descriptor. Passing the
+// synchronized renderer writer directly to os/exec creates a pipe instead;
+// pagers then see redirected stdout and print-and-exit rather than open a UI.
+func (m *Model) execTerminalProcess(command *exec.Cmd, callback tea.ExecCallback) tea.Cmd {
+	output := m.terminalOutput
+	for {
+		wrapped, ok := output.(*TerminalOutput)
+		if !ok {
+			break
+		}
+		output = wrapped.writer
+	}
+	if file, ok := output.(*os.File); ok && command.Stdout == nil {
+		command.Stdout = file
+	}
+	return tea.ExecProcess(command, callback)
 }
