@@ -44,7 +44,7 @@ func (m *Model) syncRunTarget() bool {
 		m.selectedRun = 0
 		m.runMode = runViewCombined
 		m.runFollowsLatest = false
-		if target.Kind == app.RunKindAction {
+		if target.Kind == app.RunKindAction || m.allServiceRunsSingle {
 			m.runMode = runViewSingle
 			m.runFollowsLatest = true
 		}
@@ -71,6 +71,38 @@ func (m *Model) syncRunTarget() bool {
 		}
 	}
 	return true
+}
+
+// toggleAllServiceRunViews applies one mode to every service, including ones
+// that have not yet been focused. Individual selections can still override it.
+// Actions and pinned snapshots retain their independent run selections.
+func (m *Model) toggleAllServiceRunViews() {
+	m.syncRunTarget()
+	m.allServiceRunsSingle = !m.allServiceRunsSingle
+	mode := runViewCombined
+	if m.allServiceRunsSingle {
+		mode = runViewSingle
+	}
+	for target := range m.runSelections {
+		if target.Kind == app.RunKindService {
+			m.runSelections[target] = runSelectionState{Mode: mode, FollowsLatest: m.allServiceRunsSingle}
+		}
+	}
+	if m.runTarget.Kind == app.RunKindService {
+		m.saveRunViewport()
+		m.runMode = mode
+		m.selectedRun = 0
+		m.runFollowsLatest = m.allServiceRunsSingle
+		if m.runFollowsLatest {
+			m.selectedRun = latestRun(m.runsForTarget(m.runTarget))
+		}
+		m.restoreRunViewport()
+	}
+	label := "combined"
+	if m.allServiceRunsSingle {
+		label = "latest run"
+	}
+	m.addNotification("logs", "All services: "+label, config.LogInfo)
 }
 
 func (m *Model) runsForTarget(target app.RunTarget) []app.RunSummary {

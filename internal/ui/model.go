@@ -292,31 +292,32 @@ type Model struct {
 	focusReported       func()
 	lastAppearanceProbe time.Time
 
-	logSearcher      *kranzlog.Searcher
-	pinnedSearcher   *kranzlog.Searcher
-	searchInput      textinput.Model
-	exportInput      textinput.Model
-	searchNudge      time.Time
-	currentMatch     int
-	pinnedMatch      int
-	searchMode       logSearchMode
-	pinnedSearchMode logSearchMode
-	pinnedLog        string
-	pinnedTarget     app.RunTarget
-	pinnedRunMode    runViewMode
-	pinnedRun        uint32
-	runTarget        app.RunTarget
-	runMode          runViewMode
-	selectedRun      uint32
-	runFollowsLatest bool
-	runListCursor    int
-	runStatusFilter  string
-	runSelections    map[app.RunTarget]runSelectionState
-	runViewports     map[runViewportKey]runViewportState
-	exportTarget     app.RunTarget
-	exportRun        uint32
-	deleteTarget     app.RunTarget
-	deleteRun        uint32
+	logSearcher          *kranzlog.Searcher
+	pinnedSearcher       *kranzlog.Searcher
+	searchInput          textinput.Model
+	exportInput          textinput.Model
+	searchNudge          time.Time
+	currentMatch         int
+	pinnedMatch          int
+	searchMode           logSearchMode
+	pinnedSearchMode     logSearchMode
+	pinnedLog            string
+	pinnedTarget         app.RunTarget
+	pinnedRunMode        runViewMode
+	pinnedRun            uint32
+	runTarget            app.RunTarget
+	runMode              runViewMode
+	allServiceRunsSingle bool
+	selectedRun          uint32
+	runFollowsLatest     bool
+	runListCursor        int
+	runStatusFilter      string
+	runSelections        map[app.RunTarget]runSelectionState
+	runViewports         map[runViewportKey]runViewportState
+	exportTarget         app.RunTarget
+	exportRun            uint32
+	deleteTarget         app.RunTarget
+	deleteRun            uint32
 
 	mode            ViewMode
 	width           int

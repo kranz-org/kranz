@@ -186,6 +186,10 @@ In the TUI, `v` opens the run history for the focused service or action. `x`
 switches between all runs and a single run, `[` and `]` step through history,
 `Shift+F` jumps to the previous failed run, and `l` returns to the latest.
 `Shift+3` pins a run so it stays frozen while the live panel keeps moving.
+`Shift+X` first switches every service to its latest run, regardless of individual
+selections. The next press restores combined logs for every service; using `x`
+on one service does not change that sequence. This toggle is separate for each
+runtime. Actions and pinned snapshots keep their own selections.
 If the target has never run, `v` opens a dismissible explanation instead of an
 empty table.
 See [Controls](../reference/controls) for the complete list.

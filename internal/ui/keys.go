@@ -128,7 +128,7 @@ func DefaultKeyMap() KeyMap {
 		),
 		StopAll: key.NewBinding(
 			key.WithKeys("A", "shift+a"),
-			key.WithHelp("A", "stop all"),
+			key.WithHelp("Shift+A", "stop all"),
 		),
 		Restart: key.NewBinding(
 			key.WithKeys("r"),
@@ -136,7 +136,7 @@ func DefaultKeyMap() KeyMap {
 		),
 		RestartAll: key.NewBinding(
 			key.WithKeys("R", "shift+r"),
-			key.WithHelp("R", "restart all"),
+			key.WithHelp("Shift+R", "restart all"),
 		),
 		Tags: key.NewBinding(
 			key.WithKeys("t"),
@@ -144,7 +144,7 @@ func DefaultKeyMap() KeyMap {
 		),
 		ResetTags: key.NewBinding(
 			key.WithKeys("T", "shift+t"),
-			key.WithHelp("T", "clear tag selection"),
+			key.WithHelp("Shift+T", "clear tag selection"),
 		),
 		Health: key.NewBinding(
 			key.WithKeys("h"),

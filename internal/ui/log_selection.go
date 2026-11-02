@@ -488,7 +488,7 @@ func (m *Model) handleSelectionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			s.cursor = logPoint{rows[end-1].line, rows[end-1].visual.end}
 			s.fullLines = false
 		}
-	case "tab", "shift+tab", "1", "2", "3", "#", "/", "x", "[", "]", "v", "l", "F", "p":
+	case "tab", "shift+tab", "1", "2", "3", "#", "/", "x", "X", "[", "]", "v", "l", "F", "p":
 		m.endLogSelection()
 		if s.disconnected {
 			return m, nil

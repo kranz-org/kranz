@@ -178,7 +178,7 @@ func (m *Model) handleNavigationKey(msg tea.KeyMsg) bool {
 	case key.Matches(msg, m.keys.Down):
 		m.movePanelCursor(1)
 		return true
-	case key.Matches(msg, m.keys.Left), key.Matches(msg, m.keys.Right):
+	case key.Matches(msg, m.keys.Left), key.Matches(msg, m.keys.Right), msg.String() == "shift+left", msg.String() == "shift+right":
 		if m.panelFocus != panelServices {
 			return false
 		}
@@ -187,11 +187,14 @@ func (m *Model) handleNavigationKey(msg tea.KeyMsg) bool {
 		// the tag list would strand the cursor on a row it no longer drives.
 		if m.paramRowFocused() {
 			step := 1
-			if key.Matches(msg, m.keys.Left) {
+			if key.Matches(msg, m.keys.Left) || msg.String() == "shift+left" {
 				step = -1
 			}
 			m.stepFocusedParamValue(step, msg.String() == "shift+left" || msg.String() == "shift+right")
 			return true
+		}
+		if msg.String() == "shift+left" || msg.String() == "shift+right" {
+			return false
 		}
 		m.toggleListMode()
 		return true
@@ -266,6 +269,9 @@ func (m *Model) handleLogKey(msg tea.KeyMsg) bool {
 		return true
 	case msg.String() == "x":
 		m.toggleRunView()
+		return true
+	case msg.String() == "X":
+		m.toggleAllServiceRunViews()
 		return true
 	case msg.String() == "[":
 		m.moveRun(-1, false)
