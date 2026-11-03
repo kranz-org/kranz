@@ -27,6 +27,7 @@ Start from the repository root after building or installing Kranz.
 | --- | --- |
 | How everything fits together in one project | [MoonFlight](./examples/moonflight) |
 | The keyboard and basic service lifecycle | [Procfile](./examples/procfile) |
+| Custom log processors, viewers and run-aware search | [Log tools playground](./examples/log-tools) |
 | How a real `kranz.yaml` is structured | [Native YAML](./examples/native) |
 | Docker/SSH-style resources that survive Kranz | [Detached lifecycle](./examples/lifecycle) |
 | Work that must succeed before a service starts | [Prerequisites](./examples/prerequisites) |

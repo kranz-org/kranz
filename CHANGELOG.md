@@ -4,21 +4,33 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-11-03
+
 ### Added
 
-- Connect custom shell log processors with `ui.logs.command` or personal
-  `logs` settings. Commands process the selected run history; native regex,
-  scrolling, wrapping, pause, pinning and text selection use their output.
-  `Ctrl+G` toggles original output or opens a configured terminal viewer on
-  a frozen snapshot of the selected runs and regex filter.
-- `Shift+X` switches every service between latest-run and all-runs views,
-  retaining independent action and pinned selections and per-runtime state.
+- Read logs with your preferred command inside Kranz. Connect a highlighter,
+  formatter or shell pipeline through project, personal or service settings;
+  selected runs, regex search, scrolling, wrapping, pause and pinning continue
+  to work on the displayed result. `Ctrl+G` compares it with original output.
+- Open selected log history in an interactive terminal viewer such as less or
+  lnav, then return to the same Kranz run, search and scroll position. Viewers
+  receive a frozen snapshot of the selected runs and active regex filter.
+- Try the new log tools playground locally, with synthetic live logs, repeatable
+  action reports, a shell colorizer, and optional tailspin and less profiles.
+- Switch every service between its latest run and all runs with `Shift+X`.
+  Actions and pinned histories retain their independent selections.
 
 ### Fixed
 
-- Interactive log viewers, command shells and actions receive the actual
-  terminal output descriptor, so terminal-aware tools stay interactive.
-- Shift+Left/Right reaches action number parameters for steps of ten.
+- Interactive viewers, command shells and actions stay interactive when Kranz
+  uses its synchronized terminal output writer.
+- Shift+Left/Right adjusts numeric action parameters by steps of ten.
+- Log processor status fits in panel headers without repeating shortcut hints;
+  shortcuts remain available in help.
+
+### Maintenance
+
+- Update the GoReleaser GitHub Action to 7.3.0.
 
 ## [0.17.1] - 2026-10-18
 
@@ -1055,7 +1067,8 @@ artifacts.
 - Explicit global-user and project-config save destinations in the live theme picker.
 - Native compatibility for common Process Compose configurations.
 
-[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.17.1...HEAD
+[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/kranz-org/kranz/compare/v0.17.1...v0.18.0
 [0.17.1]: https://github.com/kranz-org/kranz/compare/v0.17.0...v0.17.1
 [0.17.0]: https://github.com/kranz-org/kranz/compare/v0.16.5...v0.17.0
 [0.16.5]: https://github.com/kranz-org/kranz/compare/v0.16.4...v0.16.5

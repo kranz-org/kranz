@@ -70,6 +70,7 @@ export default defineConfig({
       {
         text: 'Upgrading',
         items: [
+          { text: 'Kranz 0.18.0', link: '/releases/0.18.0' },
           { text: 'Kranz 0.17.1', link: '/releases/0.17.1' },
           { text: 'Kranz 0.17.0', link: '/releases/0.17.0' },
           { text: 'Kranz 0.16.5', link: '/releases/0.16.5' },
@@ -85,6 +86,7 @@ export default defineConfig({
           { text: 'MoonFlight showcase', link: '/examples/moonflight' },
           { text: 'Procfile quickstart', link: '/examples/procfile' },
           { text: 'Native YAML', link: '/examples/native' },
+          { text: 'Your own log tools', link: '/examples/log-tools' },
           { text: 'Detached lifecycle', link: '/examples/lifecycle' },
           { text: 'Prerequisites', link: '/examples/prerequisites' },
           { text: 'Action parameters', link: '/examples/action-parameters' },
