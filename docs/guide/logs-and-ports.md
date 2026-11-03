@@ -48,6 +48,10 @@ bounded buffer for an unfinished line.
 
 ## Your own log tools
 
+Try the runnable [log tools playground](https://github.com/kranz-org/kranz/tree/main/examples/log-tools)
+for synthetic logs, a processor requiring no extra installation, and tailspin
+and less profiles.
+
 Connect any command that reads logs on stdin and writes text or ANSI-colored
 text to stdout. Commands run through a shell, so arguments and pipelines work:
 

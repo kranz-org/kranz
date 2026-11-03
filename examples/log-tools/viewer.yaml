@@ -1,0 +1,8 @@
+# Project YAML uses $$ to leave this variable for the viewer's shell.
+services:
+  api:
+    ui:
+      logs:
+        command: 'less "$$KRANZ_LOG_FILE"'
+        mode: terminal
+

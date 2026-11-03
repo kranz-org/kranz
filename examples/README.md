@@ -47,6 +47,18 @@ This example combines a one-shot migration, HTTP readiness, a dependent worker,
 and a web server whose port is learned at runtime. Start the full stack with
 `a`, then `s`.
 
+## Your own log tools
+
+```bash
+make dev
+./bin/kranz-dev -C examples/log-tools
+```
+
+Start `api` with `s` and compare processed/original output with `Ctrl+G`.
+The default processor requires only standard shell tools. The
+[playground instructions](log-tools/README.md) also show a real tailspin
+profile, a less viewer, and run/search/pin/scroll experiments.
+
 ## Prerequisites: work that must finish before a service starts
 
 ```bash
