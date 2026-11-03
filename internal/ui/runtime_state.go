@@ -13,6 +13,7 @@ import (
 // It is indexed by session ID in Model.uiStateCache, lives only in process
 // memory, and is never written to disk (PRD 3.4).
 type runtimeUIState struct {
+	logCommandBypass [logSlotCount]bool
 	// populated distinguishes "no state captured yet" (a runtime visited for
 	// the first time gets the model's zero-value defaults) from a state that
 	// was genuinely captured and should be applied verbatim.
@@ -44,13 +45,14 @@ type runtimeUIState struct {
 	currentMatch, pinnedMatch    int
 	logPattern, pinnedPattern    string
 
-	runMode          runViewMode
-	selectedRun      uint32
-	runFollowsLatest bool
-	runListCursor    int
-	runStatusFilter  string
-	runSelections    map[app.RunTarget]runSelectionState
-	runViewports     map[runViewportKey]runViewportState
+	runMode              runViewMode
+	allServiceRunsSingle bool
+	selectedRun          uint32
+	runFollowsLatest     bool
+	runListCursor        int
+	runStatusFilter      string
+	runSelections        map[app.RunTarget]runSelectionState
+	runViewports         map[runViewportKey]runViewportState
 
 	notifications []config.Notification
 	toastMessage  string
@@ -68,6 +70,7 @@ func (m *Model) captureUIState() runtimeUIState {
 	m.notifMu.RUnlock()
 
 	state := runtimeUIState{
+		logCommandBypass:    m.logCommandBypass,
 		populated:           true,
 		focusedActionGroup:  m.focusedActionGroup,
 		panelFocus:          m.panelFocus,
@@ -94,13 +97,14 @@ func (m *Model) captureUIState() runtimeUIState {
 		searchMode: m.searchMode, pinnedSearchMode: m.pinnedSearchMode,
 		currentMatch: m.currentMatch, pinnedMatch: m.pinnedMatch,
 
-		runMode:          m.runMode,
-		selectedRun:      m.selectedRun,
-		runFollowsLatest: m.runFollowsLatest,
-		runListCursor:    m.runListCursor,
-		runStatusFilter:  m.runStatusFilter,
-		runSelections:    maps.Clone(m.runSelections),
-		runViewports:     copyViewportMap(m.runViewports),
+		runMode:              m.runMode,
+		allServiceRunsSingle: m.allServiceRunsSingle,
+		selectedRun:          m.selectedRun,
+		runFollowsLatest:     m.runFollowsLatest,
+		runListCursor:        m.runListCursor,
+		runStatusFilter:      m.runStatusFilter,
+		runSelections:        maps.Clone(m.runSelections),
+		runViewports:         copyViewportMap(m.runViewports),
 
 		notifications: notifications,
 		toastMessage:  toastMessage,
@@ -130,6 +134,7 @@ func (m *Model) captureUIState() runtimeUIState {
 // Passing the zero value applies Kranz's ordinary defaults, which is what a
 // runtime visited for the first time in this process gets.
 func (m *Model) applyUIState(state runtimeUIState) {
+	m.logCommandBypass = state.logCommandBypass
 	m.logSelection = nil
 	m.logClick = logClickState{}
 	if !state.populated {
@@ -221,6 +226,7 @@ func (m *Model) applyUIState(state runtimeUIState) {
 	m.syncRunTarget()
 
 	m.runMode = state.runMode
+	m.allServiceRunsSingle = state.allServiceRunsSingle
 	m.selectedRun = state.selectedRun
 	m.runFollowsLatest = state.runFollowsLatest
 	m.runListCursor = state.runListCursor
@@ -287,6 +293,7 @@ func (m *Model) resetUIStateToDefaults() {
 	m.pinnedLog, m.pinnedTarget, m.pinnedRunMode, m.pinnedRun = "", app.RunTarget{}, runViewCombined, 0
 	m.runTarget = app.RunTarget{}
 	m.runMode = runViewCombined
+	m.allServiceRunsSingle = false
 	m.selectedRun = 0
 	m.runFollowsLatest = false
 	m.runListCursor = 0

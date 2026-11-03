@@ -171,10 +171,30 @@ type RuntimeConfig struct {
 
 // UIConfig defines project-specific presentation defaults.
 type UIConfig struct {
-	Theme      string `yaml:"theme,omitempty"`
-	Accent     string `yaml:"accent,omitempty"`
-	Background string `yaml:"background,omitempty"`
-	ColorMode  string `yaml:"color_mode,omitempty"`
+	Logs       *LogCommandConfig `yaml:"logs,omitempty"`
+	Theme      string            `yaml:"theme,omitempty"`
+	Accent     string            `yaml:"accent,omitempty"`
+	Background string            `yaml:"background,omitempty"`
+	ColorMode  string            `yaml:"color_mode,omitempty"`
+}
+
+// LogCommandConfig connects a user-supplied log processor or terminal viewer.
+// An explicitly empty command disables an inherited preference.
+type LogCommandConfig struct {
+	PreserveLines bool   `yaml:"preserve_lines,omitempty"`
+	Command       string `yaml:"command,omitempty"`
+	Mode          string `yaml:"mode,omitempty"`
+	Shell         string `yaml:"shell,omitempty"`
+}
+
+const (
+	LogCommandStream   = "stream"
+	LogCommandTerminal = "terminal"
+)
+
+// ServiceUIConfig overrides presentation without changing process supervision.
+type ServiceUIConfig struct {
+	Logs *LogCommandConfig `yaml:"logs,omitempty"`
 }
 
 // Supported UI appearance sources and palette modes.
@@ -205,6 +225,7 @@ type Defaults struct {
 
 // Service describes one managed process and its lifecycle policy.
 type Service struct {
+	UI                   ServiceUIConfig             `yaml:"ui,omitempty"`
 	Command              string                      `yaml:"command,omitempty"`
 	Description          string                      `yaml:"description,omitempty"`
 	Supervision          SupervisionMode             `yaml:"supervision,omitempty"`

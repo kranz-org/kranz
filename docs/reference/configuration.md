@@ -262,6 +262,7 @@ list, so keep them short and stable.
 | [`dependency_conditions`](#dependency-conditions) | map | `{}` | What "ready" means per dependency |
 | [`healthcheck`](#healthcheck) | map | none | Readiness and liveness probes |
 | [`ready_log_line`](#ready-log-line) | regex | — | Readiness from a log line |
+| `ui.logs` | [log command](#log-command) | inherited | Service/action log presentation override |
 | [`availability`](#availability) | map | `{}` | Restart policy and project exit |
 | [`shutdown`](#shutdown) | map | `{}` | How this service is stopped |
 | [`actions`](#actions) | map | `{}` | One-shot commands owned by this service |
@@ -905,6 +906,7 @@ Appearance for this project. Personal settings live outside the repository; see
 | `accent` | `#RRGGBB` | theme accent | Accent color |
 | `background` | `terminal` \| `theme` \| `#RRGGBB` | `terminal` | Canvas source |
 | `color_mode` | `auto` \| `dark` \| `light` | `auto` | Palette mode |
+| `logs` | [log command](#log-command) | none | User-supplied log processor or viewer |
 
 ```yaml
 ui:
@@ -916,6 +918,26 @@ ui:
 
 `Ctrl+T` opens the live picker, which can write these values back to the
 project or to your personal settings.
+
+### Log command
+
+`ui.logs` configures a project default. Service `ui.logs` overrides that value
+and the personal `logs` preference. An empty mapping disables inheritance.
+Each declaration replaces the complete command and its options together.
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `command` | string | disabled | Shell command with arguments or a pipeline |
+| `mode` | `stream` \| `terminal` | `stream` | Process logs in the panel or open a terminal viewer with `Ctrl+G` |
+| `shell` | string | `/bin/sh` | Shell executable used with `-c` |
+| `preserve_lines` | bool | `false` | Verify unchanged text/order and preserve per-line capture metadata |
+
+Stream commands receive the selected raw history on stdin and emit their
+presentation on stdout. Terminal commands receive a frozen, regex-filtered
+snapshot through `KRANZ_LOG_FILE`, leaving stdin available for keyboard input.
+Project YAML escapes runtime shell variables as `$$KRANZ_LOG_FILE`.
+See [Your own log tools](../guide/logs-and-ports#your-own-log-tools) for examples,
+history/search behavior, limits, and failure handling.
 
 ## Validation rules
 

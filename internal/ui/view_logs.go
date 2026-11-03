@@ -78,6 +78,7 @@ func (m *Model) renderActionLogPanel(width, height int) string {
 	// label it shifted the run position sideways on every single invocation.
 	title := "[3] ACTION OUTPUT" + ContextBarStyle.Render(" │ ") + actionStatusIndicator(state.Status) + " " + ServiceNameStyle.Render(id.Name)
 	title += ContextBarStyle.Render(" · ") + RunningBadgeStyle.Render(m.runViewLabel())
+	title += ContextBarStyle.Render(m.logCommandHint(logSlotMain, app.ActionRunTarget(id)))
 	if word := actionStatusWord(state.Status); word != "" {
 		title += ContextBarStyle.Render(" · ") + word
 	}
@@ -103,7 +104,7 @@ func (m *Model) renderActionLogPanel(width, height int) string {
 		matchSet[index] = true
 	}
 	if content.len() == 0 {
-		return renderTitledPanel(m.panelStyle(panelLogs), m.panelTitleStyle(panelLogs), contentWidth, contentHeight, title, []string{"", ContextBarStyle.Render("Press s to run this action")})
+		return renderTitledPanel(m.panelStyle(panelLogs), m.panelTitleStyle(panelLogs), contentWidth, contentHeight, title, []string{"", ContextBarStyle.Render(m.actionEmptyLogMessage(id))})
 	}
 	if filtered && selectionLen == 0 {
 		return renderTitledPanel(m.panelStyle(panelLogs), m.panelTitleStyle(panelLogs), contentWidth, contentHeight, title, []string{"", ContextBarStyle.Render("No action output matches this regex")})
@@ -233,7 +234,7 @@ func (view actionLogView) line(index int) string {
 func (view actionLogView) lines() []string {
 	lines := make([]string, view.len())
 	for index := range lines {
-		lines[index] = view.line(index)
+		lines[index] = readableLog(view.line(index))
 	}
 	return lines
 }
@@ -258,6 +259,9 @@ func (m *Model) actionLogContentView(id config.ActionID, action config.Action, s
 		outputRun = selectedRun
 	}
 	view := actionLogView{selectedRun: selectedRun, state: state, output: m.cachedActionLogRecords(target, outputRun)}
+	if command := m.effectiveLogCommand(target); command.Command != "" && command.Mode == config.LogCommandStream && !m.logCommandBypass[logSlotMain] {
+		view.output = m.processedActionLogRecords(target, outputRun)
+	}
 	if state.Status != app.ActionReady && action.Command != "" {
 		view.prefix = appendSafeActionOutput(nil, action.Command, "$ ")
 	}
@@ -386,10 +390,8 @@ func (m *Model) renderLogPanelMode(svc *app.ServiceSnapshot, width, height int, 
 		title += ContextBarStyle.Render(" · ") + RunningBadgeStyle.Render("TIME")
 	}
 
-	sourceEntries := m.cachedLogEntries(app.ServiceRunTarget(svc.Name))
-	if !pinned && m.runMode == runViewSingle {
-		sourceEntries = m.entriesForRun(app.ServiceRunTarget(svc.Name), m.selectedRun)
-	} else if pinned {
+	sourceEntries := m.mainLogEntries(app.ServiceRunTarget(svc.Name))
+	if pinned {
 		sourceEntries = m.pinnedEntries(app.ServiceRunTarget(svc.Name))
 	}
 	var searchMatches []int
@@ -411,6 +413,7 @@ func (m *Model) renderLogPanelMode(svc *app.ServiceSnapshot, width, height int, 
 	// BROWSING, PAUSED, and the search pattern — are what explain a viewport
 	// that has stopped moving, so they are the ones that must survive.
 	title += ContextBarStyle.Render(" · ") + RunningBadgeStyle.Render(runLabel)
+	title += ContextBarStyle.Render(m.logCommandHint(slot, app.ServiceRunTarget(svc.Name)))
 	matchSet := make(map[int]bool, len(searchMatches))
 	for _, idx := range searchMatches {
 		matchSet[idx] = true
@@ -430,7 +433,7 @@ func (m *Model) renderLogPanelMode(svc *app.ServiceSnapshot, width, height int, 
 	if len(sourceEntries) == 0 {
 		return renderTitledPanel(panelStyle, titleStyle, contentWidth, contentHeight, title, []string{
 			"",
-			ContextBarStyle.Render("Output will appear after the service starts"),
+			ContextBarStyle.Render(m.serviceEmptyLogMessage(slot, svc.Name)),
 		})
 	}
 	if filtered && selectionLen == 0 {
@@ -672,10 +675,8 @@ func (m *Model) displayedLogLineCount() int {
 	if svc == nil {
 		return 0
 	}
-	entries := m.cachedLogEntries(app.ServiceRunTarget(svc.Name))
-	if m.syncRunTarget() && m.runMode == runViewSingle {
-		entries = m.entriesForRun(app.ServiceRunTarget(svc.Name), m.selectedRun)
-	}
+	m.syncRunTarget()
+	entries := m.mainLogEntries(app.ServiceRunTarget(svc.Name))
 	if m.searchMode != searchFilter || m.logSearcher == nil || !m.logSearcher.HasPattern() {
 		width := m.currentLogContentWidth()
 		return m.logRowMetricsFor(logSlotMain, app.ServiceRunTarget(svc.Name), width).totalRows(m, entries, width)
@@ -712,10 +713,8 @@ func (m *Model) focusLogMatch(match int) {
 	if svc == nil || match < 0 {
 		return
 	}
-	entries := m.cachedLogEntries(app.ServiceRunTarget(svc.Name))
-	if m.syncRunTarget() && m.runMode == runViewSingle {
-		entries = m.entriesForRun(app.ServiceRunTarget(svc.Name), m.selectedRun)
-	}
+	m.syncRunTarget()
+	entries := m.mainLogEntries(app.ServiceRunTarget(svc.Name))
 	maxLines := max(1, m.currentLogPanelHeight()-2)
 	displayLines := make([]string, 0, min(match, len(entries)))
 	for _, entry := range entries[:min(match, len(entries))] {
@@ -797,10 +796,7 @@ func (m *Model) serviceLogLines(svc *app.ServiceSnapshot) []string {
 	if svc == nil {
 		return nil
 	}
-	if m.runMode == runViewSingle && m.runTarget == app.ServiceRunTarget(svc.Name) {
-		return logEntryLines(m.entriesForRun(m.runTarget, m.selectedRun))
-	}
-	return logEntryLines(m.cachedLogEntries(app.ServiceRunTarget(svc.Name)))
+	return logEntryLines(m.mainLogEntries(app.ServiceRunTarget(svc.Name)))
 }
 
 func logEntryLines(entries []config.LogEntry) []string {
@@ -812,7 +808,7 @@ func logEntryLines(entries []config.LogEntry) []string {
 }
 
 func (m *Model) displayLogEntry(entry config.LogEntry) string {
-	line := readableLog(entry.Raw)
+	line := m.logEntryContent(entry)
 	if !m.showLogTime || entry.Timestamp.IsZero() {
 		return line
 	}

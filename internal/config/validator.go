@@ -34,6 +34,10 @@ func Validate(cfg *Config) error {
 		return fmt.Errorf("ui.color_mode must be auto, dark, or light, got %q", cfg.UI.ColorMode)
 	}
 
+	if err := ValidateLogCommand(cfg.UI.Logs); err != nil {
+		return fmt.Errorf("ui.logs: %w", err)
+	}
+
 	if len(cfg.Services) == 0 && len(cfg.ActionGroups) == 0 {
 		return fmt.Errorf("configuration must contain at least one service or action group")
 	}
@@ -44,6 +48,9 @@ func Validate(cfg *Config) error {
 	}
 
 	for name, svc := range cfg.Services {
+		if err := ValidateLogCommand(svc.UI.Logs); err != nil {
+			return fmt.Errorf("service %q ui.logs: %w", name, err)
+		}
 		if err := validateServiceLifecycle(name, svc); err != nil {
 			return err
 		}
@@ -437,5 +444,21 @@ func detectCycles(cfg *Config) error {
 		}
 	}
 
+	return nil
+}
+
+// ValidateLogCommand validates both project configuration and user preferences.
+func ValidateLogCommand(value *LogCommandConfig) error {
+	if value == nil {
+		return nil
+	}
+	switch value.Mode {
+	case "", LogCommandStream, LogCommandTerminal:
+	default:
+		return fmt.Errorf("mode must be stream or terminal, got %q", value.Mode)
+	}
+	if strings.TrimSpace(value.Command) == "" && (value.Mode != "" || value.Shell != "" || value.PreserveLines) {
+		return fmt.Errorf("command is required when log command options are set")
+	}
 	return nil
 }

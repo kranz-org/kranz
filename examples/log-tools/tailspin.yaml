@@ -1,0 +1,8 @@
+# Apply with --override tailspin.yaml. Install tailspin separately first.
+services:
+  api:
+    ui:
+      logs:
+        command: tspin --print
+        mode: stream
+

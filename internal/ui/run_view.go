@@ -44,7 +44,7 @@ func (m *Model) syncRunTarget() bool {
 		m.selectedRun = 0
 		m.runMode = runViewCombined
 		m.runFollowsLatest = false
-		if target.Kind == app.RunKindAction {
+		if target.Kind == app.RunKindAction || m.allServiceRunsSingle {
 			m.runMode = runViewSingle
 			m.runFollowsLatest = true
 		}
@@ -71,6 +71,38 @@ func (m *Model) syncRunTarget() bool {
 		}
 	}
 	return true
+}
+
+// toggleAllServiceRunViews applies one mode to every service, including ones
+// that have not yet been focused. Individual selections can still override it.
+// Actions and pinned snapshots retain their independent run selections.
+func (m *Model) toggleAllServiceRunViews() {
+	m.syncRunTarget()
+	m.allServiceRunsSingle = !m.allServiceRunsSingle
+	mode := runViewCombined
+	if m.allServiceRunsSingle {
+		mode = runViewSingle
+	}
+	for target := range m.runSelections {
+		if target.Kind == app.RunKindService {
+			m.runSelections[target] = runSelectionState{Mode: mode, FollowsLatest: m.allServiceRunsSingle}
+		}
+	}
+	if m.runTarget.Kind == app.RunKindService {
+		m.saveRunViewport()
+		m.runMode = mode
+		m.selectedRun = 0
+		m.runFollowsLatest = m.allServiceRunsSingle
+		if m.runFollowsLatest {
+			m.selectedRun = latestRun(m.runsForTarget(m.runTarget))
+		}
+		m.restoreRunViewport()
+	}
+	label := "combined"
+	if m.allServiceRunsSingle {
+		label = "latest run"
+	}
+	m.addNotification("logs", "All services: "+label, config.LogInfo)
 }
 
 func (m *Model) runsForTarget(target app.RunTarget) []app.RunSummary {
@@ -259,7 +291,7 @@ func (m *Model) pinnedRunViewLabel() string {
 	return fmt.Sprintf("FROZEN · RUNS ≤ #%d", m.pinnedRun)
 }
 
-func (m *Model) pinnedEntries(target app.RunTarget) []config.LogEntry {
+func (m *Model) rawPinnedEntries(target app.RunTarget) []config.LogEntry {
 	entries := m.entriesForRun(target, 0)
 	if m.pinnedRun == 0 {
 		return entries
@@ -283,10 +315,11 @@ func (m *Model) renderPinnedActionRunPanel(target app.RunTarget, width, height i
 	contentWidth, contentHeight := max(1, width-2), max(1, height-2)
 	title := "[3] PINNED ACTION [Shift+3 UNPIN]" + ContextBarStyle.Render(" │ ") + ServiceNameStyle.Render(runTargetLabel(target)) +
 		" " + RunningBadgeStyle.Render(m.pinnedRunViewLabel())
+	title += ContextBarStyle.Render(m.logCommandHint(logSlotPinned, target))
 	entries := m.pinnedEntries(target)
 	if len(entries) == 0 {
 		return renderTitledPanel(m.panelStyle(panelPinnedLogs), m.panelTitleStyle(panelPinnedLogs), contentWidth, contentHeight, title,
-			[]string{"", ContextBarStyle.Render("No retained output for this snapshot")})
+			[]string{"", ContextBarStyle.Render(m.pinnedEmptyLogMessage(target))})
 	}
 	var indices []int
 	matches := []int(nil)

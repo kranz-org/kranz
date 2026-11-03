@@ -4,6 +4,22 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### Added
+
+- Connect custom shell log processors with `ui.logs.command` or personal
+  `logs` settings. Commands process the selected run history; native regex,
+  scrolling, wrapping, pause, pinning and text selection use their output.
+  `Ctrl+G` toggles original output or opens a configured terminal viewer on
+  a frozen snapshot of the selected runs and regex filter.
+- `Shift+X` switches every service between latest-run and all-runs views,
+  retaining independent action and pinned selections and per-runtime state.
+
+### Fixed
+
+- Interactive log viewers, command shells and actions receive the actual
+  terminal output descriptor, so terminal-aware tools stay interactive.
+- Shift+Left/Right reaches action number parameters for steps of ten.
+
 ## [0.17.1] - 2026-10-18
 
 ### Added

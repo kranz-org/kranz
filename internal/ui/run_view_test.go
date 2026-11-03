@@ -83,6 +83,67 @@ func TestRunSelectionSurvivesServiceFocusChanges(t *testing.T) {
 	}
 }
 
+func TestGlobalRunViewUnifiesMixedSelections(t *testing.T) {
+	model := newTestModel()
+	defer model.Shutdown()
+	finishTestServiceRun(t, model, "api", 0, "first")
+	finishTestServiceRun(t, model, "api", 0, "second")
+	finishTestServiceRun(t, model, "worker", 0, "worker-first")
+	finishTestServiceRun(t, model, "worker", 0, "worker-second")
+	model.refreshServices()
+	pressKey(model, 'x')
+	model.moveRun(-1, false)
+	model.moveFocus(1)
+	model.syncRunTarget()
+	pressKey(model, 'X')
+	plain := ansi.Strip(model.renderLogPanel(model.FocusedService(), 90, 12))
+	if !strings.Contains(plain, "worker-second") || strings.Contains(plain, "worker-first") {
+		t.Fatalf("global switch did not isolate the worker's latest output:\n%s", plain)
+	}
+	model.moveFocus(0)
+	if got := model.runViewLabel(); got != "RUN #2/2" {
+		t.Fatalf("global switch did not select latest run: %s", got)
+	}
+	pressKey(model, 'x')
+	pressKey(model, 'X')
+	model.moveFocus(1)
+	if got := model.runViewLabel(); got != "ALL RUNS" {
+		t.Fatalf("second global switch did not restore combined logs: %s", got)
+	}
+	plain = ansi.Strip(model.renderLogPanel(model.FocusedService(), 90, 12))
+	if !strings.Contains(plain, "worker-first") || !strings.Contains(plain, "worker-second") {
+		t.Fatalf("second global switch did not restore all worker output:\n%s", plain)
+	}
+}
+
+func TestGlobalRunViewDefaultsAndRuntimeRestore(t *testing.T) {
+	model := newTestModel()
+	defer model.Shutdown()
+	model.refreshServices()
+	pressKey(model, 'X')
+	state := model.captureUIState()
+	model.resetUIStateToDefaults()
+	model.moveFocus(1)
+	if got := model.runViewLabel(); got != "ALL RUNS" {
+		t.Fatalf("new runtime inherited global run mode: %s", got)
+	}
+	model.applyUIState(state)
+	model.moveFocus(1)
+	if got := model.runViewLabel(); got != "NO RUNS YET" {
+		t.Fatalf("unvisited service did not inherit restored run mode: %s", got)
+	}
+	finishTestServiceRun(t, model, "worker", 0, "first output")
+	finishTestServiceRun(t, model, "worker", 0, "latest output")
+	model.refreshServices()
+	if got := model.runViewLabel(); got != "RUN #2/2" {
+		t.Fatalf("global run mode did not follow a new run: %s", got)
+	}
+	pressKey(model, 'X')
+	if got := model.runViewLabel(); got != "ALL RUNS" {
+		t.Fatalf("restored toggle did not return to combined logs: %s", got)
+	}
+}
+
 func TestRunSelectionsSurviveRuntimeStateRestore(t *testing.T) {
 	model := newTestModel()
 	defer model.Shutdown()

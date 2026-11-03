@@ -605,6 +605,7 @@ func (m *Model) saveThemePickerToProject() {
 	// adopts the changed configuration only after Ctrl+L.
 	updated := *m.cfg
 	updated.UI = appearance
+	updated.UI.Logs = m.cfg.UI.Logs
 	m.cfg = &updated
 	m.configChanged = true
 
