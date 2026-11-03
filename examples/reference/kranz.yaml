@@ -12,6 +12,11 @@ ui:
   accent: "#7AA2F7"         # Overrides the theme accent.
   background: terminal      # terminal | theme | #RRGGBB
   color_mode: auto          # auto | dark | light
+  logs:
+    command: cat           # Optional stdin/stdout processor; replace with a tool or pipeline.
+    mode: stream           # stream | terminal (viewer opened with Ctrl+G).
+    shell: /bin/sh         # Shell executable for this command; default /bin/sh.
+    preserve_lines: true   # Verify unchanged text/order and retain capture metadata.
 
 # Shared execution context
 # Inherited by every service that does not override it.
@@ -51,6 +56,8 @@ services:
       PORT: "3001"          # Highest precedence; wins over every dotenv file.
     ports: [3001]           # Checked before start; conflicts are reported.
     tags: [backend, core]   # Expandable groups in the list.
+    ui:
+      logs: {}             # Disable inherited log processing for this service/actions.
 
     # What "ready" means for anything depending on this service.
     healthcheck:
