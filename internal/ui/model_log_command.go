@@ -521,13 +521,13 @@ func (m *Model) logCommandHint(slot logPanelSlot, target app.RunTarget) string {
 		return ""
 	}
 	if command.Mode == config.LogCommandTerminal {
-		return " · [Ctrl+G] VIEWER"
+		return " · VIEWER"
 	}
 	view := m.logCommands[slot]
 	if m.logCommandBypass[slot] || view != nil && view.failed {
-		return " · ORIGINAL [Ctrl+G]"
+		return " · ORIGINAL"
 	}
-	return " · PROCESSED [Ctrl+G]"
+	return " · PROCESSED"
 }
 
 func (m *Model) emptyLogCommandMessage(slot logPanelSlot, target app.RunTarget) string {

@@ -93,6 +93,8 @@ for line in sys.stdin:
             tm("-f", "/dev/null", "new-session", "-d", "-x", "140", "-y", "30",
                "-s", "smoke", "-n", "tui", "-c", directory, attach)
             wait_for(lambda: "tool r2 record 35" in frame(), "stream command output")
+            if any("LOGS" in line and "Ctrl+G" in line for line in frame().splitlines()):
+                raise RuntimeError("shortcut hint in log header")
             if "\x1b[31m" not in frame(True):
                 raise RuntimeError("processor colors")
             key("3")
