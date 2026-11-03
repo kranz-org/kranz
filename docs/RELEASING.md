@@ -33,6 +33,12 @@ workflow; generated binaries are never checked into the repository.
 
 ## Prepare a release
 
+Changelog entries must state observable changes in factual language, grouped
+by Added, Changed, Fixed, Removed, or Security as applicable. Describe behavior,
+compatibility and configuration changes; omit promotional wording, instructions
+to try features, and names of internal functions. Use the version section as the
+GitHub Release body.
+
 Resolve and merge the release's feature, fix and dependency pull requests
 first. Prepare the final changelog and release guide on a dedicated release
 branch, wait for its required CI and merge it. Create the tag from the resulting

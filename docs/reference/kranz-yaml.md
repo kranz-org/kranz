@@ -12,6 +12,29 @@ test loads and validates that file, so what you read here always parses.
 
 <<< @/../examples/reference/kranz.yaml{yaml}
 
+## Log processing and viewers
+
+The project `ui.logs` block declares a command, mode, shell and optional
+line-preservation check. The example uses `cat` as a dependency-free pass-through.
+The empty `services.api.ui.logs` mapping disables inherited processing for that
+service and its actions. Precedence is service `ui.logs`, personal `logs`, then
+project `ui.logs`; each declaration replaces the whole command and its options.
+
+For a terminal viewer, replace the logs block with:
+
+```yaml
+ui:
+  logs:
+    command: 'less "$$KRANZ_LOG_FILE"'
+    mode: terminal
+```
+
+Project YAML uses `$$` to defer shell-variable expansion until execution.
+The viewer receives a frozen snapshot of selected runs and the active regex
+filter. Field defaults and constraints are listed under
+[Log command](./configuration#log-command); runnable profiles are in the
+[log tools playground](../examples/log-tools).
+
 ## The three-way status contract
 
 The `remote-stack` probe above uses the default: exit `0` is running, anything
