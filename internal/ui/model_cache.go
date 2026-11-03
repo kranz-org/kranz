@@ -236,6 +236,8 @@ func (m *Model) invalidateLogCache(target app.RunTarget) {
 }
 
 func (m *Model) resetLogCaches() {
+	m.stopLogCommands()
+	m.logCommandBypass = [logSlotCount]bool{}
 	m.logEntries = make(map[app.RunTarget][]config.LogEntry)
 	m.actionLogLines = make(map[app.RunTarget][]cachedActionLogLine)
 	m.actionRunLogLines = make(map[app.RunTarget]map[uint32][]cachedActionLogLine)

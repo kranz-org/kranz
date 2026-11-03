@@ -72,6 +72,10 @@ jobs:
       - name: Build
         run: go build -trimpath ./cmd/kranz
 
+      - name: TUI log processors and interactive viewer
+        if: runner.os == 'Linux'
+        run: python3 scripts/test-tui-log-command.py ./kranz
+
       - name: TUI selection paste in 16-color terminal
         if: runner.os == 'Linux'
         env:

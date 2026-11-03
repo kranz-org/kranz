@@ -1,0 +1,17 @@
+project: Log Tools Playground
+
+services:
+  api:
+    description: Synthetic log stream; no network ports or external requests.
+    command: sh emit.sh
+    detect_ports: false
+    ui:
+      logs:
+        command: sh colorize.sh
+        mode: stream
+        preserve_lines: true
+    actions:
+      report:
+        description: Print a finite report; repeat it to compare action runs.
+        command: sh emit.sh 40
+

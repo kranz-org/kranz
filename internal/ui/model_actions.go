@@ -270,7 +270,7 @@ func (m *Model) runAcquiredInteractiveAction(id config.ActionID, action config.A
 	application, sessionGen := m.app, m.sessionGeneration
 	command := app.BuildInteractiveCommand(action)
 	m.addNotification("action", "Handing the terminal to "+id.Name, config.LogInfo)
-	return tea.ExecProcess(command, func(execErr error) tea.Msg {
+	return m.execTerminalProcess(command, func(execErr error) tea.Msg {
 		// The application layer never ran this command — it may not even
 		// live in this process — so this caller is the only one that can
 		// read the exit code and PID it observed.

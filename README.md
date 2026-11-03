@@ -144,6 +144,8 @@ for every command, option, output contract, and exit code.
 - Searchable, pinnable, timestamped logs in a keyboard and mouse TUI;
   selection controls share the footer with right-aligned action status,
   and clearing a selection keeps the position reached while scrolling
+- [Your own log tools](docs/guide/logs-and-ports.md#your-own-log-tools): shell
+  pipelines for in-panel formatting, or a terminal viewer for selected runs
 - In-place switching between live local runtimes with per-runtime TUI state
 - Bounded per-service and per-action run history with provenance, exact output
   retention state, navigation, deletion, and export

@@ -125,6 +125,10 @@ func visualRowText(row logVisualRow) string {
 func projectedTextRows(text string, width int, wrap bool) []string {
 	var rows []string
 	for _, line := range strings.Split(text, "\n") {
+		if hasLogStyle(line) {
+			rows = append(rows, projectedStyledLogRows(line, width, wrap)...)
+			continue
+		}
 		for _, row := range projectLogLine(line, "", width, wrap) {
 			rows = append(rows, styleLogLine(visualRowText(row)))
 		}
@@ -138,7 +142,7 @@ func projectedRowCount(text string, width int, wrap bool) int {
 	}
 	count := 0
 	for _, line := range strings.Split(text, "\n") {
-		count += len(projectLogLine(line, "", width, true))
+		count += len(projectLogLine(ansi.Strip(line), "", width, true))
 	}
 	return count
 }

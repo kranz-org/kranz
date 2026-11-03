@@ -236,6 +236,10 @@ type portDetailsMsg struct {
 
 // Model owns Kranz's Bubble Tea state and runtime service integrations.
 type Model struct {
+	logViewerCleanup func()
+	logCommands      [logSlotCount]*logCommandView
+	logCommandBypass [logSlotCount]bool
+	logCommandEpoch  uint64
 	logClick         logClickState
 	logSelection     *logSelection
 	terminalOutput   io.Writer
@@ -289,31 +293,32 @@ type Model struct {
 	focusReported       func()
 	lastAppearanceProbe time.Time
 
-	logSearcher      *kranzlog.Searcher
-	pinnedSearcher   *kranzlog.Searcher
-	searchInput      textinput.Model
-	exportInput      textinput.Model
-	searchNudge      time.Time
-	currentMatch     int
-	pinnedMatch      int
-	searchMode       logSearchMode
-	pinnedSearchMode logSearchMode
-	pinnedLog        string
-	pinnedTarget     app.RunTarget
-	pinnedRunMode    runViewMode
-	pinnedRun        uint32
-	runTarget        app.RunTarget
-	runMode          runViewMode
-	selectedRun      uint32
-	runFollowsLatest bool
-	runListCursor    int
-	runStatusFilter  string
-	runSelections    map[app.RunTarget]runSelectionState
-	runViewports     map[runViewportKey]runViewportState
-	exportTarget     app.RunTarget
-	exportRun        uint32
-	deleteTarget     app.RunTarget
-	deleteRun        uint32
+	logSearcher          *kranzlog.Searcher
+	pinnedSearcher       *kranzlog.Searcher
+	searchInput          textinput.Model
+	exportInput          textinput.Model
+	searchNudge          time.Time
+	currentMatch         int
+	pinnedMatch          int
+	searchMode           logSearchMode
+	pinnedSearchMode     logSearchMode
+	pinnedLog            string
+	pinnedTarget         app.RunTarget
+	pinnedRunMode        runViewMode
+	pinnedRun            uint32
+	runTarget            app.RunTarget
+	runMode              runViewMode
+	allServiceRunsSingle bool
+	selectedRun          uint32
+	runFollowsLatest     bool
+	runListCursor        int
+	runStatusFilter      string
+	runSelections        map[app.RunTarget]runSelectionState
+	runViewports         map[runViewportKey]runViewportState
+	exportTarget         app.RunTarget
+	exportRun            uint32
+	deleteTarget         app.RunTarget
+	deleteRun            uint32
 
 	mode            ViewMode
 	width           int
@@ -627,7 +632,7 @@ func (m *Model) Init() tea.Cmd {
 	// The tick is only the backstop; read the appearance once straight away so
 	// startup does not wait a whole interval for the first answer.
 	return tea.Batch(m.pollServices(), m.scanFocusedPorts(true), m.pollSystemAppearance(), m.probeSystemAppearance(),
-		m.watchCurrentClientDone())
+		m.watchCurrentClientDone(), m.syncLogCommands())
 }
 
 func (m *Model) pollServices() tea.Cmd {
@@ -645,7 +650,22 @@ func (m *Model) RequestedExitCode() int {
 
 // Update applies one Bubble Tea event and schedules any resulting operation.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	model, command := m.update(msg)
+	return model, tea.Batch(command, m.syncLogCommands())
+}
+
+func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
+
 	switch msg := msg.(type) {
+	case logCommandChangedMsg:
+		m.handleLogCommandChanged(msg)
+		return m, nil
+	case logViewerFinishedMsg:
+		if msg.err != nil {
+			m.addNotification("logs", "Log viewer closed: "+readableLog(msg.err.Error()), config.LogWarn)
+		}
+		return m, tea.Batch(tea.ClearScreen, m.probeTerminalBackground(true))
+
 	case tea.WindowSizeMsg:
 		if m.logSelection != nil {
 			m.logSelection.dragging = false
