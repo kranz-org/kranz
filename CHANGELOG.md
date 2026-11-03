@@ -8,29 +8,32 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ### Added
 
-- Read logs with your preferred command inside Kranz. Connect a highlighter,
-  formatter or shell pipeline through project, personal or service settings;
-  selected runs, regex search, scrolling, wrapping, pause and pinning continue
-  to work on the displayed result. `Ctrl+G` compares it with original output.
-- Open selected log history in an interactive terminal viewer such as less or
-  lnav, then return to the same Kranz run, search and scroll position. Viewers
-  receive a frozen snapshot of the selected runs and active regex filter.
-- Try the new log tools playground locally, with synthetic live logs, repeatable
-  action reports, a shell colorizer, and optional tailspin and less profiles.
-- Switch every service between its latest run and all runs with `Shift+X`.
-  Actions and pinned histories retain their independent selections.
+- Configurable log processors and shell pipelines through project `ui.logs`,
+  personal `logs`, and service `ui.logs` settings.
+- Terminal viewers for frozen snapshots of selected runs and the active regex
+  filter. Exiting a viewer restores the previous run, search and scroll position.
+- `Ctrl+G` to toggle processed/original logs or open the configured viewer.
+- `Shift+X` to switch all services between latest-run and all-runs views,
+  preserving independent action and pinned selections.
+- `examples/log-tools` with synthetic logs, action reports, a shell colorizer,
+  and tailspin and less profiles.
+
+### Changed
+
+- Log panel headers show processing status without shortcut hints. Shortcuts
+  remain listed in help.
+- Updated the GoReleaser GitHub Action to 7.3.0.
 
 ### Fixed
 
-- Interactive viewers, command shells and actions stay interactive when Kranz
-  uses its synchronized terminal output writer.
-- Shift+Left/Right adjusts numeric action parameters by steps of ten.
-- Log processor status fits in panel headers without repeating shortcut hints;
-  shortcuts remain available in help.
+- Terminal viewers exiting immediately instead of opening interactively.
+  The correction also applies to command shells and interactive actions.
+- Shift+Left/Right not adjusting numeric action parameters by steps of ten.
 
-### Maintenance
+### Security
 
-- Update the GoReleaser GitHub Action to 7.3.0.
+- Updated Vite to 6.4.4 to address five security advisories in documentation
+  tooling.
 
 ## [0.17.1] - 2026-10-18
 
