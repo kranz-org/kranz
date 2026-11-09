@@ -880,6 +880,71 @@ func TestApplyConfigDoesNotRestartServiceForActionOnlyChanges(t *testing.T) {
 	}
 }
 
+func TestApplyConfigHotReloadsYAMLActionOrder(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "kranz.yaml")
+	load := func(names []string) *config.Config {
+		t.Helper()
+		content := "project: Test\nservices:\n  api:\n    command: sleep 60\n    actions:\n"
+		for _, name := range names {
+			content += "      " + name + ":\n        command: 'true'\n"
+		}
+		if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+		cfg, err := config.Load(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return cfg
+	}
+	initial := []string{"lint", "version"}
+	for _, tc := range []struct {
+		name  string
+		order []string
+	}{
+		{"add", []string{"lint", "test", "version"}},
+		{"reorder", []string{"version", "lint"}},
+		{"remove", []string{"version"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			manager := NewManager(load(initial))
+			defer manager.Shutdown()
+			if err := manager.StartService("api"); err != nil {
+				t.Fatal(err)
+			}
+			before, _ := manager.GetService("api")
+			pid := before.PID()
+			result, err := manager.ApplyConfig(load(tc.order))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(result.Pending) != 0 || len(manager.PendingChanges()) != 0 {
+				t.Fatalf("action-only reload requires restart: %#v", result)
+			}
+			after, _ := manager.GetService("api")
+			if after != before || after.PID() != pid {
+				t.Fatal("action-only reload replaced the running service")
+			}
+			if got := manager.Config().Services["api"].ActionNames(); !reflect.DeepEqual(got, tc.order) {
+				t.Fatalf("action order = %v, want %v", got, tc.order)
+			}
+			id := config.ActionID{OwnerKind: config.ActionOwnerService, Owner: "api", Name: tc.order[0]}
+			if tc.name == "add" {
+				id.Name = "test"
+			}
+			if _, err := manager.RunAction(t.Context(), id); err != nil {
+				t.Fatalf("reloaded action cannot run: %v", err)
+			}
+			removed := config.ActionID{OwnerKind: config.ActionOwnerService, Owner: "api", Name: "lint"}
+			if tc.name == "remove" {
+				if _, err := manager.RunAction(t.Context(), removed); err == nil {
+					t.Fatal("removed action is still executable")
+				}
+			}
+		})
+	}
+}
+
 func TestApplyConfigUpdatesDetachedDefinitionWithoutCyclingResource(t *testing.T) {
 	directory := t.TempDir()
 	marker := filepath.Join(directory, "running")

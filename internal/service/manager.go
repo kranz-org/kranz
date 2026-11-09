@@ -609,12 +609,13 @@ func reconcileManagerOrder(preferred []string, services map[string]config.Servic
 	return append(result, rest...)
 }
 
-// sameManagedServiceConfig excludes actions because changing a one-shot command
+// sameManagedServiceConfig excludes actions and their declaration order because changing a one-shot command
 // must not restart its long-running owner. The manager-level config is replaced
 // after reconciliation and remains the source of truth for actions.
 func sameManagedServiceConfig(current, incoming config.Service) bool {
 	current.Actions = nil
 	incoming.Actions = nil
+	current.ActionOrder, incoming.ActionOrder = nil, nil
 	current.Ports, incoming.Ports = nil, nil
 	current.DetectPorts, incoming.DetectPorts = nil, nil
 	return reflect.DeepEqual(current, incoming)
