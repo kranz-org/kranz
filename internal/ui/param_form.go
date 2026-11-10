@@ -255,7 +255,7 @@ func (m *Model) renderParamFormView() string {
 	// Grouped the way the other modals group theirs, and wrapped inside the
 	// same width so the frame never changes size with what it has to say.
 	lines = append(lines, paramFormFooter(m.paramForm != nil && m.paramForm.Editing, width)...)
-	return m.placeOverlay(renderFlushModal(strings.Join(lines, "\n")))
+	return m.placeOverlay(m.renderFlushModal(strings.Join(lines, "\n")))
 }
 
 // paramFormFieldOwnsProblem reports whether some field already carries the

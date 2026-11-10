@@ -162,7 +162,7 @@ func (m *Model) configMapContent() string {
 	for index, line := range lines {
 		lines[index] = configMapPadLine(line, width)
 	}
-	return renderFlushModal(strings.Join(lines, "\n"))
+	return m.renderFlushModal(strings.Join(lines, "\n"))
 }
 
 func configMapToggleLabel(view configMapView) string {
