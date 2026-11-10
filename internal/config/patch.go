@@ -107,6 +107,7 @@ func applyConfigPatchNode(base *Config, patchRoot *yaml.Node) error {
 	}
 	restorePatchedDeclarationOrder(&result, base, patchRoot)
 	synchronizePatchedStartSyntax(&result, patchRoot)
+	restoreEnvironmentSpecs(&result, base, patchRoot)
 	*base = result
 	return nil
 }

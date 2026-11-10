@@ -4,6 +4,11 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### Fixed
+
+- Service starts, restarts, and actions reread external environment files without
+  requiring a configuration reload. Inline environment values keep their priority.
+
 ## [0.18.0] - 2026-11-03
 
 ### Added

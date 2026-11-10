@@ -111,6 +111,7 @@ func cloneAutonomousConfig(source *Config) (*Config, error) {
 	if err := yaml.Unmarshal(payload, &clone); err != nil {
 		return nil, fmt.Errorf("restore cached configuration: %w", err)
 	}
+	restoreEnvironmentSpecs(&clone, source, nil)
 	clone.Source = source.Source
 	clone.ServiceOrder = append([]string(nil), source.ServiceOrder...)
 	clone.ActionGroupOrder = append([]string(nil), source.ActionGroupOrder...)

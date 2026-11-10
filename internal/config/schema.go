@@ -31,6 +31,7 @@ type Config struct {
 	Provenance             []FieldProvenance           `yaml:"-" json:"provenance,omitempty"`
 	CompositionDiagnostics []CompositionDiagnostic     `yaml:"-" json:"composition_diagnostics,omitempty"`
 	DiscoveryScopes        []DiscoveryScope            `yaml:"-" json:"discovery_scopes,omitempty"`
+	dotenvPaths            []string                    `yaml:"-"`
 	dotenvEnv              map[string]string           `yaml:"-"`
 	explicitEnv            map[string]string           `yaml:"-"`
 }
@@ -250,7 +251,8 @@ type Service struct {
 	Actions              map[string]Action           `yaml:"actions,omitempty"`
 	ActionOrder          []string                    `yaml:"-"`
 	BeforeStart          []Prerequisite              `yaml:"before_start,omitempty"`
-	disabledSet          bool                        `yaml:"-"`
+	environment          *environmentSpec
+	disabledSet          bool `yaml:"-"`
 }
 
 // SupervisionMode identifies the source of truth for a service lifecycle.
@@ -300,11 +302,12 @@ func (s Service) StartAction() *Action {
 		return nil
 	}
 	return &Action{
-		Command:  s.Command,
-		Dir:      s.Dir,
-		Shell:    s.Shell,
-		Env:      s.Env,
-		EnvFiles: s.EnvFiles,
+		Command:     s.Command,
+		Dir:         s.Dir,
+		Shell:       s.Shell,
+		Env:         s.Env,
+		EnvFiles:    s.EnvFiles,
+		environment: s.environment,
 	}
 }
 
@@ -401,6 +404,8 @@ type Action struct {
 	// configuration and never take part in definition equality.
 	ParamValues    map[string]any `yaml:"-" json:"-"`
 	CommandPreview string         `yaml:"-" json:"-"`
+	environment    *environmentSpec
+	invocationEnv  map[string]string
 }
 
 // ConfirmationRequired resolves the optional confirmation flag.
@@ -423,6 +428,7 @@ type ActionGroup struct {
 	EnvFiles    []string          `yaml:"env_files,omitempty"`
 	Actions     map[string]Action `yaml:"actions"`
 	ActionOrder []string          `yaml:"-"`
+	environment *environmentSpec
 }
 
 // ActionOwnerKind distinguishes service-scoped and project-level actions.

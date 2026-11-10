@@ -151,6 +151,12 @@ In a composed project every file keeps its own `.env` and `defaults`: a
 repository's `.env` reaches only the services that repository declares, never a
 sibling's.
 
+External `.env` and `env_files` contents are reread when a service starts or
+restarts, and when an action runs. After editing a file, restart the service;
+configuration reload is unnecessary. Inline `env`, file path changes, and
+`${VAR}` interpolation in configuration fields require `Ctrl+L` or
+`kranz reload` before the restart.
+
 ## Where to go next
 
 - Every field, with types and defaults:

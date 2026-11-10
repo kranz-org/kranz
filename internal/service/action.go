@@ -317,13 +317,16 @@ func (r *ActionRunner) execute(ctx context.Context, id config.ActionID, action c
 	process := NewProcessManager(r.logBufSize)
 	r.setActionProcess(id, process)
 	var pid int
-	var err error
+	env, err := action.ResolveEnvironment()
+	if err != nil {
+		return finishActionResult(result, ActionFailed, process, err)
+	}
 	// An argument vector is executed without a shell so a parameter value can
 	// never become shell source. A legacy command keeps its existing path.
 	if len(action.Argv) > 0 {
-		pid, err = process.StartArgv(context.Background(), action.Argv, action.Dir, action.Env)
+		pid, err = process.StartArgv(context.Background(), action.Argv, action.Dir, env)
 	} else {
-		pid, err = process.Start(context.Background(), action.Command, action.Dir, action.Env, action.Shell)
+		pid, err = process.Start(context.Background(), action.Command, action.Dir, env, action.Shell)
 	}
 	if err != nil {
 		return finishActionResult(result, ActionFailed, process, err)
