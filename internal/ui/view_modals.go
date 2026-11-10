@@ -36,7 +36,7 @@ func (m *Model) renderHelpView() string {
 	}
 	lines = append(lines, renderModalShortcuts(footer, lipgloss.NewStyle().Foreground(ColorDim)))
 
-	content := renderFlushModal(strings.Join(lines, "\n"))
+	content := m.renderFlushModal(strings.Join(lines, "\n"))
 	return m.placeOverlay(content)
 }
 
@@ -322,7 +322,7 @@ func (m *Model) infoModalContent(title string, body []string) string {
 	}
 	groups = append(groups, "[Esc] Close")
 	lines = append(lines, renderModalShortcutRows(groups, width, lipgloss.NewStyle().Foreground(ColorDim))...)
-	return renderFlushModal(strings.Join(lines, "\n"))
+	return m.renderFlushModal(strings.Join(lines, "\n"))
 }
 
 // renderConfirmQuitView explains the process cleanup performed on exit.
@@ -337,13 +337,14 @@ func (m *Model) renderConfirmQuitView() string {
 	}
 	actions = append(actions, "", "[Esc/n]   Stay here")
 	content := renderShutdownConfirmation(shutdownConfirmation{
-		title: "Quit Kranz?", plan: &plan, operationActive: m.operation != "",
+		width: m.width, title: "Quit Kranz?", plan: &plan, operationActive: m.operation != "",
 		footer: []string{"", HelpSectionStyle.Render("EXIT")}, actions: actions,
 	})
 	return m.placeOverlay(content)
 }
 
 type shutdownConfirmation struct {
+	width           int
 	title           string
 	plan            *app.ShutdownPlan
 	operationActive bool
@@ -357,7 +358,7 @@ func renderShutdownConfirmation(options shutdownConfirmation) string {
 		body = append(body, shutdownPlanBody(*options.plan, options.operationActive)...)
 	}
 	body = append(body, options.footer...)
-	return renderConfirmationModal(options.title, body, options.actions...)
+	return renderConfirmationModalAtWidth(options.width, options.title, body, options.actions...)
 }
 
 func shutdownPlanBody(plan app.ShutdownPlan, operationActive bool) []string {
@@ -432,7 +433,7 @@ func (m *Model) renderPortConflictView() string {
 	}
 	lines = append(lines, renderModalShortcuts("[r/Enter] Retry  [s/Esc] Close", lipgloss.NewStyle()))
 
-	content := renderModal(strings.Join(lines, "\n"))
+	content := m.renderModal(strings.Join(lines, "\n"))
 	return m.placeOverlay(content)
 }
 
@@ -442,7 +443,7 @@ func (m *Model) renderConfirmRestartView() string {
 	if m.confirmAction != "" {
 		body = append(body, fmt.Sprintf("Also restarts: %s", m.confirmAction))
 	}
-	content := renderConfirmationModal(
+	content := m.renderConfirmationModal(
 		fmt.Sprintf("Restart %q?", m.confirmTarget),
 		body,
 		"[Enter/y] Continue  [Esc/n] Cancel",
@@ -453,7 +454,7 @@ func (m *Model) renderConfirmRestartView() string {
 func (m *Model) renderConfirmConfigReloadView() string {
 	body := appendHighlightedServiceNames(nil, "⚠ WILL REMAIN RUNNING AFTER CONFIG RELOAD", m.pendingReloadRemoved)
 	body = append(body, "", "These services will disappear from the list but continue running.")
-	content := renderConfirmationModal("Apply changed configuration?", body,
+	content := m.renderConfirmationModal("Apply changed configuration?", body,
 		"  [Enter/s] Stop listed services, then apply config",
 		"  [k]       Keep listed services running and apply config",
 		"", "  [Esc/n]   Keep current config")
@@ -465,7 +466,7 @@ func (m *Model) renderConfirmClearLogsView() string {
 	if m.clearPinned {
 		panel = "pinned logs"
 	}
-	content := renderConfirmationModal(
+	content := m.renderConfirmationModal(
 		fmt.Sprintf("Clear %s for %q?", panel, m.clearTarget),
 		[]string{"This cannot be undone."},
 		"[Enter] Clear  [Esc] Cancel",
@@ -475,7 +476,7 @@ func (m *Model) renderConfirmClearLogsView() string {
 
 func (m *Model) renderConfirmActionView() string {
 	if m.pendingAction == nil {
-		return m.placeOverlay(renderConfirmationModal(
+		return m.placeOverlay(m.renderConfirmationModal(
 			"Run action?",
 			[]string{"The selected action is no longer available."},
 			"[Esc/n] Cancel",
@@ -483,7 +484,7 @@ func (m *Model) renderConfirmActionView() string {
 	}
 	id := *m.pendingAction
 	if m.pendingActionStop {
-		content := renderConfirmationModal(
+		content := m.renderConfirmationModal(
 			fmt.Sprintf("Stop action %q?", id.Name),
 			[]string{fmt.Sprintf("Owner: %s", id.Owner), "The running action will be cancelled."},
 			"[Enter/y] Stop  [Esc/n] Cancel",
@@ -492,7 +493,7 @@ func (m *Model) renderConfirmActionView() string {
 	}
 	action, exists := m.cfg.ResolveAction(id)
 	if !exists {
-		return m.placeOverlay(renderConfirmationModal(
+		return m.placeOverlay(m.renderConfirmationModal(
 			fmt.Sprintf("Run action %q?", id.Name),
 			[]string{"The action is no longer configured."},
 			"[Esc/n] Cancel",
@@ -503,7 +504,7 @@ func (m *Model) renderConfirmActionView() string {
 	if action.InteractiveEnabled() {
 		prompt = "[Enter/y] Hand over the terminal  [Esc/n] Cancel"
 	}
-	content := renderConfirmationModal(
+	content := m.renderConfirmationModal(
 		fmt.Sprintf("Run action %q?", id.Name),
 		body,
 		prompt,
@@ -566,7 +567,7 @@ func (m *Model) renderConfirmServiceStopView() string {
 			break
 		}
 	}
-	content := renderConfirmationModal(
+	content := m.renderConfirmationModal(
 		fmt.Sprintf("%s %s?", verb, m.pendingStopTarget),
 		body,
 		"[Enter/y] Stop  [Esc/n] Cancel",
@@ -580,7 +581,7 @@ func (m *Model) renderConfirmServiceStartView() string {
 		verb = "Force start"
 	}
 	body := m.renderServiceStartConfirmationBody()
-	content := renderConfirmationModal(
+	content := m.renderConfirmationModal(
 		fmt.Sprintf("%s %s?", verb, m.pendingStartTarget),
 		body,
 		"[Enter/y] Start  [Esc/n] Cancel",
@@ -631,13 +632,14 @@ func (m *Model) renderConfirmThemeSaveView() string {
 	body = append(body, wrapDetailValue(path, max(20, m.width-20))...)
 	body = append(body, "")
 	body = append(body, m.renderThemePickerSummaryRows()...)
-	content := renderConfirmationModal(title, body, "[Enter/y] Save  [Esc/n] Cancel")
+	content := m.renderConfirmationModal(title, body, "[Enter/y] Save  [Esc/n] Cancel")
 	return m.placeOverlay(content)
 }
 
 func (m *Model) renderThemeView() string {
 	names := ThemeNames()
-	pathWidth := max(20, m.width-12)
+	contentWidth := max(1, modalWidth(m.width)-6)
+	pathWidth := contentWidth
 	pathLines := make([]string, 0, 2)
 	if m.settingsPath != "" {
 		pathLines = append(pathLines, renderThemePath("Global", m.settingsPath, pathWidth)...)
@@ -673,15 +675,26 @@ func (m *Model) renderThemeView() string {
 		previewTheme, _ = LookupTheme(previewThemeName)
 		previewTheme = adaptThemeBackground(previewTheme, colorModeIsDark(m.themeColorMode, m.terminalDark))
 	}
-	// Keep the controls visible even in a 24-row terminal. The fixed rows are
-	// the six-row settings summary, the five-row footer, the modal's vertical
-	// padding, the path separator, and the paths themselves. The remaining rows
-	// are shared by the theme table and its side preview.
+	// Measure wrapped summary, paths and controls before allocating table rows.
+	// Narrow terminals stack the two control columns instead of splitting labels.
+	summary := wrapModalContent(strings.Join(m.renderThemePickerSummaryRows(), "\n"), contentWidth)
+	controls := renderThemeControlRows([][2]string{
+		{"[p] Theme: Project / Selected", "[m] Mode: Auto / Dark / Light"},
+		{m.themeAccentControlLabel(), "[Shift+A] Edit color"},
+		{m.themeBackgroundControlLabel(), "[Shift+B] Edit color"},
+	}, m.themeControlLabelReserve(), contentWidth)
+	controls = append(controls, renderThemeActionRows("SESSION", []string{"[Enter] Apply", "[r] Reload saved", "[Esc] Cancel"}, contentWidth)...)
+	controls = append(controls, renderThemeActionRows("SAVE   ", []string{"[g] Global", "[c] Project"}, contentWidth)...)
+	footer := wrapModalContent(strings.Join(controls, "\n"), contentWidth)
 	pathSeparatorRows := 0
 	if len(pathLines) > 0 {
 		pathSeparatorRows = 1
 	}
-	fixedRows := 6 + 5 + 4 + pathSeparatorRows + len(pathLines)
+	fixedRows := 2 + lipgloss.Height(summary) + 1 + lipgloss.Height(footer) + modalVerticalChrome + pathSeparatorRows + len(pathLines)
+	compactPadding := fixedRows+2 > m.height
+	if compactPadding {
+		fixedRows -= 2
+	}
 	sectionRows := max(2, m.height-fixedRows)
 	// The side preview is a fixed-height panel, and JoinHorizontal stretches the
 	// whole section to the taller side. Showing it in a section that cannot hold
@@ -704,7 +717,7 @@ func (m *Model) renderThemeView() string {
 		ModalTitleStyle.Render(" Themes "),
 		"",
 	}
-	lines = append(lines, m.renderThemePickerSummaryRows()...)
+	lines = append(lines, summary)
 	// The header aligns with the palette column: the row indent plus the marker
 	// plus the padded name width.
 	themeLines := []string{"  " + strings.Repeat(" ", themeRowMarkerWidth+themeRowNameWidth) + ContextBarStyle.Render("A T M B")}
@@ -730,20 +743,16 @@ func (m *Model) renderThemeView() string {
 		themeSection = lipgloss.JoinHorizontal(lipgloss.Top, themeSection, "   ", renderThemePreviewCard(previewTheme))
 	}
 	lines = append(lines, themeSection, "")
-	lines = append(lines, renderThemeControlRows([][2]string{
-		{"[p] Theme: Project / Selected", "[m] Mode: Auto / Dark / Light"},
-		{m.themeAccentControlLabel(), "[Shift+A] Edit color"},
-		{m.themeBackgroundControlLabel(), "[Shift+B] Edit color"},
-	}, m.themeControlLabelReserve())...)
-	lines = append(lines,
-		"  "+DetailLabelStyle.Render("SESSION")+"  "+renderModalShortcuts("[Enter] Apply  [r] Reload saved  [Esc] Cancel", lipgloss.NewStyle()),
-		"  "+DetailLabelStyle.Render("SAVE")+"     "+renderModalShortcuts("[g] Global  [c] Project", lipgloss.NewStyle()),
-	)
+	lines = append(lines, footer)
 	if len(pathLines) > 0 {
 		lines = append(lines, "")
 		lines = append(lines, pathLines...)
 	}
-	return m.placeOverlay(renderFlushModal(strings.Join(lines, "\n")))
+	content := strings.Join(lines, "\n")
+	if compactPadding {
+		return m.placeOverlay(renderModalWithStyle(padModalSideMargin(content), ModalStyle.Padding(1, 2), m.width))
+	}
+	return m.placeOverlay(m.renderFlushModal(content))
 }
 
 // renderThemePickerSummaryRows is shared by the picker and its save
@@ -789,7 +798,7 @@ const (
 // renderThemeControlRows lays the picker's key hints out as two columns. The
 // left column's width is measured from its own longest entry, so the right
 // column stays aligned when a label grows a Custom position.
-func renderThemeControlRows(rows [][2]string, leftWidth int) []string {
+func renderThemeControlRows(rows [][2]string, leftWidth int, width int) []string {
 	for _, row := range rows {
 		leftWidth = max(leftWidth, lipgloss.Width(row[0]))
 	}
@@ -801,9 +810,29 @@ func renderThemeControlRows(rows [][2]string, leftWidth int) []string {
 			continue
 		}
 		gap := strings.Repeat(" ", leftWidth-lipgloss.Width(row[0])+themeControlColumnGap)
-		lines = append(lines, "  "+left+gap+renderModalShortcuts(row[1], lipgloss.NewStyle()))
+		right := renderModalShortcuts(row[1], lipgloss.NewStyle())
+		if 2+leftWidth+themeControlColumnGap+lipgloss.Width(row[1]) > width {
+			lines = append(lines, "  "+left, "  "+right)
+		} else {
+			lines = append(lines, "  "+left+gap+right)
+		}
 	}
 	return lines
+}
+
+// renderThemeActionRows keeps each shortcut with its action on narrow screens.
+func renderThemeActionRows(label string, groups []string, width int) []string {
+	prefix := "  " + DetailLabelStyle.Render(label)
+	prefixWidth := lipgloss.Width(prefix)
+	rows := renderModalShortcutRows(groups, max(1, width-prefixWidth), lipgloss.NewStyle())
+	for index := range rows {
+		if index == 0 {
+			rows[index] = prefix + rows[index]
+		} else {
+			rows[index] = strings.Repeat(" ", prefixWidth) + rows[index]
+		}
+	}
+	return rows
 }
 
 // themeRowNamePadding reports the spaces between a theme's display name and the
@@ -882,12 +911,33 @@ func renderThemePath(label, path string, width int) []string {
 	return lines
 }
 
-func renderModal(content string) string {
-	return renderModalWithStyle(content, ModalStyle)
+// modalMaxWidth includes padding; modalOuterMargin keeps the dashboard visible.
+const (
+	modalMaxWidth    = 120
+	modalOuterMargin = 2
+)
+
+func modalWidth(terminalWidth int) int {
+	if terminalWidth <= 0 {
+		return modalMaxWidth
+	}
+	return max(1, min(modalMaxWidth, terminalWidth-2*modalOuterMargin))
 }
 
-func renderFlushModal(content string) string {
-	return renderModalWithStyle(padModalSideMargin(content), ModalStyle.PaddingLeft(2).PaddingRight(2))
+func (m *Model) renderModal(content string) string {
+	return renderModal(content, m.width)
+}
+
+func (m *Model) renderFlushModal(content string) string {
+	return renderFlushModal(content, m.width)
+}
+
+func renderModal(content string, terminalWidth ...int) string {
+	return renderModalWithStyle(content, ModalStyle, terminalWidth...)
+}
+
+func renderFlushModal(content string, terminalWidth ...int) string {
+	return renderModalWithStyle(padModalSideMargin(content), ModalStyle.PaddingLeft(2).PaddingRight(2), terminalWidth...)
 }
 
 // padModalSideMargin gives a flush modal the same surface gutter on the right
@@ -905,9 +955,28 @@ func padModalSideMargin(content string) string {
 	return strings.Join(lines, "\n")
 }
 
-func renderModalWithStyle(content string, style lipgloss.Style) string {
+func renderModalWithStyle(content string, style lipgloss.Style, terminalWidth ...int) string {
+	width := modalMaxWidth
+	if len(terminalWidth) > 0 {
+		width = modalWidth(terminalWidth[0])
+	}
+	available := max(1, width-style.GetHorizontalFrameSize())
+	content = wrapModalContent(content, available)
 	modalContentStyle := lipgloss.NewStyle().Foreground(ColorGrey).Background(ColorSurfaceAlt)
 	return style.Render(preserveStyleAfterReset(content, modalContentStyle))
+}
+
+func wrapModalContent(content string, available int) string {
+	lines := strings.Split(content, "\n")
+	for index, line := range lines {
+		if lipgloss.Width(line) > available {
+			// Wrap before painting the surface, keeping ANSI styles and Unicode cell
+			// widths intact. Hardwrap also handles long names, paths and URLs.
+			line = strings.TrimRight(line, " ")
+			lines[index] = ansi.Hardwrap(ansi.Wordwrap(line, available, ""), available, true)
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func renderModalShortcuts(value string, textStyle lipgloss.Style) string {
@@ -937,7 +1006,7 @@ func renderModalShortcuts(value string, textStyle lipgloss.Style) string {
 // tables.
 func flushModalContentWidth(terminalWidth, preferred int) int {
 	const flushChromeAndGutters = 10
-	return max(8, min(preferred, terminalWidth-flushChromeAndGutters))
+	return max(8, min(preferred, modalMaxWidth-6, terminalWidth-flushChromeAndGutters))
 }
 
 // renderModalShortcutRows wraps controls only between complete key/action
@@ -991,7 +1060,15 @@ func modalTextRows(value string, width int) []string {
 	return parts
 }
 
+func (m *Model) renderConfirmationModal(title string, bodyLines []string, actionLines ...string) string {
+	return renderConfirmationModalAtWidth(m.width, title, bodyLines, actionLines...)
+}
+
 func renderConfirmationModal(title string, bodyLines []string, actionLines ...string) string {
+	return renderConfirmationModalAtWidth(0, title, bodyLines, actionLines...)
+}
+
+func renderConfirmationModalAtWidth(terminalWidth int, title string, bodyLines []string, actionLines ...string) string {
 	lines := []string{renderConfirmTitle(title)}
 	if len(bodyLines) > 0 {
 		lines = append(lines, "")
@@ -1003,7 +1080,7 @@ func renderConfirmationModal(title string, bodyLines []string, actionLines ...st
 			lines = append(lines, renderModalShortcuts(action, lipgloss.NewStyle()))
 		}
 	}
-	return renderModal(strings.Join(lines, "\n"))
+	return renderModal(strings.Join(lines, "\n"), terminalWidth)
 }
 
 func renderConfirmTitle(title string) string {
