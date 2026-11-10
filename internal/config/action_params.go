@@ -246,6 +246,22 @@ func (a Action) RenderedAction(rendered actionparams.Rendered, params map[string
 	executable.Run = nil
 	executable.Argv = append(ArgvList(nil), rendered.Argv...)
 	executable.Env = rendered.Env
+	if a.environment != nil {
+		projected := make(map[string]string)
+		for key, value := range rendered.Env {
+			if previous, exists := a.Env[key]; !exists || previous != value {
+				projected[key] = value
+			}
+		}
+		for _, param := range a.Params {
+			if param.Env != "" {
+				if value, ok := rendered.Env[param.Env]; ok {
+					projected[param.Env] = value
+				}
+			}
+		}
+		executable.invocationEnv = projected
+	}
 	executable.ParamValues = params
 	executable.CommandPreview = rendered.Preview
 	return executable

@@ -42,6 +42,12 @@ func (r *ActionRunner) PrepareInteractive(id config.ActionID) (*exec.Cmd, func(e
 		r.mu.Unlock()
 		return nil, nil, &ActionBusyError{Requested: id, Running: running.id}
 	}
+	env, err := action.ResolveEnvironment()
+	if err != nil {
+		r.mu.Unlock()
+		return nil, nil, err
+	}
+	action.Env = env
 	command := interactiveCommand(action)
 	// Cancelling a handoff kills the command outright: it owns the terminal, so
 	// there is no gentler way to reclaim it during shutdown.
@@ -138,6 +144,12 @@ func (r *ActionRunner) acquireInteractiveLocked(ctx context.Context, id config.A
 		r.mu.Unlock()
 		return config.Action{}, "", &ActionBusyError{Requested: id, Running: running.id}
 	}
+	env, err := action.ResolveEnvironment()
+	if err != nil {
+		r.mu.Unlock()
+		return config.Action{}, "", err
+	}
+	action.Env = env
 	lease := fmt.Sprintf("%s/%s:%d", owner.kind, owner.name, r.leaseSeq.Add(1))
 	active := &activeAction{
 		id: id, done: make(chan struct{}), interactive: true, lease: lease,

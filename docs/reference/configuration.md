@@ -478,8 +478,17 @@ Precedence, lowest to highest:
 A value already present in your shell environment wins over the adjacent
 `.env`, but explicit configuration values always win. `$HOME`-style references
 expand after all layers merge. In a composed project each file's `.env` reaches
-only the services that file declares. Referenced dotenv files are watched;
-in the TUI, press `Ctrl+L` to apply a detected change.
+only the services that file declares.
+
+External `.env` and `env_files` contents are read again before each service
+start or restart and action invocation. Editing their contents does not require
+`kranz reload` or `Ctrl+L`; restart the service to give its next process the new
+environment. A dev server that watches its own env files may update itself.
+Inline `env` values and changes to file paths still require configuration reload
+and then a service restart. `${VAR}` interpolation in configuration fields also
+remains fixed until reload, even when the variable comes from `.env`.
+Referenced dotenv files remain watched so these interpolation changes can be
+applied with `Ctrl+L` in the TUI.
 
 ### is_dotenv_disabled
 

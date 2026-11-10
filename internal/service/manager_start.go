@@ -118,7 +118,11 @@ func (m *Manager) startService(ctx context.Context, name string, recovery bool) 
 		svc.SetStatus(config.StatusStopped)
 		return err
 	}
-	pid, err := pm.Start(context.Background(), start.Command, start.Dir, start.Env, start.Shell)
+	env, err := start.ResolveEnvironment()
+	var pid int
+	if err == nil {
+		pid, err = pm.Start(context.Background(), start.Command, start.Dir, env, start.Shell)
+	}
 	if err != nil {
 		svc.SetDesiredRunning(false)
 		svc.RecordExit(-1, err)

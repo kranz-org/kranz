@@ -89,6 +89,7 @@ func loadFile(path, basePath string) (*Config, error) {
 	dotenv = dotenvWithoutHostOverrides(dotenv)
 	cfg.explicitEnv = mergeStringMap(nil, cfg.Defaults.Env)
 	cfg.dotenvEnv = mergeStringMap(nil, dotenv)
+	cfg.dotenvPaths = []string{dotenvPath}
 	cfg.WatchPaths = appendUniqueString(cfg.WatchPaths, dotenvPath)
 	return cfg, nil
 }
@@ -189,6 +190,9 @@ func mergeConfig(base, override *Config) error {
 	}
 	base.Diagnostics = append(base.Diagnostics, override.Diagnostics...)
 	base.dotenvEnv = mergeStringMap(base.dotenvEnv, override.dotenvEnv)
+	for _, path := range override.dotenvPaths {
+		base.dotenvPaths = appendUniqueString(base.dotenvPaths, path)
+	}
 	base.explicitEnv = mergeStringMap(base.explicitEnv, override.explicitEnv)
 	for _, path := range override.WatchPaths {
 		base.WatchPaths = appendUniqueString(base.WatchPaths, path)
@@ -685,23 +689,15 @@ func applyDefaults(cfg *Config) error {
 				svc.Shutdown.Signal = 15
 			}
 		}
-		// Service-specific variables override project defaults.
-		fileEnv, err := loadServiceEnvFiles(cfg, svc)
+		// Keep the file sources separate from explicit values for future launches.
+		if svc.environment == nil {
+			defaults := &environmentSpec{values: inlineEnvironmentDefaults(cfg), dotenv: append([]string(nil), cfg.dotenvPaths...), skipDotenv: svc.DisableDotenv}
+			svc.environment = &environmentSpec{parent: defaults, files: resolvedServiceEnvFiles(cfg, svc), values: cloneStringMap(svc.Env)}
+		}
+		var err error
+		svc.Env, err = svc.environment.resolve()
 		if err != nil {
 			return fmt.Errorf("service %q env files: %w", name, err)
-		}
-		svc.Env = mergeStringMap(fileEnv, svc.Env)
-		for k, v := range cfg.Defaults.Env {
-			if svc.DisableDotenv {
-				if _, fromDotenv := cfg.dotenvEnv[k]; fromDotenv {
-					if _, explicit := cfg.explicitEnv[k]; !explicit {
-						continue
-					}
-				}
-			}
-			if _, ok := svc.Env[k]; !ok {
-				svc.Env[k] = v
-			}
 		}
 		for dependency := range svc.DependencyConditions {
 			if !containsString(svc.DependsOn, dependency) {
@@ -743,7 +739,7 @@ func applyDefaults(cfg *Config) error {
 			if *action == nil {
 				continue
 			}
-			normalized, err := normalizeAction(cfg, svc.Dir, svc.Shell, svc.Env, **action)
+			normalized, err := normalizeAction(cfg, svc.Dir, svc.Shell, **action, svc.environment)
 			if err != nil {
 				return fmt.Errorf("service %q lifecycle.%s env files: %w", name, role, err)
 			}
@@ -756,7 +752,7 @@ func applyDefaults(cfg *Config) error {
 			if err := checkActionShell(fmt.Sprintf("service %q", name), actionName, action); err != nil {
 				return err
 			}
-			normalized, err := normalizeAction(cfg, svc.Dir, svc.Shell, svc.Env, action)
+			normalized, err := normalizeAction(cfg, svc.Dir, svc.Shell, action, svc.environment)
 			if err != nil {
 				return fmt.Errorf("service %q action %q env files: %w", name, actionName, err)
 			}
@@ -773,12 +769,15 @@ func applyDefaults(cfg *Config) error {
 		if group.Shell == "" {
 			group.Shell = defShell
 		}
+		if group.environment == nil {
+			group.environment = &environmentSpec{parent: &environmentSpec{dotenv: append([]string(nil), cfg.dotenvPaths...), values: inlineEnvironmentDefaults(cfg)}, files: resolvedEnvFiles(group.Dir, append(append([]string(nil), cfg.Defaults.EnvFiles...), group.EnvFiles...)), values: cloneStringMap(group.Env)}
+		}
 		groupFiles := append(append([]string(nil), cfg.Defaults.EnvFiles...), group.EnvFiles...)
-		fileEnv, err := loadEnvFiles(group.Dir, groupFiles)
+		var err error
+		group.Env, err = group.environment.resolve()
 		if err != nil {
 			return fmt.Errorf("action group %q env files: %w", groupName, err)
 		}
-		group.Env = mergeStringMap(mergeStringMap(cfg.Defaults.Env, fileEnv), group.Env)
 		for _, path := range resolvedEnvFiles(group.Dir, groupFiles) {
 			cfg.WatchPaths = appendUniqueString(cfg.WatchPaths, path)
 		}
@@ -789,7 +788,7 @@ func applyDefaults(cfg *Config) error {
 			if err := checkActionShell(fmt.Sprintf("action group %q", groupName), actionName, action); err != nil {
 				return err
 			}
-			normalized, err := normalizeAction(cfg, group.Dir, group.Shell, group.Env, action)
+			normalized, err := normalizeAction(cfg, group.Dir, group.Shell, action, group.environment)
 			if err != nil {
 				return fmt.Errorf("action group %q action %q env files: %w", groupName, actionName, err)
 			}
@@ -813,18 +812,25 @@ func checkActionShell(owner, name string, action Action) error {
 	return fmt.Errorf("%s action %q: field 'shell' does not apply to an action that declares 'run', 'argv', or 'params': such an action runs without a shell", owner, name)
 }
 
-func normalizeAction(cfg *Config, ownerDir, ownerShell string, ownerEnv map[string]string, action Action) (Action, error) {
+func normalizeAction(cfg *Config, ownerDir, ownerShell string, action Action, ownerEnvironment *environmentSpec) (Action, error) {
 	if action.Dir == "" {
 		action.Dir = ownerDir
 	}
 	if action.Shell == "" {
 		action.Shell = ownerShell
 	}
-	fileEnv, err := loadEnvFiles(action.Dir, action.EnvFiles)
+	if action.environment == nil {
+		action.environment = &environmentSpec{parent: ownerEnvironment, files: resolvedEnvFiles(action.Dir, action.EnvFiles), values: cloneStringMap(action.Env)}
+	} else {
+		copy := *action.environment
+		copy.parent = ownerEnvironment
+		action.environment = &copy
+	}
+	var err error
+	action.Env, err = action.environment.resolve()
 	if err != nil {
 		return Action{}, err
 	}
-	action.Env = mergeStringMap(mergeStringMap(ownerEnv, fileEnv), action.Env)
 	for _, path := range resolvedEnvFiles(action.Dir, action.EnvFiles) {
 		cfg.WatchPaths = appendUniqueString(cfg.WatchPaths, path)
 	}
@@ -832,18 +838,6 @@ func normalizeAction(cfg *Config, ownerDir, ownerShell string, ownerEnv map[stri
 		action.Env[key] = os.ExpandEnv(value)
 	}
 	return action, nil
-}
-
-func loadEnvFiles(baseDir string, files []string) (map[string]string, error) {
-	result := make(map[string]string)
-	for _, path := range resolvedEnvFiles(baseDir, files) {
-		values, err := readDotEnv(path)
-		if err != nil {
-			return nil, err
-		}
-		result = mergeStringMap(result, values)
-	}
-	return result, nil
 }
 
 func resolvedEnvFiles(baseDir string, files []string) []string {
@@ -854,19 +848,6 @@ func resolvedEnvFiles(baseDir string, files []string) []string {
 		}
 	}
 	return resolved
-}
-
-func loadServiceEnvFiles(cfg *Config, svc Service) (map[string]string, error) {
-	files := resolvedServiceEnvFiles(cfg, svc)
-	result := make(map[string]string)
-	for _, path := range files {
-		values, err := readDotEnv(path)
-		if err != nil {
-			return nil, err
-		}
-		result = mergeStringMap(result, values)
-	}
-	return result, nil
 }
 
 // ServiceEnvFiles returns the env file paths a service actually reads, resolved
