@@ -1084,7 +1084,8 @@ artifacts.
 - Explicit global-user and project-config save destinations in the live theme picker.
 - Native compatibility for common Process Compose configurations.
 
-[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.18.1...HEAD
+[0.18.1]: https://github.com/kranz-org/kranz/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/kranz-org/kranz/compare/v0.17.1...v0.18.0
 [0.17.1]: https://github.com/kranz-org/kranz/compare/v0.17.0...v0.17.1
 [0.17.0]: https://github.com/kranz-org/kranz/compare/v0.16.5...v0.17.0
