@@ -4,10 +4,19 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.18.1] - 2026-11-10
+
 ### Fixed
 
 - Service starts, restarts, and actions reread external environment files without
   requiring a configuration reload. Inline environment values keep their priority.
+- Reordering service actions during configuration reload no longer restarts
+  their running service.
+- Dialogs no longer stretch across wide terminals when service names,
+  descriptions or paths are long. Text wraps within the available width on
+  narrow terminals.
+- Theme controls stack on narrow terminals, keeping shortcuts and configuration
+  paths visible in a 64×24 terminal.
 
 ## [0.18.0] - 2026-11-03
 
