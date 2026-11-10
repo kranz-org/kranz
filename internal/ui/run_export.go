@@ -101,10 +101,11 @@ func (m *Model) handleRunExportKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) renderRunExportView() string {
+	m.exportInput.Width = max(1, min(72, modalWidth(m.width)-8-lipgloss.Width(m.exportInput.Prompt)))
 	identity := fmt.Sprintf("%s#%d", runTargetLabel(m.exportTarget), m.exportRun)
 	lines := []string{ModalTitleStyle.Render(" Export run "), "", "  " + identity, "", "  " + m.exportInput.View(), "",
 		renderModalShortcuts("  [Enter] Write file  [Esc] Cancel", lipgloss.NewStyle().Foreground(ColorDim))}
-	return m.placeOverlay(renderFlushModal(strings.Join(lines, "\n")))
+	return m.placeOverlay(m.renderFlushModal(strings.Join(lines, "\n")))
 }
 
 func formatRunExport(export app.RunExport) string {

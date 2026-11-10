@@ -221,7 +221,7 @@ func (p *RuntimePicker) View() string {
 	// an empty canvas instead of calling placeOverlay. The chrome, the row
 	// rendering, and the shortcut strip are the ones the in-dashboard
 	// switcher uses, so the two screens are recognisably the same modal.
-	modal := renderFlushModal(strings.Join(lines, "\n"))
+	modal := renderFlushModal(strings.Join(lines, "\n"), p.width)
 	centred := lipgloss.Place(p.width, p.height, lipgloss.Center, lipgloss.Center, modal)
 	if !TerminalCanvas {
 		centred = preserveCanvasBackground(centred, ColorBackground)
