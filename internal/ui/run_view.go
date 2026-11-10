@@ -621,7 +621,7 @@ func renderRunListColumns(layout []runListColumn, values map[string]string) stri
 
 func (m *Model) renderRunListView() string {
 	if len(m.runsForTarget(m.runTarget)) == 0 {
-		return m.placeOverlay(renderConfirmationModal(
+		return m.placeOverlay(m.renderConfirmationModal(
 			"No runs",
 			[]string{"There are no runs for the selected target yet."},
 			"[Enter / Esc] Close",
@@ -698,7 +698,7 @@ func (m *Model) renderRunListView() string {
 	// spent a row restating "all" on the common path where nothing is filtered.
 	lines = append(lines, "")
 	lines = append(lines, shortcutRows...)
-	return m.placeOverlay(renderFlushModal(strings.Join(lines, "\n")))
+	return m.placeOverlay(m.renderFlushModal(strings.Join(lines, "\n")))
 }
 
 // runRetentionNotice describes what this target has already lost, and returns
@@ -782,7 +782,7 @@ func runListWindow(total, cursor, capacity int) (start, visible int, windowed bo
 
 func (m *Model) renderConfirmDeleteRunView() string {
 	identity := fmt.Sprintf("%s#%d", runTargetLabel(m.deleteTarget), m.deleteRun)
-	return m.placeOverlay(renderConfirmationModal(
+	return m.placeOverlay(m.renderConfirmationModal(
 		fmt.Sprintf("Delete %s from run history?", identity),
 		[]string{"This removes the retained summary and output.", "The transition journal is kept. This cannot be undone."},
 		"[Enter] Delete  [Esc] Cancel",

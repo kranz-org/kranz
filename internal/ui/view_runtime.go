@@ -13,6 +13,7 @@ import (
 func (m *Model) renderRuntimeStopView() string {
 	record := m.runtimeStopRecord
 	confirmation := shutdownConfirmation{
+		width: m.width,
 		title: "Stop " + record.Name + "?",
 	}
 	switch {
@@ -76,7 +77,7 @@ func (m *Model) renderRuntimeSwitcherView() string {
 	}
 	lines = append(lines, "")
 	lines = append(lines, shortcutRows...)
-	return m.placeOverlay(renderFlushModal(strings.Join(lines, "\n")))
+	return m.placeOverlay(m.renderFlushModal(strings.Join(lines, "\n")))
 }
 
 // renderRuntimeRowLines renders a windowed, cursor-highlighted list of rows
@@ -157,7 +158,7 @@ func (m *Model) renderRuntimeLostView() string {
 		}
 		lines = append(lines, "")
 		lines = append(lines, shortcutRows...)
-		return m.placeOverlay(renderFlushModal(strings.Join(lines, "\n")))
+		return m.placeOverlay(m.renderFlushModal(strings.Join(lines, "\n")))
 	}
 	lines = append(lines, modalTextRows("The connection to this project's runtime ended.", contentWidth)...)
 	lines = append(lines, "")
@@ -171,5 +172,5 @@ func (m *Model) renderRuntimeLostView() string {
 		lines = append(lines, "")
 	}
 	lines = append(lines, renderModalShortcutRows([]string{"[r/Enter] Restart runtime", "[c] Choose running runtime", "[q] Quit TUI"}, contentWidth, lipgloss.NewStyle().Foreground(ColorDim))...)
-	return m.placeOverlay(renderFlushModal(strings.Join(lines, "\n")))
+	return m.placeOverlay(m.renderFlushModal(strings.Join(lines, "\n")))
 }
