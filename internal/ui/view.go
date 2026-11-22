@@ -60,6 +60,8 @@ func (m *Model) View() string {
 		content = m.renderThemeView()
 	case ModeConfigMap:
 		content = m.renderConfigMapView()
+	case ModeDependencies:
+		content = m.placeOverlay(m.dependencyModalContent())
 	case ModeRunList:
 		content = m.renderRunListView()
 	case ModeRunExport:

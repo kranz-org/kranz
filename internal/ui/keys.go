@@ -43,6 +43,7 @@ type KeyMap struct {
 	Disable       key.Binding
 	Help          key.Binding
 	ConfigMap     key.Binding
+	Dependencies  key.Binding
 	ClearSearch   key.Binding
 	Kill          key.Binding
 	Skip          key.Binding
@@ -195,6 +196,10 @@ func DefaultKeyMap() KeyMap {
 		ConfigMap: key.NewBinding(
 			key.WithKeys("m"),
 			key.WithHelp("m", "configuration map"),
+		),
+		Dependencies: key.NewBinding(
+			key.WithKeys("g"),
+			key.WithHelp("g", "dependency graph and operation plan"),
 		),
 		ClearSearch: key.NewBinding(
 			key.WithKeys("esc"),

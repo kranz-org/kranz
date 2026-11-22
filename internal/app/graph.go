@@ -2,6 +2,7 @@ package app
 
 import (
 	"github.com/kranz-org/kranz/internal/config"
+	"github.com/kranz-org/kranz/internal/service"
 )
 
 // Graph edge kinds. An edge always points from what must happen first to what
@@ -82,4 +83,14 @@ func (l *Local) Graph() Graph {
 		graph.Edges = append(graph.Edges, GraphEdge{From: id.Owner, To: address, Type: GraphEdgeOwns})
 	}
 	return graph
+}
+
+// ServiceDependencyOrder returns the manager's service order and readiness
+// waves for a configuration. Clients can use both without accessing a Manager.
+func ServiceDependencyOrder(cfg *config.Config) ([]string, [][]string, error) {
+	order, err := service.TopologicalOrder(cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	return order, service.DependencyLevels(cfg, order), nil
 }

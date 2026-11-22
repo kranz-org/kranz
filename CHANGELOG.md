@@ -4,6 +4,13 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### Added
+
+- A dashboard dependency graph with selected services in the center,
+  toggleable dependencies above and dependents below, live service and probe
+  status, and read-only plans. The dependency viewer example demonstrates shared
+  dependencies and health transitions.
+
 ### Changed
 
 - In the dashboard, `Shift+R` starts or restarts only the chosen service
