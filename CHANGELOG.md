@@ -4,19 +4,26 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-11-23
+
 ### Added
 
-- A dashboard dependency graph with selected services in the center,
-  toggleable dependencies above and dependents below, live service and probe
-  status, and read-only plans. The dependency viewer example demonstrates shared
-  dependencies and health transitions.
+- Press `g` to inspect a service's dependencies above it and its dependents below.
+  Toggle each direction independently and see current process and health states.
+- Preview start, stop, and restart for checked services. Plans show dependency
+  links, readiness waves, and sequential steps with colors derived from the
+  active theme accent.
+- A runnable dependency viewer example and an animated walkthrough in the TUI
+  guide.
 
 ### Changed
 
-- In the dashboard, `Shift+R` starts or restarts only the chosen service
-  targets. `Ctrl+R` restarts all active services, and `Ctrl+A` stops all services.
-- `Shift+A` selects the focused service and its dependencies, or clears the
-  selection when that exact set is already selected.
+- `Shift+R` starts or restarts only the selected targets. `Ctrl+R` confirms
+  restart of all active services, and `Ctrl+A` confirms stop of all services.
+- `Shift+A` selects the focused service and its dependencies, or clears that
+  exact selection on repeat.
+- Selected-only starts run checked dependencies before their consumers and
+  skip readiness gates.
 
 ## [0.18.1] - 2026-11-10
 
@@ -1098,7 +1105,8 @@ artifacts.
 - Explicit global-user and project-config save destinations in the live theme picker.
 - Native compatibility for common Process Compose configurations.
 
-[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.18.1...HEAD
+[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/kranz-org/kranz/compare/v0.18.1...v0.19.0
 [0.18.1]: https://github.com/kranz-org/kranz/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/kranz-org/kranz/compare/v0.17.1...v0.18.0
 [0.17.1]: https://github.com/kranz-org/kranz/compare/v0.17.0...v0.17.1
