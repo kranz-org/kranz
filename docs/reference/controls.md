@@ -34,6 +34,19 @@ modal actions, search controls, and the theme picker.
 `Shift+S` and `Shift+R` act on the chosen targets without bringing other
 services into the operation through the dependency graph.
 
+### Dependency and plan viewer
+
+| Key | Action |
+| --- | --- |
+| `g` | Open the dependency tree for the selected or focused service, or the operation plan when several services are selected |
+| `Tab` | Switch between the dependency tree and the operation plan |
+| `d` / `u` | Independently show or hide dependencies or dependents in the tree |
+| `s` / `x` / `r` | Preview a start, stop, or restart for the selection |
+| `f` | Toggle planning for the targets only, without dependency expansion |
+| `↑` / `↓`, `j` / `k`, mouse wheel | Scroll the current view |
+| `Page Up` / `Page Down`, `Home` / `End` | Scroll by a page or jump to the first or last row |
+| `Esc` | Return to the dashboard |
+
 ### Action parameters
 
 An action whose command is assembled from values ends in `◆`, and `c` opens

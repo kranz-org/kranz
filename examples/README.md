@@ -6,8 +6,8 @@ discovery and relative commands work together.
 
 `app/examples` is the single canonical example location. The examples do not
 use Docker, SSH, credentials, external hosts, or destructive system commands.
-They only open documented localhost ports; the lifecycle playground additionally
-creates ignored marker files inside its own directory.
+They only open documented localhost ports. The lifecycle and dependency viewer
+playgrounds create ignored marker files inside their example directories.
 
 ## MoonFlight: the whole model in one project
 
@@ -112,6 +112,18 @@ kranz
 
 This is a small compatible Process Compose project with a readiness-gated
 worker. It demonstrates trying Kranz without maintaining a second config.
+
+## TUI dependency viewer
+
+```bash
+make dev
+./bin/kranz-dev -C examples/dependency-viewer
+```
+
+Press `g` on `gateway` to see dependencies above it and dependents below. Start
+it with `s` to watch readiness, queued services, and the one-shot schema job
+change in the graph. The [playground walkthrough](../docs/examples/dependency-viewer.md)
+also shows how to toggle liveness and preview a selected batch.
 
 ## Full dependency graph
 

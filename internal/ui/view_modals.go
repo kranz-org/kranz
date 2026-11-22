@@ -66,8 +66,18 @@ func helpSections() []helpSection {
 			{"Shift+A", "Select the focused service and its dependencies. Clear if that exact set is selected."},
 			{"Ctrl+A", "Confirm stop of all services"},
 			{"Shift+T", "Clear selected tags"},
+			{"g", "Open the dependency graph and preview start, stop, or restart"},
 			{"h", "Open health history for the focused service"},
 			{"n", "Open notifications unless navigating highlighted log matches"},
+		}},
+		{title: "DEPENDENCY VIEWER (g)", entries: []helpEntry{
+			{"Tab", "Switch between the dependency graph and operation plan"},
+			{"d / u", "Show or hide dependencies or dependents in the graph"},
+			{"s / x / r", "Preview a start, stop, or restart for the targets"},
+			{"f", "Toggle planning for the targets only"},
+			{"↑/k ↓/j", "Scroll the current view"},
+			{"PgUp/PgDown", "Scroll by a page. Home and End jump to the first and last row."},
+			{"Esc", "Return to the dashboard"},
 		}},
 		{title: "ACTION PARAMETERS", entries: []helpEntry{
 			{"Enter", "Open an action's parameters, a parameter's values, or a text field"},

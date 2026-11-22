@@ -75,6 +75,43 @@ Use `Ctrl+R` to confirm a restart of all active services and `Ctrl+A` to
 confirm a stop of all services. For the full list, press `?` in the TUI or
 see the [controls reference](../reference/controls#lifecycle-and-actions).
 
+## Inspect dependencies and preview an operation
+
+Press `g` to open the dependency tree for the checked service, or for the
+focused service when no services are checked. When several services are
+checked, `g` opens their operation plan. Press `Tab` to switch views.
+
+![The dependency graph around gateway, followed by a start preview for gateway and catalog with readiness waves and dependency links](../assets/dependency-viewer.gif)
+
+The focused service sits in the center, with its dependencies above and its
+dependents below. When several services are checked, the graph puts those
+services together in the center and identifies shared relationships. Press
+`d` or `u` to hide or show either direction independently. The graph shows
+live service states and observed probe results. The two directions use arrow
+labels and nearby shades of the active theme accent. The dependency branch
+leans slightly warmer and the dependent branch slightly cooler. A state marker
+appears before each name. A hollow circle marks a stopped service, and its
+last exit code appears when available.
+
+The plan uses the checked services, including selections made through tags.
+With no selection, it uses the focused service. Choose Start with `s`, Stop
+with `x`, or Restart with `r`.
+The plan shows the requested services and the resulting steps in order. A
+dependency-aware start groups services into numbered readiness waves, with
+colors that move between the graph's two theme-derived colors. Numbered
+steps use the same progression. Limited palettes can collapse nearby shades
+to the same color. The numbers remain visible at every terminal color depth.
+The plan draws direct dependency links between services in each phase. Press
+`f` to preview acting only on the targets, as with the shifted lifecycle
+shortcuts. A selected-only start puts checked dependencies before their
+consumers and skips readiness gates.
+
+The plan is a read-only preview based on the current configuration and service
+states. Scroll with the arrow keys or mouse wheel. Press `Esc` to return to the
+dashboard and run a lifecycle command there. The example walks through a
+shared dependency and a live health probe.
+[Dependency viewer example](../examples/dependency-viewer).
+
 ## Work with logs
 
 Panel `3` follows the focused service by default. `Shift+3` pins it while you
