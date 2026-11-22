@@ -420,6 +420,15 @@ func (m *Manager) RestartServices(names []string) error {
 }
 
 func (m *Manager) RestartServicesContext(ctx context.Context, names []string) error {
+	return m.restartServices(ctx, names, true)
+}
+
+// ForceRestartServicesContext restarts exactly the requested services.
+func (m *Manager) ForceRestartServicesContext(ctx context.Context, names []string) error {
+	return m.restartServices(ctx, names, false)
+}
+
+func (m *Manager) restartServices(ctx context.Context, names []string, includeDependents bool) error {
 	// Hold reloadMu for the whole operation so a concurrent config reload
 	// cannot swap or remove services mid-restart out from under this plan.
 	m.reloadMu.Lock()
@@ -437,6 +446,9 @@ func (m *Manager) RestartServicesContext(ctx context.Context, names []string) er
 	affectedSet := make(map[string]bool)
 	for _, name := range names {
 		affectedSet[name] = true
+		if !includeDependents {
+			continue
+		}
 		for _, dependent := range m.findDependents(name) {
 			if svc, ok := m.GetService(dependent); ok && svc.Status() != config.StatusStopped {
 				affectedSet[dependent] = true

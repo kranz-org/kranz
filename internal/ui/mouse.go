@@ -427,8 +427,7 @@ func (m *Model) handleOverlayMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return m.confirmRestart()
 		}
 		if renderedTextHit(rendered, msg.X, msg.Y, "[Esc/n] Cancel") {
-			m.confirmRestartAll = false
-			m.mode = ModeNormal
+			m.cancelRestartConfirmation()
 		}
 	case ModeConfirmClearLogs:
 		if renderedTextHit(rendered, msg.X, msg.Y, "[Enter] Clear") {

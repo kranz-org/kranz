@@ -123,12 +123,13 @@ func (m *Model) renderServicePanel(width, height int) string {
 		return renderTitledPanel(m.panelStyle(panelServices), m.panelTitleStyle(panelServices), contentWidth, contentHeight, panelTitle, []string{"", "No services or actions"})
 	}
 
-	meta := fmt.Sprintf("%d · 1→Tags · %d actions · Enter open · s run", len(m.services), len(m.cfg.ActionIDs()))
+	meta := fmt.Sprintf("%d · 1→Tags", len(m.services))
 	if len(m.selected) > 0 {
 		meta += fmt.Sprintf(" · SELECTED %d", len(m.selected))
 	} else if len(m.selectedTags) > 0 {
 		meta += fmt.Sprintf(" · TAGS %d", len(m.selectedTags))
 	}
+	meta += fmt.Sprintf(" · %d actions · Enter open · s run", len(m.cfg.ActionIDs()))
 	title := panelTitle + ContextBarStyle.Render(" │ "+meta)
 	lines := make([]string, 0, contentHeight)
 	start, end := m.visibleServiceRange(height)

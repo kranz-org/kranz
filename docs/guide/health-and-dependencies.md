@@ -56,8 +56,9 @@ Supported conditions:
 | `process_log_ready` | `ready_log_line` matched captured output |
 
 Starting a target includes its transitive dependencies. Stopping a target
-includes transitive dependents in reverse order. `Shift+S` deliberately bypasses
-graph expansion and operates on the selected targets only.
+includes transitive dependents in reverse order. In the TUI, `Shift+S` starts
+or stops only the selected targets and `Shift+R` starts or restarts only those
+targets. `Shift+A` selects the focused service and its transitive dependencies.
 
 ## Recovery
 

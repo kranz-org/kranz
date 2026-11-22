@@ -58,9 +58,13 @@ func helpSections() []helpSection {
 		{title: "SERVICES & ACTIONS", entries: []helpEntry{
 			{"Space", "Select or unselect a service or tag"},
 			{"s", "Start/stop service targets or run/stop the focused action"},
-			{"Shift+S", "Start or stop only targets, ignoring dependency expansion"},
-			{"a / Shift+A", "Select/clear all services or stop all services"},
-			{"r / Shift+R", "Start/restart the focused service, or restart all running services"},
+			{"Shift+S", "Start or stop only the selected targets, or the focused target if none are selected"},
+			{"r", "Start the focused service with its dependencies, or restart it with its active dependents"},
+			{"Shift+R", "Start or restart only the selected targets, or the focused target if none are selected"},
+			{"Ctrl+R", "Confirm restart of all active services"},
+			{"a", "Select or clear all services"},
+			{"Shift+A", "Select the focused service and its dependencies. Clear if that exact set is selected."},
+			{"Ctrl+A", "Confirm stop of all services"},
 			{"Shift+T", "Clear selected tags"},
 			{"h", "Open health history for the focused service"},
 			{"n", "Open notifications unless navigating highlighted log matches"},
@@ -440,6 +444,13 @@ func (m *Model) renderPortConflictView() string {
 // renderConfirmRestartView lists dependent services affected by a restart.
 func (m *Model) renderConfirmRestartView() string {
 	body := []string{"Running services will be stopped and started again."}
+	if len(m.forceRestartNames) > 0 {
+		body = []string{"Only the selected targets will be started or restarted."}
+		names := m.app.StartConfirmationNames(m.forceRestartNames, false)
+		if len(names) > 0 {
+			body = append(body, m.renderStartCommands(names)...)
+		}
+	}
 	if m.confirmAction != "" {
 		body = append(body, fmt.Sprintf("Also restarts: %s", m.confirmAction))
 	}
@@ -591,6 +602,10 @@ func (m *Model) renderConfirmServiceStartView() string {
 
 func (m *Model) renderServiceStartConfirmationBody() []string {
 	names := m.app.StartConfirmationNames(m.pendingStartNames, !m.pendingStartForce)
+	return m.renderStartCommands(names)
+}
+
+func (m *Model) renderStartCommands(names []string) []string {
 	body := []string{StartingBadgeStyle.Render("⚠ CONFIRM BEFORE STARTING")}
 	if len(names) == 0 {
 		return append(body, "The lifecycle start command requires confirmation.")

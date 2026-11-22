@@ -560,8 +560,8 @@ services:
 ```
 
 Starting a service starts its dependencies first. Stopping it stops its
-dependents first, in reverse order. `Shift+S` overrides both and acts only on
-the selection.
+dependents first, in reverse order. In the TUI, `Shift+S` and `Shift+R` act
+on the chosen targets without expanding the dependency graph.
 
 ### dependency_conditions
 

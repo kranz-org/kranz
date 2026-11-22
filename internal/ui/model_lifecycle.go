@@ -52,7 +52,8 @@ func (m *Model) handleLifecycleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 			m.toggleParamDisabled(m.focusedParam.ID, m.focusedParam.Name)
 			return m, nil, true
 		}
-		if key.Matches(msg, m.keys.Select) || key.Matches(msg, m.keys.ForceStart) || key.Matches(msg, m.keys.Toggle) || key.Matches(msg, m.keys.Restart) {
+		if key.Matches(msg, m.keys.Select) || key.Matches(msg, m.keys.ForceStart) || key.Matches(msg, m.keys.Toggle) ||
+			key.Matches(msg, m.keys.Restart) || key.Matches(msg, m.keys.ForceRestart) || key.Matches(msg, m.keys.SelectDeps) {
 			return m, nil, true
 		}
 	}
@@ -69,6 +70,9 @@ func (m *Model) handleLifecycleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 	case key.Matches(msg, m.keys.StartAll):
 		m.toggleAllSelection()
 		return m, nil, true
+	case key.Matches(msg, m.keys.SelectDeps):
+		m.toggleFocusedServiceWithDependencies()
+		return m, nil, true
 	case key.Matches(msg, m.keys.StopAll):
 		names := m.cfg.ServiceNames()
 		if m.requiresStopConfirmation(names) {
@@ -80,6 +84,9 @@ func (m *Model) handleLifecycleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 		return model, command, true
 	case key.Matches(msg, m.keys.Restart):
 		model, command := m.restartSelectedService()
+		return model, command, true
+	case key.Matches(msg, m.keys.ForceRestart):
+		model, command := m.forceRestartSelectedServices()
 		return model, command, true
 	case key.Matches(msg, m.keys.RestartAll):
 		if m.app.HasRunningServices() {
@@ -324,6 +331,10 @@ func (m *Model) forceToggleSelectedServices() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	}
+	return m.forceStartServices(names, target)
+}
+
+func (m *Model) forceStartServices(names []string, target string) (tea.Model, tea.Cmd) {
 	if m.requiresStartConfirmation(names, false) {
 		return m.beginServiceStartConfirmation(names, target, true)
 	}
@@ -398,6 +409,25 @@ func (m *Model) restartSelectedService() (tea.Model, tea.Cmd) {
 		m.confirmAction = ""
 	}
 	return m, nil
+}
+
+func (m *Model) forceRestartSelectedServices() (tea.Model, tea.Cmd) {
+	names := m.selectedTargetNames()
+	if len(names) == 0 {
+		return m, nil
+	}
+	target := m.selectedTargetLabel(names)
+	for _, name := range names {
+		svc, ok := m.app.Service(name)
+		if ok && !svc.CanStart {
+			m.mode = ModeConfirmRestart
+			m.confirmTarget = target
+			m.confirmAction = ""
+			m.forceRestartNames = names
+			return m, nil
+		}
+	}
+	return m.forceStartServices(names, target)
 }
 
 func (m *Model) requiresStopConfirmation(names []string) bool {
@@ -516,7 +546,7 @@ func (m *Model) operationAffectedServices(kind operationKind, names []string) ma
 		return m.dependentClosure(names)
 	case operationRestart:
 		return m.restartAffectedServices(names)
-	case operationForceStart, operationForceStop:
+	case operationForceStart, operationForceStop, operationForceRestart:
 		return nameSet(names)
 	case operationStopAll, operationRestartAll:
 		return m.allServiceNames()
@@ -742,14 +772,15 @@ func (m *Model) handleOperationResult(msg operationResultMsg) (tea.Model, tea.Cm
 	}
 
 	message := map[operationKind]string{
-		operationStart:      "Service started",
-		operationStartSet:   "Selection started (required dependencies included)",
-		operationForceStart: "Selected services started without dependencies",
-		operationForceStop:  "Selected services stopped without stopping dependents",
-		operationStopAll:    "All services have been stopped",
-		operationStopSet:    "Selection and dependent services stopped; ports released",
-		operationRestart:    "Service restarted",
-		operationRestartAll: "Running services have been restarted",
+		operationStart:        "Service started",
+		operationStartSet:     "Selection started (required dependencies included)",
+		operationForceStart:   "Selected services started without dependencies",
+		operationForceStop:    "Selected services stopped without stopping dependents",
+		operationStopAll:      "All services have been stopped",
+		operationStopSet:      "Selection and dependent services stopped; ports released",
+		operationRestart:      "Service restarted",
+		operationForceRestart: "Selected services restarted without dependencies",
+		operationRestartAll:   "Running services have been restarted",
 	}[msg.kind]
 	m.addNotification(msg.target, message, config.LogInfo)
 	m.portService = ""
@@ -825,19 +856,32 @@ func (m *Model) handleConfirmRestartKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "y", "Y", "enter":
 		return m.confirmRestart()
 	case "n", "N", "esc":
-		m.confirmRestartAll = false
-		m.mode = ModeNormal
+		m.cancelRestartConfirmation()
 	}
 	return m, nil
 }
 
+func (m *Model) cancelRestartConfirmation() {
+	m.confirmRestartAll = false
+	m.forceRestartNames = nil
+	m.mode = ModeNormal
+}
+
 func (m *Model) confirmRestart() (tea.Model, tea.Cmd) {
-	if m.confirmRestartAll {
-		m.confirmRestartAll = false
-		m.mode = ModeNormal
+	restartAll := m.confirmRestartAll
+	names := m.forceRestartNames
+	target := m.confirmTarget
+	m.cancelRestartConfirmation()
+	if restartAll {
 		return m.beginOperation(operationRestartAll, "running services", "Restarting services", nil, m.app.RestartAll)
 	}
-	return m.beginRestart(m.confirmTarget)
+	if len(names) > 0 {
+		application := m.app
+		return m.beginOperation(operationForceRestart, target, "Restarting "+target, names, func() error {
+			return application.ForceRestartServices(names)
+		})
+	}
+	return m.beginRestart(target)
 }
 
 func (m *Model) handleConfirmClearLogsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
