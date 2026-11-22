@@ -170,7 +170,7 @@ func TestDetachedServiceStartsFromUnknownAndConfirmsStop(t *testing.T) {
 	if model.FocusedService().State.Status != config.StatusRunning {
 		t.Fatalf("started status = %s", model.FocusedService().State.Status)
 	}
-	_, command = model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'A'}})
+	_, command = model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyCtrlA})
 	if command != nil || model.mode != ModeConfirmServiceStop || !model.pendingStopAll {
 		t.Fatalf("stop-all confirmation = command %v, mode %v, all %v", command, model.mode, model.pendingStopAll)
 	}
@@ -332,7 +332,7 @@ func TestRestartOperationsConfirmTheirStopPhase(t *testing.T) {
 	}
 	_, _ = model.handleConfirmRestartKeys(tea.KeyMsg{Type: tea.KeyEsc})
 
-	_, command = model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
+	_, command = model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyCtrlR})
 	if command != nil || model.mode != ModeConfirmRestart || !model.confirmRestartAll {
 		t.Fatalf("restart-all confirmation = command %v, mode %v, all %v", command, model.mode, model.confirmRestartAll)
 	}
@@ -986,4 +986,80 @@ func waitForServiceStatus(t *testing.T, model *Model, name string, expected conf
 	}
 	svc, _ := model.app.Service(name)
 	t.Fatalf("service status = %s, want %s", svc.State.Status, expected)
+}
+
+func TestShiftATogglesFocusedServiceWithDependencies(t *testing.T) {
+	model := NewModel(&config.Config{Project: "Test", Services: map[string]config.Service{
+		"database": {},
+		"api":      {DependsOn: []string{"database"}},
+		"frontend": {DependsOn: []string{"api"}},
+		"other":    {},
+	}}, "test")
+	defer model.Shutdown()
+	shiftA := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'A'}}
+	for index, svc := range model.services {
+		if svc.Name == "frontend" {
+			model.moveFocus(index)
+			break
+		}
+	}
+	_, _ = model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	_, _ = model.handleKeyMsg(shiftA)
+	if len(model.selected) != 3 || !model.selected["frontend"] || !model.selected["api"] || !model.selected["database"] {
+		t.Fatalf("Shift+A selected %v, want frontend, api, and database", model.selected)
+	}
+	if panel := model.renderServicePanel(46, 8); !strings.Contains(panel, "SELECTED 3") {
+		t.Fatal("narrow service panel hides the selected count")
+	}
+	_, _ = model.handleKeyMsg(shiftA)
+	if len(model.selected) != 0 {
+		t.Fatalf("repeating Shift+A left %v selected", model.selected)
+	}
+	_, _ = model.handleKeyMsg(shiftA)
+	for index, svc := range model.services {
+		if svc.Name == "database" {
+			model.moveFocus(index)
+			break
+		}
+	}
+	_, _ = model.handleKeyMsg(shiftA)
+	if len(model.selected) != 1 || !model.selected["database"] {
+		t.Fatalf("Shift+A on a service without dependencies selected %v, want database only", model.selected)
+	}
+}
+
+func TestShiftRRestartsOnlySelectedTargets(t *testing.T) {
+	model := NewModel(&config.Config{Project: "Test", Services: map[string]config.Service{
+		"database": {Command: "sleep 60", Dir: ".", Shell: "sh"},
+		"api":      {Command: "sleep 60", Dir: ".", Shell: "sh", DependsOn: []string{"database"}},
+		"frontend": {Command: "sleep 60", Dir: ".", Shell: "sh", DependsOn: []string{"api"}},
+		"worker":   {Command: "sleep 60", Dir: ".", Shell: "sh"},
+	}}, "test")
+	defer model.Shutdown()
+	if err := model.app.ForceStartServices([]string{"api", "frontend"}); err != nil {
+		t.Fatal(err)
+	}
+	model.refreshServices()
+	before, _ := model.app.Service("frontend")
+	model.selected["api"] = true
+	model.selected["worker"] = true
+
+	_, command := model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
+	if command != nil || model.mode != ModeConfirmRestart || model.confirmRestartAll {
+		t.Fatal("Shift+R did not request a targeted restart confirmation")
+	}
+	_, command = model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyEnter})
+	if command == nil || model.operationKind != operationForceRestart {
+		t.Fatal("confirmed Shift+R did not schedule a targeted restart")
+	}
+	result := command().(operationResultMsg)
+	if result.err != nil {
+		t.Fatal(result.err)
+	}
+	for name, wantRun := range map[string]uint32{"api": 2, "database": 0, "frontend": before.State.Run, "worker": 1} {
+		svc, _ := model.app.Service(name)
+		if svc.State.Run != wantRun {
+			t.Errorf("%s run = %d, want %d", name, svc.State.Run, wantRun)
+		}
+	}
 }

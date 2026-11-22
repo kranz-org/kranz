@@ -26,8 +26,10 @@ type KeyMap struct {
 	Shell         key.Binding
 	Quit          key.Binding
 	StartAll      key.Binding
+	SelectDeps    key.Binding
 	StopAll       key.Binding
 	Restart       key.Binding
+	ForceRestart  key.Binding
 	RestartAll    key.Binding
 	Tags          key.Binding
 	ResetTags     key.Binding
@@ -126,17 +128,25 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("a"),
 			key.WithHelp("a", "select/clear all"),
 		),
-		StopAll: key.NewBinding(
+		SelectDeps: key.NewBinding(
 			key.WithKeys("A", "shift+a"),
-			key.WithHelp("Shift+A", "stop all"),
+			key.WithHelp("Shift+A", "toggle service and dependencies"),
+		),
+		StopAll: key.NewBinding(
+			key.WithKeys("ctrl+a"),
+			key.WithHelp("Ctrl+A", "stop all"),
 		),
 		Restart: key.NewBinding(
 			key.WithKeys("r"),
-			key.WithHelp("r", "restart selected"),
+			key.WithHelp("r", "start/restart focused service"),
+		),
+		ForceRestart: key.NewBinding(
+			key.WithKeys("R", "shift+r"),
+			key.WithHelp("Shift+R", "restart without dependencies"),
 		),
 		RestartAll: key.NewBinding(
-			key.WithKeys("R", "shift+r"),
-			key.WithHelp("Shift+R", "restart all"),
+			key.WithKeys("ctrl+r"),
+			key.WithHelp("Ctrl+R", "restart running services"),
 		),
 		Tags: key.NewBinding(
 			key.WithKeys("t"),

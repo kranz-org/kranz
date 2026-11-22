@@ -38,10 +38,9 @@ their latest result; a missing probe is shown as not configured, never as a
 successful health check. Runtime-discovered ports and the PID that owns them
 appear in the same panel.
 
-The focused row and selected rows are also different. Focus chooses what
-Details and Logs show. Selection chooses the targets for the next lifecycle
-operation. This lets you inspect one service while preparing an operation on
-several others.
+The focused row controls what Details and Logs show. Checked rows are the
+targets for batch lifecycle shortcuts such as `s`, `Shift+S`, and `Shift+R`.
+The `r` shortcut always starts from the focused service.
 
 ## A first session
 
@@ -58,15 +57,23 @@ the exact `OWNER/ACTION#run` identity.
 
 ## Review lifecycle plans
 
-Starting a service includes its transitive dependencies. Stopping it includes
-running dependents in reverse order. Restarting follows the same resolved graph.
-Before a destructive operation Kranz opens a confirmation view with the exact
-targets and execution waves; the TUI does not hide graph expansion behind a
-single service name.
+Starting a service with `s` includes its transitive dependencies. Stopping it
+with `s` includes its dependents in reverse order. Use `Shift+S` to start or
+stop only the selected targets, or the focused target when there is no selection.
 
-Use `Shift+S` only when you deliberately want the selected targets without graph
-expansion. The confirmation view calls out that override so it cannot be
-mistaken for the safe default.
+For example, if `api` depends on `db` and both are active, focus `db` and press
+`r` to review restarting both services. With an empty selection, `Shift+R`
+on `db` restarts just `db`. When services are checked, `Shift+R` restarts
+only the checked services and starts any checked services that are stopped.
+
+To select a service and everything it needs, focus it and press `Shift+A`.
+Press it again to clear the selection when that exact set is already checked.
+Moving the cursor leaves the selection in place until you press `Shift+A` on
+another service or change the selection manually.
+
+Use `Ctrl+R` to confirm a restart of all active services and `Ctrl+A` to
+confirm a stop of all services. For the full list, press `?` in the TUI or
+see the [controls reference](../reference/controls#lifecycle-and-actions).
 
 ## Work with logs
 
@@ -168,7 +175,11 @@ the recovery actions.
 | `Enter` | Expand or collapse the focused row |
 | `Space` | Select or unselect a service or tag |
 | `s` | Start, stop with confirmation, or run a focused action |
-| `r` | Review and confirm a restart |
+| `r` | Start the focused service or confirm its restart with active dependents |
+| `Shift+R` | Start or restart just the selected targets |
+| `Shift+A` | Select or clear the focused service and its dependencies |
+| `Ctrl+A` | Confirm stop of all services |
+| `Ctrl+R` | Confirm restart of all active services |
 | `/` | Search logs with a regular expression |
 | `x` | Toggle Combined/Single run logs |
 | `[` / `]` | Move to the previous/next run |

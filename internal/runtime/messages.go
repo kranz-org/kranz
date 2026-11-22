@@ -44,6 +44,7 @@ const (
 	methodRestartAll                      = "restartAll"
 	methodRestartService                  = "restartService"
 	methodRestartServices                 = "restartServices"
+	methodForceRestartServices            = "forceRestartServices"
 	methodHasRunningServices              = "hasRunningServices"
 	methodProjectExitRequested            = "projectExitRequested"
 	methodShutdown                        = "shutdown"

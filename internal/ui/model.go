@@ -142,14 +142,15 @@ const (
 type operationKind string
 
 const (
-	operationStart      operationKind = "start"
-	operationStartSet   operationKind = "start-selection"
-	operationForceStart operationKind = "force-start"
-	operationForceStop  operationKind = "force-stop"
-	operationStopAll    operationKind = "stop-all"
-	operationStopSet    operationKind = "stop-selection"
-	operationRestart    operationKind = "restart"
-	operationRestartAll operationKind = "restart-all"
+	operationStart        operationKind = "start"
+	operationStartSet     operationKind = "start-selection"
+	operationForceStart   operationKind = "force-start"
+	operationForceStop    operationKind = "force-stop"
+	operationStopAll      operationKind = "stop-all"
+	operationStopSet      operationKind = "stop-selection"
+	operationRestart      operationKind = "restart"
+	operationForceRestart operationKind = "force-restart"
+	operationRestartAll   operationKind = "restart-all"
 )
 
 type operationResultMsg struct {
@@ -349,6 +350,7 @@ type Model struct {
 	confirmAction     string
 	confirmTarget     string
 	confirmRestartAll bool
+	forceRestartNames []string
 	pendingAction     *config.ActionID
 	pendingActionStop bool
 	// pendingParamRequest and pendingParamToken keep the exact confirmed

@@ -22,12 +22,17 @@ modal actions, search controls, and the theme picker.
 | --- | --- |
 | `Space` | Select/unselect a service or tag |
 | `s` | Start dependencies and targets, confirm stop, or run focused action |
-| `Shift+S` | Start/stop only targets without graph expansion |
-| `r` | Start a stopped focused service, or confirm its restart |
-| `Shift+R` | Confirm restart of running services |
+| `Shift+S` | Start or stop only the selected targets, or the focused target when there is no selection |
+| `r` | Start the focused service with its dependencies, or confirm restarting it and its active dependents |
+| `Shift+R` | Start or restart only the selected targets, or the focused target when there is no selection |
+| `Ctrl+R` | Confirm restart of all active services |
 | `a` | Select or clear all services |
-| `Shift+A` | Confirm stop all |
+| `Shift+A` | Replace the selection with the focused service and its direct and transitive dependencies, or clear it if the same set is already selected |
+| `Ctrl+A` | Confirm stop all |
 | `Shift+T` | Clear tag selection |
+
+`Shift+S` and `Shift+R` act on the chosen targets without bringing other
+services into the operation through the dependency graph.
 
 ### Action parameters
 
@@ -79,10 +84,6 @@ the reason when the value stops satisfying it.
 | `Esc` | Close the form |
 
 Outside a parameterized action `c` keeps its usual meaning of clearing logs.
-
-Starting includes transitive dependencies. Stopping includes transitive
-dependents in reverse order. `Shift+S` is the explicit override in both
-directions.
 
 ## Logs
 

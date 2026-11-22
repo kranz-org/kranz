@@ -436,6 +436,16 @@ func (l *Local) RestartServicesContext(ctx context.Context, names []string) erro
 	return err
 }
 
+func (l *Local) ForceRestartServices(names []string) error {
+	return l.ForceRestartServicesContext(context.Background(), names)
+}
+
+func (l *Local) ForceRestartServicesContext(ctx context.Context, names []string) error {
+	err := l.manager.ForceRestartServicesContext(ctx, names)
+	l.syncAcceptedConfig()
+	return err
+}
+
 func (l *Local) syncAcceptedConfig() {
 	l.cfgMu.Lock()
 	l.cfg = l.manager.Config()

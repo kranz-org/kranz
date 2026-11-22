@@ -135,6 +135,9 @@ var handlers = map[string]handlerFunc{
 	methodRestartServices: handler(func(ctx context.Context, l *app.Local, req namesRequest) (emptyResponse, error) {
 		return emptyResponse{}, l.RestartServicesContext(ctx, req.Names)
 	}),
+	methodForceRestartServices: handler(func(ctx context.Context, l *app.Local, req namesRequest) (emptyResponse, error) {
+		return emptyResponse{}, l.ForceRestartServicesContext(ctx, req.Names)
+	}),
 	methodHasRunningServices: handler(func(_ context.Context, l *app.Local, _ emptyRequest) (boolResponse, error) {
 		return boolResponse{Value: l.HasRunningServices()}, nil
 	}),

@@ -4,6 +4,13 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### Changed
+
+- In the dashboard, `Shift+R` starts or restarts only the chosen service
+  targets. `Ctrl+R` restarts all active services, and `Ctrl+A` stops all services.
+- `Shift+A` selects the focused service and its dependencies, or clears the
+  selection when that exact set is already selected.
+
 ## [0.18.1] - 2026-11-10
 
 ### Fixed

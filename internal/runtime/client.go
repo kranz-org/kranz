@@ -503,6 +503,11 @@ func (c *Client) RestartServices(names []string) error {
 	return err
 }
 
+func (c *Client) ForceRestartServices(names []string) error {
+	_, err := call[namesRequest, emptyResponse](c, context.Background(), methodForceRestartServices, namesRequest{Names: names})
+	return err
+}
+
 func (c *Client) HasRunningServices() bool {
 	resp, _ := call[emptyRequest, boolResponse](c, context.Background(), methodHasRunningServices, emptyRequest{})
 	return resp.Value

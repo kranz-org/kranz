@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 	"time"
@@ -115,6 +116,23 @@ func (m *Model) toggleAllSelection() {
 			m.selected[name] = true
 		}
 	}
+}
+
+func (m *Model) toggleFocusedServiceWithDependencies() {
+	svc := m.FocusedService()
+	if m.listMode == listTags {
+		svc = m.focusedTagService()
+	}
+	if svc == nil {
+		return
+	}
+	targets := m.dependencyClosure([]string{svc.Name})
+	m.selectedTags = nil
+	if maps.Equal(m.selected, targets) {
+		clear(m.selected)
+		return
+	}
+	m.selected = targets
 }
 
 func (m *Model) togglePinnedLog() {
