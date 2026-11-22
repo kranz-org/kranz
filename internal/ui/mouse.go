@@ -407,6 +407,8 @@ func (m *Model) handleOverlayMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return model, command
 		}
 		return m.closeOverlayOnClick(rendered, msg)
+	case ModeDependencies:
+		return m.handleMouseKeyBindings(rendered, msg, m.dependencyControls(), m.handleDependencyKeys)
 	case ModeHealthHistory, ModeNotifications:
 		return m.closeOverlayOnClick(rendered, msg)
 	case ModeConfirmQuit:
@@ -511,6 +513,16 @@ func (m *Model) handleOverlayWheel(msg tea.MouseMsg) (tea.Model, tea.Cmd, bool) 
 			return m, nil, true
 		case tea.MouseButtonWheelDown:
 			m.configMapOffset = min(m.maxConfigMapOffset(), m.configMapOffset+1)
+			return m, nil, true
+		}
+	}
+	if m.mode == ModeDependencies {
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			m.scrollDependencies(-1)
+			return m, nil, true
+		case tea.MouseButtonWheelDown:
+			m.scrollDependencies(1)
 			return m, nil, true
 		}
 	}

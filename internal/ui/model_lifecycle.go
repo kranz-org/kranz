@@ -335,6 +335,7 @@ func (m *Model) forceToggleSelectedServices() (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) forceStartServices(names []string, target string) (tea.Model, tea.Cmd) {
+	names = m.orderSelectedStarts(names)
 	if m.requiresStartConfirmation(names, false) {
 		return m.beginServiceStartConfirmation(names, target, true)
 	}
@@ -342,6 +343,28 @@ func (m *Model) forceStartServices(names []string, target string) (tea.Model, te
 	return m.beginOperation(operationForceStart, target, "Force starting "+target, names, func() error {
 		return application.ForceStartServices(names)
 	})
+}
+
+// orderSelectedStarts places dependencies already in the selection before
+// their consumers, without following branches outside that selection.
+func (m *Model) orderSelectedStarts(names []string) []string {
+	remaining := nameSet(names)
+	ordered := make([]string, 0, len(names))
+	var visit func(string)
+	visit = func(name string) {
+		if !remaining[name] {
+			return
+		}
+		delete(remaining, name)
+		for _, dependency := range m.cfg.Services[name].DependsOn {
+			visit(dependency)
+		}
+		ordered = append(ordered, name)
+	}
+	for _, name := range names {
+		visit(name)
+	}
+	return ordered
 }
 
 func (m *Model) requiresStartConfirmation(names []string, includeDependencies bool) bool {
@@ -362,6 +385,7 @@ func (m *Model) confirmServiceStart() (tea.Model, tea.Cmd) {
 	force := m.pendingStartForce
 	m.cancelServiceStartConfirmation()
 	if force {
+		names = m.orderSelectedStarts(names)
 		application := m.app
 		return m.beginOperation(operationForceStart, target, "Force starting "+target, names, func() error {
 			return application.ForceStartServices(names)

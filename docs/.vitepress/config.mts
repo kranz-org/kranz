@@ -93,6 +93,7 @@ export default defineConfig({
           { text: 'Action parameters', link: '/examples/action-parameters' },
           { text: 'Process Compose', link: '/examples/process-compose' },
           { text: 'Configuration composition', link: '/examples/composition' },
+          { text: 'TUI dependency viewer', link: '/examples/dependency-viewer' },
           { text: 'Full dependency graph', link: '/examples/full-stack' },
           { text: 'Runtime ports', link: '/examples/runtime-ports' },
           { text: 'MCP shared runtime', link: '/examples/mcp-shared-runtime' }

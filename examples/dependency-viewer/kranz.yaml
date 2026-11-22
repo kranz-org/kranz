@@ -1,0 +1,75 @@
+project: Dependency Viewer
+
+defaults:
+  shell: /bin/sh
+
+services:
+  gateway:
+    description: The center of the example, with services on both sides of it.
+    command: exec sleep 3600
+    depends_on: [catalog, search]
+    tags: [app]
+
+  catalog:
+    description: Waits for the schema job to finish and for the datastore to be ready.
+    command: exec sleep 3600
+    depends_on: [schema, datastore]
+    dependency_conditions:
+      schema: {condition: process_completed_successfully}
+    tags: [app]
+
+  search:
+    description: Shares the datastore with catalog and also needs the cache.
+    command: exec sleep 3600
+    depends_on: [datastore, cache]
+    tags: [app]
+
+  schema:
+    description: A one-shot setup job that exits successfully.
+    command: sleep 2 && echo "schema ready"
+
+  datastore:
+    description: A delayed readiness probe and a liveness probe you can control.
+    command: exec sleep 3600
+    healthcheck:
+      readiness:
+        type: command
+        command: "true"
+        initial_delay: 6s
+        interval: 1s
+        timeout: 1s
+      liveness:
+        type: command
+        command: test ! -f .kranz-demo/datastore-unhealthy
+        interval: 1s
+        timeout: 1s
+        failure_threshold: 1
+    actions:
+      fail-liveness:
+        description: Make the next datastore liveness probe fail.
+        command: mkdir -p .kranz-demo && touch .kranz-demo/datastore-unhealthy
+      restore-liveness:
+        description: Return the datastore probe to its passing state.
+        command: rm -f .kranz-demo/datastore-unhealthy
+
+  cache:
+    description: An independent process required by search.
+    command: exec sleep 3600
+
+  dashboard:
+    description: A direct dependent of the gateway.
+    command: exec sleep 3600
+    depends_on: [gateway]
+    tags: [client]
+
+  reports:
+    description: A second direct dependent of the gateway.
+    command: exec sleep 3600
+    depends_on: [gateway]
+    tags: [client]
+
+  export:
+    description: An indirect dependent of the gateway through reports.
+    command: exec sleep 3600
+    depends_on: [reports]
+    tags: [client]

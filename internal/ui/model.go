@@ -47,6 +47,7 @@ const (
 	ModeRuntimeStop
 	ModeParamEdit
 	ModeParamForm
+	ModeDependencies
 )
 
 type runViewMode uint8
@@ -332,6 +333,7 @@ type Model struct {
 	// resets both; nothing here is persisted.
 	configMapOffset int
 	configMapView   configMapView
+	dependencyModal dependencyModal
 
 	followMode   bool
 	pinnedFollow bool

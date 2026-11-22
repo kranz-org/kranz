@@ -1063,3 +1063,57 @@ func TestShiftRRestartsOnlySelectedTargets(t *testing.T) {
 		}
 	}
 }
+
+type recordedForceStart struct {
+	app.API
+	names []string
+}
+
+func (recorder *recordedForceStart) ForceStartServices(names []string) error {
+	recorder.names = append([]string(nil), names...)
+	return nil
+}
+
+func TestSelectedOnlyStartRunsChosenDependenciesFirst(t *testing.T) {
+	for _, key := range []rune{'S', 'R'} {
+		t.Run(string(key), func(t *testing.T) {
+			cfg := &config.Config{
+				Project:      "Test",
+				ServiceOrder: []string{"gateway", "catalog", "store"},
+				Services: map[string]config.Service{
+					"gateway": {Command: "true", DependsOn: []string{"catalog"}},
+					"catalog": {Command: "true", DependsOn: []string{"store"}},
+					"store":   {Command: "true"},
+				},
+			}
+			model := NewModel(cfg, "test")
+			defer model.Shutdown()
+			recorder := &recordedForceStart{API: model.app}
+			model.app = recorder
+			model.selected["gateway"], model.selected["catalog"] = true, true
+
+			preview, err := model.previewDependencyOperation("start", true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(preview.Steps) != 1 || len(preview.Steps[0].Waves) != 1 {
+				t.Fatalf("unexpected preview steps: %v", preview.Steps)
+			}
+			const want = "catalog,gateway"
+			if got := strings.Join(preview.Steps[0].Waves[0], ","); got != want {
+				t.Fatalf("preview order = %q, want %q", got, want)
+			}
+
+			_, cmd := model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{key}})
+			if cmd == nil {
+				t.Fatal("missing start command")
+			}
+			if result := cmd().(operationResultMsg); result.err != nil {
+				t.Fatal(result.err)
+			}
+			if got := strings.Join(recorder.names, ","); got != want {
+				t.Errorf("executed order = %q, want %q", got, want)
+			}
+		})
+	}
+}
