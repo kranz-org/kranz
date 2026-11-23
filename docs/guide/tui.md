@@ -71,6 +71,11 @@ Press it again to clear the selection when that exact set is already checked.
 Moving the cursor leaves the selection in place until you press `Shift+A` on
 another service or change the selection manually.
 
+To expand several selections at once, mark the services with `Space`, then
+press `Shift+E`. It adds every direct and transitive dependency as an individual
+service mark. A tag selection expands into individual marks as well. When all
+the marked services are running, `Shift+S` stops that exact set.
+
 Use `Ctrl+R` to confirm a restart of all active services and `Ctrl+A` to
 confirm a stop of all services. For the full list, press `?` in the TUI or
 see the [controls reference](../reference/controls#lifecycle-and-actions).
@@ -79,9 +84,10 @@ see the [controls reference](../reference/controls#lifecycle-and-actions).
 
 Press `g` to open the dependency tree for the checked service, or for the
 focused service when no services are checked. When several services are
-checked, `g` opens their operation plan. Press `Tab` to switch views.
+checked, `g` opens the operation steps. Press `Tab` to switch between the
+graph and steps.
 
-![The dependency graph around gateway, followed by a start preview for gateway and catalog with readiness waves and dependency links](../assets/dependency-viewer.gif)
+![The Gateway dependency graph and Start steps, followed by a completed Start after the readiness check](../assets/dependency-viewer.gif)
 
 The focused service sits in the center, with its dependencies above and its
 dependents below. When several services are checked, the graph puts those
@@ -94,8 +100,12 @@ appears before each name. A hollow circle marks a stopped service, and its
 last exit code appears when available.
 
 The plan uses the checked services, including selections made through tags.
-With no selection, it uses the focused service. Choose Start with `s`, Stop
-with `x`, or Restart with `r`.
+With no selection, it uses the focused service. In either view, press
+`←` or `→` to cycle through operations, or use `s`, `x`, and `r` to choose
+Start, Stop, and Restart. The chosen operation stays selected when you switch
+views. Press the shortcut for the selected operation to show its confirmation
+control in either view.
+
 The plan shows the requested services and the resulting steps in order. A
 dependency-aware start groups services into numbered readiness waves, with
 colors that move between the graph's two theme-derived colors. Numbered
@@ -104,13 +114,17 @@ to the same color. The numbers remain visible at every terminal color depth.
 The plan draws direct dependency links between services in each phase. Press
 `f` to preview acting only on the targets, as with the shifted lifecycle
 shortcuts. A selected-only start puts checked dependencies before their
-consumers and skips readiness gates.
+consumers and skips readiness gates. Restart skips stopped targets. Use
+Start to launch stopped services.
 
-The plan is a read-only preview based on the current configuration and service
-states. Scroll with the arrow keys or mouse wheel. Press `Esc` to return to the
-dashboard and run a lifecycle command there. The example walks through a
-shared dependency and a live health probe.
-[Dependency viewer example](../examples/dependency-viewer).
+From Graph or Steps, press `Enter` or click the button below the operation
+selector to run the highlighted operation. The current view stays open and
+shows progress and the result. Select an operation again to clear the result
+and review the next run. Scroll the current view with the up and down arrows
+or the mouse wheel. Press `Esc` to dismiss confirmation or close the viewer.
+
+The example walks through a shared dependency and a live health probe.
+[Dependency viewer example](../examples/dependency-viewer)
 
 ## Work with logs
 
@@ -215,13 +229,14 @@ the recovery actions.
 | `r` | Start the focused service or confirm its restart with active dependents |
 | `Shift+R` | Start or restart just the selected targets |
 | `Shift+A` | Select or clear the focused service and its dependencies |
+| `Shift+E` | Add the dependencies of all selected services to the selection |
 | `Ctrl+A` | Confirm stop of all services |
 | `Ctrl+R` | Confirm restart of all active services |
 | `/` | Search logs with a regular expression |
 | `x` | Toggle Combined/Single run logs |
 | `[` / `]` | Move to the previous/next run |
 | `v` | Open run history; filter and select with keyboard or mouse |
-| `e` / `Shift+E` | Export the selected run to clipboard / a chosen file |
+| `e` / `Ctrl+E` | Export the selected run to clipboard / a chosen file |
 | `p` | Switch to another local Kranz runtime |
 | `m` | Open the configuration map |
 | `Ctrl+T` | Open the theme and appearance picker |

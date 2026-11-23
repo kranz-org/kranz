@@ -20,7 +20,7 @@ func TestDependencyStatusUsesObservedProbeResults(t *testing.T) {
 		State:  config.ServiceState{Status: config.StatusRunning},
 		Health: app.HealthSnapshot{Observed: true, Alive: true},
 	}
-	model := &Model{allServices: []*app.ServiceSnapshot{
+	model := &Model{runtimeServices: []*app.ServiceSnapshot{
 		datastore,
 		{Name: "schema", State: config.ServiceState{Status: config.StatusStopped, Completed: true, ExitCode: 17}},
 		{Name: "idle", State: config.ServiceState{Status: config.StatusStopped}},
@@ -51,7 +51,7 @@ func TestDependencyStatusUsesObservedProbeResults(t *testing.T) {
 	expect("datastore", "not ready", "live")
 
 	datastore.Health.Ready = true
-	expect("datastore", "● datastore", "running", " · ready", " · live")
+	expect("datastore", "● datastore", "running", ", ready", ", live")
 
 	datastore.Health.Liveness.ConsecutiveFailures = 1
 	expect("datastore", "liveness degraded")

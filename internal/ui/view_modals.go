@@ -64,20 +64,23 @@ func helpSections() []helpSection {
 			{"Ctrl+R", "Confirm restart of all active services"},
 			{"a", "Select or clear all services"},
 			{"Shift+A", "Select the focused service and its dependencies. Clear if that exact set is selected."},
+			{"Shift+E", "Add all dependencies of the selected services to the selection"},
 			{"Ctrl+A", "Confirm stop of all services"},
 			{"Shift+T", "Clear selected tags"},
-			{"g", "Open the dependency graph and preview start, stop, or restart"},
+			{"g", "Open Graph or Steps to review and run a lifecycle operation"},
 			{"h", "Open health history for the focused service"},
 			{"n", "Open notifications unless navigating highlighted log matches"},
 		}},
 		{title: "DEPENDENCY VIEWER (g)", entries: []helpEntry{
-			{"Tab", "Switch between the dependency graph and operation plan"},
+			{"Tab", "Switch between Graph and Steps for the selected operation"},
+			{"← / →", "Cycle through Start, Stop, and Restart"},
 			{"d / u", "Show or hide dependencies or dependents in the graph"},
-			{"s / x / r", "Preview a start, stop, or restart for the targets"},
-			{"f", "Toggle planning for the targets only"},
+			{"s / x / r", "Choose an operation or request its confirmation"},
+			{"f", "Toggle whether the operation applies only to the targets"},
+			{"Enter", "Run the selected operation and keep the viewer open"},
 			{"↑/k ↓/j", "Scroll the current view"},
 			{"PgUp/PgDown", "Scroll by a page. Home and End jump to the first and last row."},
-			{"Esc", "Return to the dashboard"},
+			{"Esc", "Dismiss confirmation or close the viewer"},
 		}},
 		{title: "ACTION PARAMETERS", entries: []helpEntry{
 			{"Enter", "Open an action's parameters, a parameter's values, or a text field"},
@@ -106,7 +109,7 @@ func helpSections() []helpSection {
 			{"[ / ]", "Open the previous or next run"},
 			{"Shift+F / l", "Open the previous failed run or return to the latest run"},
 			{"v", "Open the filterable run catalog"},
-			{"e / Shift+E", "Export the selected run to clipboard or a file; all-runs view exports the latest run"},
+			{"e / Ctrl+E", "Export the selected run to clipboard or a file; all-runs view exports the latest run"},
 			{"c", "Confirm clearing focused logs, unless a parameterized action opens its form"},
 		}},
 		{title: "RUN LIST (v)", entries: []helpEntry{
@@ -448,6 +451,9 @@ func (m *Model) renderPortConflictView() string {
 	lines = append(lines, renderModalShortcuts("[r/Enter] Retry  [s/Esc] Close", lipgloss.NewStyle()))
 
 	content := m.renderModal(strings.Join(lines, "\n"))
+	if m.conflictPlanID != 0 {
+		return m.placeOverlayOver(content, m.placeOverlay(m.dependencyModalContent()))
+	}
 	return m.placeOverlay(content)
 }
 

@@ -136,7 +136,7 @@ func (m *Model) handleNormalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "e" {
 		return m, m.copySelectedRun()
 	}
-	if msg.String() == "E" {
+	if msg.String() == "ctrl+e" {
 		return m, m.openRunExport()
 	}
 	if m.handleLogKey(msg) {

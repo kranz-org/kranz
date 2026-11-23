@@ -16,7 +16,7 @@ type dependencyServiceStatus struct {
 func (status dependencyServiceStatus) render(name string) string {
 	label := status.indicator + " " + name
 	if status.detail != "" {
-		label += "  · " + status.detail
+		label += " (" + status.detail + ")"
 	}
 	return label
 }
@@ -25,8 +25,8 @@ func (status dependencyServiceStatus) render(name string) string {
 // list. Probe labels describe observed results, including the time before the
 // first check, and do not stand in for the service's process state.
 func (m *Model) dependencyStatuses() map[string]dependencyServiceStatus {
-	statuses := make(map[string]dependencyServiceStatus, len(m.allServices))
-	for _, svc := range m.allServices {
+	statuses := make(map[string]dependencyServiceStatus, len(m.runtimeServices))
+	for _, svc := range m.runtimeServices {
 		statuses[svc.Name] = m.dependencyStatusSnapshot(svc)
 	}
 	return statuses
@@ -73,6 +73,6 @@ func (m *Model) dependencyStatusSnapshot(svc *app.ServiceSnapshot) dependencySer
 	if svc.ReloadState == "pending_restart" {
 		details = append(details, StartingBadgeStyle.Render("restart pending"))
 	}
-	status.detail = strings.Join(details, " · ")
+	status.detail = strings.Join(details, ", ")
 	return status
 }

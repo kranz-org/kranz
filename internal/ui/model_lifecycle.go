@@ -73,6 +73,9 @@ func (m *Model) handleLifecycleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 	case key.Matches(msg, m.keys.SelectDeps):
 		m.toggleFocusedServiceWithDependencies()
 		return m, nil, true
+	case key.Matches(msg, m.keys.ExpandDeps):
+		m.expandSelectionWithDependencies()
+		return m, nil, true
 	case key.Matches(msg, m.keys.StopAll):
 		names := m.cfg.ServiceNames()
 		if m.requiresStopConfirmation(names) {
@@ -568,7 +571,7 @@ func (m *Model) operationAffectedServices(kind operationKind, names []string) ma
 		return m.dependencyClosure(names)
 	case operationStopSet:
 		return m.dependentClosure(names)
-	case operationRestart:
+	case operationRestart, operationRestartSet:
 		return m.restartAffectedServices(names)
 	case operationForceStart, operationForceStop, operationForceRestart:
 		return nameSet(names)
@@ -761,11 +764,22 @@ func (m *Model) cancelStartOperation() {
 }
 
 func (m *Model) handleOperationResult(msg operationResultMsg) (tea.Model, tea.Cmd) {
+	fromPlan := m.finishDependencyRun(msg)
 	if _, ok := m.operations[msg.id]; ok {
 		delete(m.operations, msg.id)
 		m.refreshOperationMirror()
 	} else if msg.id != m.operationID {
 		return m, nil
+	}
+	if msg.kind == operationRestartSet || msg.kind == operationForceRestart {
+		// A restart can adopt pending service definitions without advancing
+		// the config generation. Keep the next plan on the adopted graph
+		// while preserving the TUI's locally applied appearance.
+		if current := m.app.Config(); current != nil {
+			updated := *current
+			updated.UI = m.cfg.UI
+			m.cfg = &updated
+		}
 	}
 	// A snapshot taken before this operation ran is now stale: refresh
 	// immediately rather than waiting for the next 250ms tick, so a test or
@@ -788,6 +802,10 @@ func (m *Model) handleOperationResult(msg operationResultMsg) (tea.Model, tea.Cm
 			}
 			m.conflictOwner = conflict.OwnerService
 			m.conflictExternal = conflict.External
+			m.conflictPlanID = 0
+			if fromPlan {
+				m.conflictPlanID = msg.id
+			}
 			m.mode = ModePortConflict
 			return m, nil
 		}
@@ -803,6 +821,7 @@ func (m *Model) handleOperationResult(msg operationResultMsg) (tea.Model, tea.Cm
 		operationStopAll:      "All services have been stopped",
 		operationStopSet:      "Selection and dependent services stopped; ports released",
 		operationRestart:      "Service restarted",
+		operationRestartSet:   "Selection and active dependent services restarted",
 		operationForceRestart: "Selected services restarted without dependencies",
 		operationRestartAll:   "Running services have been restarted",
 	}[msg.kind]

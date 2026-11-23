@@ -309,6 +309,9 @@ func (m *Model) handleOverlayMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if msg.Action != tea.MouseActionPress || msg.Button != tea.MouseButtonLeft {
 		return m, nil
 	}
+	if m.mode == ModeDependencies {
+		return m.handleDependencyMouse(msg)
+	}
 
 	rendered := m.View()
 	switch m.mode {
@@ -407,8 +410,6 @@ func (m *Model) handleOverlayMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return model, command
 		}
 		return m.closeOverlayOnClick(rendered, msg)
-	case ModeDependencies:
-		return m.handleMouseKeyBindings(rendered, msg, m.dependencyControls(), m.handleDependencyKeys)
 	case ModeHealthHistory, ModeNotifications:
 		return m.closeOverlayOnClick(rendered, msg)
 	case ModeConfirmQuit:

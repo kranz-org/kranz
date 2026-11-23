@@ -75,8 +75,7 @@ func (m *Model) scanFocusedPorts(force bool) tea.Cmd {
 func (m *Model) handlePortConflictKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "r", "R", "enter":
-		m.mode = ModeNormal
-		return m.toggleSelectedServices()
+		return m.retryPortConflict()
 	case "k", "K":
 		if !m.conflictExternal {
 			m.addNotification("port", "This port belongs to another Kranz service; stop that service instead", config.LogWarn)
@@ -91,22 +90,37 @@ func (m *Model) handlePortConflictKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "s", "S", "c", "C", "esc":
 		m.mode = ModeNormal
+		if m.conflictPlanID != 0 {
+			m.mode = ModeDependencies
+			m.conflictPlanID = 0
+		}
 	}
 	return m, nil
 }
 
+func (m *Model) retryPortConflict() (tea.Model, tea.Cmd) {
+	if m.conflictPlanID != 0 {
+		m.conflictPlanID = 0
+		m.mode = ModeDependencies
+		m.dependencyModal.runMessage = ""
+		return m.runDependencyOperation()
+	}
+	m.mode = ModeNormal
+	return m.toggleSelectedServices()
+}
+
 func (m *Model) releaseExternalPort(portNumber, expectedPID int) tea.Cmd {
-	application, sessionGen := m.app, m.sessionGeneration
+	application, sessionGen, planID := m.app, m.sessionGeneration, m.conflictPlanID
 	release := retainRuntimeApplication(application)
 	return func() tea.Msg {
 		defer release()
 		alreadyFree, err := application.ReleaseExternalPort(portNumber, expectedPID)
 		if err != nil {
-			return releasePortResultMsg{port: portNumber, pid: expectedPID, err: err, sessionGen: sessionGen}
+			return releasePortResultMsg{planID: planID, port: portNumber, pid: expectedPID, err: err, sessionGen: sessionGen}
 		}
 		if alreadyFree {
-			return releasePortResultMsg{port: portNumber, pid: expectedPID, alreadyFree: true, sessionGen: sessionGen}
+			return releasePortResultMsg{planID: planID, port: portNumber, pid: expectedPID, alreadyFree: true, sessionGen: sessionGen}
 		}
-		return releasePortResultMsg{port: portNumber, pid: expectedPID, sessionGen: sessionGen}
+		return releasePortResultMsg{planID: planID, port: portNumber, pid: expectedPID, sessionGen: sessionGen}
 	}
 }

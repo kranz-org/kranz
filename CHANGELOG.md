@@ -4,6 +4,23 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### Added
+
+- Start, stop, and restart services directly from the dependency graph or
+  operation steps. The viewer stays open and shows progress and the result.
+- Press `Shift+E` to add the direct and transitive dependencies of all checked
+  services as individual selections.
+
+### Changed
+
+- In the dependency viewer, `←` and `→` cycle operations, while `Tab` switches
+  between Graph and Steps. Each view keeps its own scroll position. The action
+  row stays in place as availability changes, and the active operation uses the
+  theme's selection background.
+- Restart in the dependency viewer skips inactive selections. Use Start to
+  launch a stopped service.
+- The shortcut for exporting a run to a file is `Ctrl+E`.
+
 ## [0.19.0] - 2026-11-23
 
 ### Added

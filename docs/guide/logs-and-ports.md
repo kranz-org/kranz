@@ -90,7 +90,7 @@ stdout/stderr attribution. For a tool that only adds colors, enable
 capture metadata. A violation falls back to the original logs. Only ANSI text
 styles are rendered; terminal control sequences cannot move or clear the TUI.
 
-Source logs, run summaries, run export (`e` / `Shift+E`), CLI, and MCP remain
+Source logs, run summaries, run export (`e` / `Ctrl+E`), CLI, and MCP remain
 original. Text selection copies the displayed text without ANSI codes.
 
 ### Personal and service preferences
