@@ -4,6 +4,8 @@ All notable changes to Kranz are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-11-23
+
 ### Added
 
 - Start, stop, and restart services directly from the dependency graph or
@@ -1122,7 +1124,8 @@ artifacts.
 - Explicit global-user and project-config save destinations in the live theme picker.
 - Native compatibility for common Process Compose configurations.
 
-[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/kranz-org/kranz/compare/v0.19.1...HEAD
+[0.19.1]: https://github.com/kranz-org/kranz/compare/v0.19.0...v0.19.1
 [0.19.0]: https://github.com/kranz-org/kranz/compare/v0.18.1...v0.19.0
 [0.18.1]: https://github.com/kranz-org/kranz/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/kranz-org/kranz/compare/v0.17.1...v0.18.0
