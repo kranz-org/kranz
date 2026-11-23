@@ -326,8 +326,7 @@ func (m *Model) resetUIStateToDefaults() {
 // projects with the same service or action names share log cursors and append
 // each other's output.
 func (m *Model) resetRuntimeDataCaches() {
-	m.services = nil
-	m.allServices = nil
+	m.setServiceSnapshots(nil, nil)
 	m.runs = nil
 	m.actionStates = make(map[config.ActionID]app.ActionResult)
 	m.logEntries = make(map[app.RunTarget][]config.LogEntry)

@@ -28,6 +28,7 @@ modal actions, search controls, and the theme picker.
 | `Ctrl+R` | Confirm restart of all active services |
 | `a` | Select or clear all services |
 | `Shift+A` | Replace the selection with the focused service and its direct and transitive dependencies, or clear it if the same set is already selected |
+| `Shift+E` | Add the direct and transitive dependencies of all selected services to the selection |
 | `Ctrl+A` | Confirm stop all |
 | `Shift+T` | Clear tag selection |
 
@@ -38,14 +39,18 @@ services into the operation through the dependency graph.
 
 | Key | Action |
 | --- | --- |
-| `g` | Open the dependency tree for the selected or focused service, or the operation plan when several services are selected |
-| `Tab` | Switch between the dependency tree and the operation plan |
+| `g` | Open Graph for one target or Steps for multiple targets |
+| `Tab` | Switch between Graph and Steps for the selected operation |
 | `d` / `u` | Independently show or hide dependencies or dependents in the tree |
-| `s` / `x` / `r` | Preview a start, stop, or restart for the selection |
-| `f` | Toggle planning for the targets only, without dependency expansion |
+| `←` / `→` | Cycle through Start, Stop, and Restart in the current view |
+| `s` / `x` / `r` | Choose an operation or request its confirmation |
+| `f` | Toggle whether the operation applies only to the targets |
+| `Enter` | Run the selected operation in Graph or Steps. Restart skips stopped targets. |
 | `↑` / `↓`, `j` / `k`, mouse wheel | Scroll the current view |
 | `Page Up` / `Page Down`, `Home` / `End` | Scroll by a page or jump to the first or last row |
-| `Esc` | Return to the dashboard |
+| `Esc` | Dismiss confirmation or close the viewer |
+
+The viewer stays open during execution and shows the result in either view.
 
 ### Action parameters
 
@@ -120,7 +125,7 @@ Outside a parameterized action `c` keeps its usual meaning of clearing logs.
 | `Shift+F` / `l` | Previous failed run / latest run |
 | `v` | Open the filterable run list |
 | `Shift+3` | Pin the selected `{target, run, view mode}` snapshot |
-| `e` / `Shift+E` | Export selected run to clipboard / chosen file |
+| `e` / `Ctrl+E` | Export selected run to clipboard / chosen file |
 
 The log header names the history position as a fraction. `ALL RUNS` accepts new
 output, `RUN #3/3` is the newest run in isolation, and `RUN #2/3 · [L] LATEST`
@@ -325,5 +330,5 @@ other panels and services keep updating. Selection never crosses panel borders.
 Keyboard selection chooses full logical lines, including an invisible nowrap
 tail; mouse selection chooses grapheme boundaries. `Ctrl+C` keeps interrupt/quit
 semantics. `c` is inactive while selecting; leave selection before clearing logs.
-Lifecycle shortcuts require leaving selection first. `e`/`Shift+E`
+Lifecycle shortcuts require leaving selection first. `e`/`Ctrl+E`
 continue to export a whole run outside selection.

@@ -134,6 +134,8 @@ for every command, option, output contract, and exit code.
 ## What it handles
 
 - Dependency-aware startup and reverse-order shutdown
+- TUI dependency graph and operation steps with in-place start, stop, and
+  restart controls
 - HTTP, TCP, and command readiness/liveness checks
 - Process recovery with backoff and restart limits
 - Managed and observe-only detached resources with start/stop/status/logs

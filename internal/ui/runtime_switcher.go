@@ -311,8 +311,7 @@ func (m *Model) installSession(record kranzruntime.SessionRecord, client *kranzr
 	m.operationCancel = nil
 
 	m.resetRuntimeDataCaches()
-	m.allServices = visibleServices(m.app.Services(), project.Pending)
-	m.services = m.allServices
+	m.setServiceSnapshots(m.app.Services(), project.Pending)
 	m.refreshRunSummaries()
 	m.refreshActionStates()
 	m.applyUIState(arrivingState)

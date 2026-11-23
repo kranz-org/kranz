@@ -150,6 +150,7 @@ const (
 	operationStopAll      operationKind = "stop-all"
 	operationStopSet      operationKind = "stop-selection"
 	operationRestart      operationKind = "restart"
+	operationRestartSet   operationKind = "restart-selection"
 	operationForceRestart operationKind = "force-restart"
 	operationRestartAll   operationKind = "restart-all"
 )
@@ -191,6 +192,7 @@ type systemAppearanceMsg struct {
 	scheduled bool
 }
 type releasePortResultMsg struct {
+	planID      int
 	port        int
 	pid         int
 	alreadyFree bool
@@ -252,6 +254,8 @@ type Model struct {
 	app                 app.API
 	services            []*app.ServiceSnapshot
 	allServices         []*app.ServiceSnapshot
+	runtimeServices     []*app.ServiceSnapshot
+	runtimePending      []app.PendingChange
 	runs                []app.RunSummary
 	actionStates        map[config.ActionID]app.ActionResult
 	logEntries          map[app.RunTarget][]config.LogEntry
@@ -374,6 +378,7 @@ type Model struct {
 	clearAction              *config.ActionID
 	clearPinned              bool
 
+	conflictPlanID   int
 	conflictService  string
 	conflictPorts    map[int]*config.PortInfo
 	conflictOwner    string
@@ -535,8 +540,9 @@ func NewModelWithOptions(cfg *config.Config, version string, options ModelOption
 	if application == nil {
 		application = app.NewLocal(cfg, options.ConfigPaths, app.Options{})
 	}
-	services := application.Services()
+	runtimeServices := application.Services()
 	project := application.Project()
+	services := visibleServices(runtimeServices, project.Pending)
 	rpcClient, _ := application.(*kranzruntime.Client)
 
 	model := &Model{
@@ -550,6 +556,8 @@ func NewModelWithOptions(cfg *config.Config, version string, options ModelOption
 		focusReported:        options.FocusReported,
 		services:             services,
 		allServices:          services,
+		runtimeServices:      runtimeServices,
+		runtimePending:       project.Pending,
 		runs:                 application.Runs(),
 		actionStates:         make(map[config.ActionID]app.ActionResult),
 		logEntries:           make(map[app.RunTarget][]config.LogEntry),
@@ -740,13 +748,16 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.addNotification("port", msg.err.Error(), config.LogError)
 			return m, nil
 		}
-		message := fmt.Sprintf("Stopped external PID %d on port %d; retrying", msg.pid, msg.port)
+		message := fmt.Sprintf("Stopped external PID %d on port %d", msg.pid, msg.port)
 		if msg.alreadyFree {
-			message = fmt.Sprintf("Port %d is now free; retrying", msg.port)
+			message = fmt.Sprintf("Port %d is now free", msg.port)
 		}
-		m.addNotification("port", message, config.LogInfo)
-		m.mode = ModeNormal
-		return m.toggleSelectedServices()
+		if msg.planID != 0 && (m.mode != ModePortConflict || msg.planID != m.conflictPlanID) {
+			m.addNotification("port", message, config.LogInfo)
+			return m, nil
+		}
+		m.addNotification("port", message+"; retrying", config.LogInfo)
+		return m.retryPortConflict()
 	case shutdownResultMsg:
 		if msg.chooseAfterClose {
 			return m.handleCloseAndChooseResult(msg.err)
@@ -924,8 +935,7 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) refreshServices() {
-	m.allServices = visibleServices(m.app.Services(), m.app.Project().Pending)
-	m.services = m.allServices
+	m.setServiceSnapshots(m.app.Services(), m.app.Project().Pending)
 	visible := make(map[string]bool, len(m.allServices))
 	for _, svc := range m.allServices {
 		visible[svc.Name] = true
@@ -946,6 +956,12 @@ func (m *Model) refreshServices() {
 		m.focused = len(m.services) - 1
 	}
 	m.markFocusedRead()
+}
+
+func (m *Model) setServiceSnapshots(services []*app.ServiceSnapshot, pending []app.PendingChange) {
+	m.runtimeServices, m.runtimePending = services, pending
+	m.allServices = visibleServices(services, pending)
+	m.services = m.allServices
 }
 
 // A running service removed from the configuration remains in the supervisor

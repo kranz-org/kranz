@@ -27,6 +27,7 @@ type KeyMap struct {
 	Quit          key.Binding
 	StartAll      key.Binding
 	SelectDeps    key.Binding
+	ExpandDeps    key.Binding
 	StopAll       key.Binding
 	Restart       key.Binding
 	ForceRestart  key.Binding
@@ -132,6 +133,10 @@ func DefaultKeyMap() KeyMap {
 		SelectDeps: key.NewBinding(
 			key.WithKeys("A", "shift+a"),
 			key.WithHelp("Shift+A", "toggle service and dependencies"),
+		),
+		ExpandDeps: key.NewBinding(
+			key.WithKeys("E", "shift+e"),
+			key.WithHelp("Shift+E", "add dependencies to selection"),
 		),
 		StopAll: key.NewBinding(
 			key.WithKeys("ctrl+a"),

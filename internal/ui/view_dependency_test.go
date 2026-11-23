@@ -71,7 +71,7 @@ func TestDependencyModalGraphDirectionsAndScrolling(t *testing.T) {
 		previous = index
 	}
 	for _, want := range []string{
-		"● storage  · running", "required condition completed", "successfully", "↪ shared", "┴", "┬",
+		"● storage (running)", "required condition completed", "successfully", "↪ shared", "┴", "┬",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("graph missing %q:\n%s", want, body)
@@ -86,22 +86,22 @@ func TestDependencyModalGraphDirectionsAndScrolling(t *testing.T) {
 
 	model.width, model.height = 48, 14
 	bodyRows, rootRow := model.dependencyBody()
-	page := model.dependencyBodyHeight(len(model.dependencyFooter()))
+	page := model.dependencyBodyHeight(model.dependencyControlsLayout().height())
 	initialOffset, maxOffset := model.dependencyViewport(len(bodyRows), rootRow, page)
 	if initialOffset <= 0 || !strings.Contains(ansi.Strip(model.dependencyModalContent()), "◆─ ○ gateway") {
 		t.Fatal("narrow graph did not initially frame the root")
 	}
 	pressKey(model, 'j')
 	model.handleMouseMsg(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonWheelUp})
-	if want := max(0, min(maxOffset, initialOffset+1)-1); model.dependencyModal.offset != want {
-		t.Fatalf("j and wheel left the graph at offset %d", model.dependencyModal.offset)
+	if want := max(0, min(maxOffset, initialOffset+1)-1); model.dependencyModal.graphOffset != want {
+		t.Fatalf("j and wheel left the graph at offset %d", model.dependencyModal.graphOffset)
 	}
 	if frame := model.View(); lipgloss.Width(frame) != model.width || lipgloss.Height(frame) != model.height {
 		t.Fatalf("narrow frame measured %dx%d, want %dx%d", lipgloss.Width(frame), lipgloss.Height(frame), model.width, model.height)
 	}
 	clickRenderedText(t, model, "[d] Dependencies")
 	body = dependencyBodyText(model)
-	if model.dependencyModal.offset != -1 || strings.Contains(body, "cache") || !strings.Contains(body, "worker") || !strings.Contains(body, "◆─ ○ gateway") {
+	if model.dependencyModal.graphOffset != -1 || strings.Contains(body, "cache") || !strings.Contains(body, "worker") || !strings.Contains(body, "◆─ ○ gateway") {
 		t.Fatalf("hiding dependencies changed the wrong direction or retained the scroll offset:\n%s", body)
 	}
 	pressKey(model, 'u')
@@ -131,7 +131,7 @@ func TestDependencyModalGraphShowsSharedNeighborsAndEdgesBetweenRoots(t *testing
 	for _, want := range []string{
 		"◆─ [1] ○ cache", "◆─ [2] ○ gateway", "◆─ [3] ○ index",
 		"required by [1] (completed successfully), [3]", "(started)", "[2] requires [1]", "[2] requires [3]",
-		"○ worker  · requires [2]",
+		"○ worker, requires [2]",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("multi-root graph missing %q:\n%s", want, body)
@@ -152,7 +152,7 @@ func TestDependencyModalPreviewsSelectionWithoutRunningIt(t *testing.T) {
 	}
 	content := ansi.Strip(model.dependencyModalContent())
 	body := dependencyBodyText(model)
-	for _, want := range []string{"Requested\n    ○ gateway\n    ○ worker", "Wave 1", "└─ ○ storage  · dependency", "Wave 2", "Wave 3", "Wave 4", "└─ ○ worker"} {
+	for _, want := range []string{"Requested\n    ○ gateway\n    ○ worker", "Wave 1", "└─ ○ storage [dependency]", "Wave 2", "Wave 3", "Wave 4", "└─ ○ worker"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("start plan missing %q:\n%s", want, body)
 		}
@@ -161,7 +161,7 @@ func TestDependencyModalPreviewsSelectionWithoutRunningIt(t *testing.T) {
 		strings.Contains(body, "Readiness gates are skipped.") {
 		t.Fatalf("the wave did not show its link directly under the service:\n%s", body)
 	}
-	if !strings.Contains(content, "Operation Plan · Start") || !strings.Contains(content, "[f] Selected only ○") {
+	if !strings.Contains(content, "Operation Plan — Start") || !strings.Contains(content, "[f] Selected only ○") {
 		t.Fatalf("start or default dependency setting was missing:\n%s", content)
 	}
 	_, _ = model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyTab})
@@ -198,10 +198,10 @@ func TestDependencyModalPreviewsSelectionWithoutRunningIt(t *testing.T) {
 	pressKey(model, 'f')
 	pressKey(model, 'r')
 	body = dependencyBodyText(model)
-	if !strings.Contains(body, "1. ● report  · running  · dependent") || !strings.Contains(body, "3. ● report  · running  · dependent") {
+	if !strings.Contains(body, "1. ● report (running) [dependent]") || !strings.Contains(body, "2. ● report (running) [dependent]") {
 		t.Fatalf("restart plan did not show the expanded dependent in both phases:\n%s", body)
 	}
-	clickRenderedText(t, model, "[Esc] Close")
+	clickRenderedText(t, model, "[Esc] Back")
 	if model.mode != ModeNormal {
 		t.Fatal("clicking Close did not dismiss the plan")
 	}
@@ -309,5 +309,70 @@ func TestDependencyWaveColorsFollowTerminalProfile(t *testing.T) {
 				t.Fatalf("rendered %d distinct rail colors, want %d–%d", len(colors), test.minColors, test.maxColors)
 			}
 		})
+	}
+}
+
+func TestDependencyModalKeepsOperationAndViewIndependent(t *testing.T) {
+	model := dependencyModalFixture(t)
+	pressKey(model, 'g')
+	model.handleDependencyKeys(tea.KeyMsg{Type: tea.KeyEnd})
+	graphOffset := model.dependencyModal.graphOffset
+
+	model.handleDependencyKeys(tea.KeyMsg{Type: tea.KeyRight})
+	if model.dependencyModal.plan || model.dependencyModal.operation != "stop" || model.dependencyModal.graphOffset != graphOffset {
+		t.Fatal("Right should select Stop without leaving or repositioning the graph")
+	}
+	clickRenderedText(t, model, "[r] Restart")
+	content := ansi.Strip(model.dependencyModalContent())
+	if model.dependencyModal.plan || !strings.Contains(content, "[r] Restart") || !strings.Contains(content, "Dependency Graph") {
+		t.Fatal("clicking Restart should select the operation in the graph")
+	}
+	if _, cmd := model.handleDependencyKeys(tea.KeyMsg{Type: tea.KeyEnter}); cmd != nil {
+		t.Fatal("the graph accepted Restart with no running targets")
+	}
+
+	clickRenderedText(t, model, "[Tab] Steps")
+	if !model.dependencyModal.plan || model.dependencyModal.operation != "restart" {
+		t.Fatal("opening Steps changed the chosen operation")
+	}
+	model.handleDependencyKeys(tea.KeyMsg{Type: tea.KeyRight})
+	if !model.dependencyModal.plan || model.dependencyModal.operation != "start" || model.dependencyModal.confirming {
+		t.Fatal("Right should wrap to Start and leave Steps open for review")
+	}
+	model.handleDependencyKeys(tea.KeyMsg{Type: tea.KeyEnd})
+	planOffset := model.dependencyModal.planOffset
+	clickRenderedText(t, model, "[Tab] Graph")
+	if model.dependencyModal.operation != "start" || model.dependencyModal.graphOffset != graphOffset {
+		t.Fatal("returning to Graph changed the operation or its scroll position")
+	}
+	clickRenderedText(t, model, "[Tab] Steps")
+	if model.dependencyModal.planOffset != planOffset {
+		t.Fatal("returning to Steps lost its scroll position")
+	}
+	model.handleDependencyKeys(tea.KeyMsg{Type: tea.KeyLeft})
+	if !model.dependencyModal.plan || model.dependencyModal.operation != "restart" || model.dependencyModal.planOffset != 0 {
+		t.Fatal("Left should wrap to Restart and show the new plan from the top")
+	}
+}
+
+func TestDependencyOperationHighlightPreservesControlPositions(t *testing.T) {
+	model := dependencyModalFixture(t)
+	profile := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(profile) })
+	pressKey(model, 'g')
+	model.width = 41
+	plainRows := ansi.Strip(strings.Join(model.dependencyControlsLayout().operations, "\n"))
+
+	for range 2 {
+		for _, label := range []string{"[s] Start", "[x] Stop", "[r] Restart"} {
+			rendered := strings.Join(model.dependencyControlsLayout().operations, "\n")
+			want := SelectionStyle.Render(label)
+			if ansi.Strip(rendered) != plainRows || !strings.Contains(rendered, want) {
+				t.Fatalf("%q should be highlighted without moving the choices", label)
+			}
+			model.handleDependencyKeys(tea.KeyMsg{Type: tea.KeyRight})
+		}
+		model.handleDependencyKeys(tea.KeyMsg{Type: tea.KeyTab})
 	}
 }

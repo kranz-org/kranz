@@ -135,6 +135,29 @@ func (m *Model) toggleFocusedServiceWithDependencies() {
 	m.selected = targets
 }
 
+func (m *Model) expandSelectionWithDependencies() {
+	// The dashboard uses focus as a fallback for lifecycle commands, but
+	// expanding a selection requires explicitly marked roots.
+	if len(m.selected) == 0 && len(m.selectedTags) == 0 {
+		return
+	}
+	roots := m.selectedTargetNames()
+	if len(roots) == 0 {
+		return
+	}
+	targets := m.dependencyClosure(roots)
+	selected := make(map[string]bool, len(targets))
+	for _, svc := range m.allServices {
+		if targets[svc.Name] {
+			selected[svc.Name] = true
+		}
+	}
+	// Store individual marks so dependencies outside selected tags are
+	// included in the same batch as services marked with Space.
+	m.selectedTags = nil
+	m.selected = selected
+}
+
 func (m *Model) togglePinnedLog() {
 	if m.hasPinnedRunView() {
 		m.unpinRunView()

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1025,6 +1026,58 @@ func TestShiftATogglesFocusedServiceWithDependencies(t *testing.T) {
 	_, _ = model.handleKeyMsg(shiftA)
 	if len(model.selected) != 1 || !model.selected["database"] {
 		t.Fatalf("Shift+A on a service without dependencies selected %v, want database only", model.selected)
+	}
+}
+
+func TestShiftEAddsDependenciesOfAllMarkedServices(t *testing.T) {
+	model := NewModel(&config.Config{Services: map[string]config.Service{
+		"frontend-a": {DependsOn: []string{"backend-a"}, Tags: []string{"frontends"}},
+		"frontend-b": {DependsOn: []string{"backend-b"}, Tags: []string{"frontends"}},
+		"backend-a":  {DependsOn: []string{"storage"}},
+		"backend-b":  {DependsOn: []string{"storage"}},
+		"storage":    {},
+		"worker":     {DependsOn: []string{"backend-a"}},
+	}}, "test")
+	t.Cleanup(func() { _ = model.Shutdown() })
+	expand := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'E'}}
+	_, cmd := model.handleKeyMsg(expand)
+	if cmd != nil || len(model.selected) != 0 {
+		t.Fatal("Shift+E expanded the focused service without an explicit selection")
+	}
+
+	mark := func(name string) {
+		t.Helper()
+		for index, svc := range model.services {
+			if svc.Name == name {
+				model.moveFocus(index)
+				_, _ = model.handleKeyMsg(tea.KeyMsg{Type: tea.KeySpace})
+				return
+			}
+		}
+		t.Fatalf("missing test service %s", name)
+	}
+	mark("frontend-a")
+	mark("frontend-b")
+	want := nameSet([]string{"frontend-a", "frontend-b", "backend-a", "backend-b", "storage"})
+
+	for range 2 {
+		_, cmd = model.handleKeyMsg(expand)
+		if cmd != nil || len(model.operations) != 0 || model.mode != ModeNormal || !maps.Equal(model.selected, want) {
+			t.Fatalf("Shift+E should only add the selected services' dependencies, got %v", model.selected)
+		}
+	}
+
+	model.selectedTags = []string{"frontends"}
+	model.syncSelectedServicesFromTags()
+	_, cmd = model.handleKeyMsg(expand)
+	if cmd != nil || len(model.selectedTags) != 0 || !maps.Equal(model.selected, want) {
+		t.Fatalf("expanding a tag should produce individual marks, got %v and tags %v", model.selected, model.selectedTags)
+	}
+
+	model.app.SetServiceStatusForTest("frontend-a", config.StatusRunning)
+	_, cmd = model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyCtrlA})
+	if cmd != nil || model.mode != ModeConfirmServiceStop || !model.pendingStopAll {
+		t.Fatal("Ctrl+A should still request confirmation for stopping all services")
 	}
 }
 

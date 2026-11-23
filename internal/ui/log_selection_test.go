@@ -815,9 +815,13 @@ func TestRunExportUsesSameTerminalTransportAndKeepsFileShortcut(t *testing.T) {
 	if err != nil || !strings.Contains(string(payload), "Kranz run: api#1") || !strings.Contains(string(payload), "run report") {
 		t.Fatal("run report changed")
 	}
-	_, _ = m.handleKeyMsg(keyMessage("E"))
-	if m.mode != ModeRunExport {
-		t.Fatal("Shift+E no longer opens run file export")
+	for _, panel := range []panelFocus{panelServices, panelLogs} {
+		m.panelFocus = panel
+		_, _ = m.handleKeyMsg(tea.KeyMsg{Type: tea.KeyCtrlE})
+		if m.mode != ModeRunExport {
+			t.Fatalf("Ctrl+E did not open run file export from panel %v", panel)
+		}
+		_, _ = m.handleKeyMsg(keyMessage("esc"))
 	}
 }
 

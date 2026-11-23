@@ -21,7 +21,19 @@ type dependencyModal struct {
 	dependents   bool
 	operation    string
 	selectedOnly bool
-	offset       int
+	confirming   bool
+	runID        int
+	runMessage   string
+	runFailed    bool
+	graphOffset  int
+	planOffset   int
+}
+
+func (state *dependencyModal) scrollOffset() *int {
+	if state.plan {
+		return &state.planOffset
+	}
+	return &state.graphOffset
 }
 
 func (m *Model) dependencyFocusedService() *app.ServiceSnapshot {
@@ -34,16 +46,21 @@ func (m *Model) dependencyFocusedService() *app.ServiceSnapshot {
 	return m.FocusedService()
 }
 
-func (m *Model) openDependencies() {
-	state := dependencyModal{dependencies: true, dependents: true, operation: "start", offset: -1}
-	svc := m.dependencyFocusedService()
+func (m *Model) dependencyTargetNames() []string {
 	if len(m.selected) > 0 || len(m.selectedTags) > 0 {
-		state.roots = m.selectedTargetNames()
-		state.plan = len(state.roots) > 1 || (svc == nil && len(state.roots) > 0)
+		return m.selectedTargetNames()
 	}
-	if len(state.roots) == 0 && svc != nil {
-		state.roots = []string{svc.Name}
+	if svc := m.dependencyFocusedService(); svc != nil {
+		return []string{svc.Name}
 	}
+	return nil
+}
+
+func (m *Model) openDependencies() {
+	state := dependencyModal{
+		roots: m.dependencyTargetNames(), dependencies: true, dependents: true, operation: "start", graphOffset: -1,
+	}
+	state.plan = len(state.roots) > 1 || len(state.roots) > 0 && m.dependencyFocusedService() == nil
 	if len(state.roots) > 0 {
 		// Read the graph once per opening. Live labels use the dashboard's
 		// refreshed snapshots, so repainting the modal never needs an RPC.
@@ -61,59 +78,117 @@ func (m *Model) handleDependencyKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Down):
 		m.scrollDependencies(1)
 	case msg.String() == "pgup":
-		m.scrollDependencies(-m.dependencyBodyHeight(len(m.dependencyFooter())))
+		m.scrollDependencies(-m.dependencyBodyHeight(m.dependencyControlsLayout().height()))
 	case msg.String() == "pgdown":
-		m.scrollDependencies(m.dependencyBodyHeight(len(m.dependencyFooter())))
+		m.scrollDependencies(m.dependencyBodyHeight(m.dependencyControlsLayout().height()))
 	case msg.String() == "home":
-		state.offset = 0
+		*state.scrollOffset() = 0
 	case msg.String() == "end":
-		state.offset = m.maxDependencyOffset()
+		*state.scrollOffset() = m.maxDependencyOffset()
 	case msg.String() == "esc":
-		m.mode = ModeNormal
-	case msg.String() == "tab":
-		state.plan, state.offset = !state.plan, -1
-	case state.plan:
-		switch msg.String() {
-		case "s":
-			state.operation, state.offset = "start", 0
-		case "x":
-			state.operation, state.offset = "stop", 0
-		case "r":
-			state.operation, state.offset = "restart", 0
-		case "f":
-			state.selectedOnly, state.offset = !state.selectedOnly, 0
+		if state.confirming {
+			state.confirming = false
+		} else {
+			m.mode = ModeNormal
 		}
-	case msg.String() == "d":
-		state.dependencies, state.offset = !state.dependencies, -1
-	case msg.String() == "u":
-		state.dependents, state.offset = !state.dependents, -1
+	case msg.String() == "tab":
+		state.plan, state.confirming = !state.plan, false
+	case msg.String() == "left":
+		m.cycleDependencyOperation(-1)
+	case msg.String() == "right":
+		m.cycleDependencyOperation(1)
+	case msg.String() == "s":
+		m.chooseDependencyOperation("start")
+	case msg.String() == "x":
+		m.chooseDependencyOperation("stop")
+	case msg.String() == "r":
+		m.chooseDependencyOperation("restart")
+	case state.runID == 0 && msg.String() == "f":
+		state.selectedOnly, state.confirming, state.runMessage, state.planOffset = !state.selectedOnly, false, "", 0
+	case msg.String() == "enter":
+		return m.runDependencyOperation()
+	case !state.plan && msg.String() == "d":
+		state.dependencies, state.graphOffset = !state.dependencies, -1
+	case !state.plan && msg.String() == "u":
+		state.dependents, state.graphOffset = !state.dependents, -1
 	}
 	return m, nil
 }
 
-func (m *Model) dependencyControls() []mouseKeyBinding {
+// A shortcut for the selected operation asks for confirmation. Keeping execution on
+// Enter prevents key repeat from running a plan opened with the same shortcut.
+func (m *Model) chooseDependencyOperation(operation string) {
+	state := &m.dependencyModal
+	if state.runID != 0 {
+		return
+	}
+	state.runMessage = ""
+	if state.operation == operation {
+		preview, err := m.previewDependencyOperation(operation, state.selectedOnly)
+		state.confirming = preview.runnable(err)
+		return
+	}
+	state.operation, state.confirming, state.planOffset = operation, false, 0
+}
+
+var dependencyOperationOrder = [...]string{"start", "stop", "restart"}
+
+func (m *Model) cycleDependencyOperation(step int) {
+	index := slices.Index(dependencyOperationOrder[:], m.dependencyModal.operation)
+	next := (index + step + len(dependencyOperationOrder)) % len(dependencyOperationOrder)
+	m.chooseDependencyOperation(dependencyOperationOrder[next])
+}
+
+var dependencyOperationLabels = map[string]string{"start": "Start", "stop": "Stop", "restart": "Restart"}
+
+func (m *Model) dependencyControlGroups(runnable bool) [][]mouseKeyBinding {
 	state := m.dependencyModal
-	var controls []mouseKeyBinding
+	operations := []mouseKeyBinding{
+		{label: "[s] Start", key: "s"},
+		{label: "[x] Stop", key: "x"},
+		{label: "[r] Restart", key: "r"},
+	}
+	navigation := []mouseKeyBinding{
+		{label: "[←] Prev plan", key: "left"},
+		{label: "[→] Next plan", key: "right"},
+		{label: "[↑/k] Up", key: "up"},
+		{label: "[↓/j] Down", key: "down"},
+		{label: "[Esc] Back", key: "esc"},
+	}
+	var run, view []mouseKeyBinding
+	if state.runID == 0 && state.runMessage == "" && runnable {
+		verb := "Run "
+		if state.confirming {
+			verb = "Confirm "
+		}
+		label := verb + dependencyOperationLabels[state.operation]
+		shortcut := "[Enter] "
+		if 2+lipgloss.Width(shortcut+label) > m.dependencyWidth() {
+			shortcut = "[↵] "
+			if 2+lipgloss.Width(shortcut+label) > m.dependencyWidth() {
+				label = strings.TrimSuffix(verb, " ")
+			}
+		}
+		if 2+lipgloss.Width(shortcut+label) > m.dependencyWidth() {
+			label = ""
+			shortcut = "[↵]"
+		}
+		run = []mouseKeyBinding{{label: shortcut + label, key: "enter"}}
+	}
 	if state.plan {
-		controls = []mouseKeyBinding{
-			{label: "[s] Start", key: "s"},
-			{label: "[x] Stop", key: "x"},
-			{label: "[r] Restart", key: "r"},
+		view = []mouseKeyBinding{
 			{label: dependencyToggle("[f] Selected only", state.selectedOnly), key: "f"},
 			{label: "[Tab] Graph", key: "tab"},
 		}
 	} else {
-		controls = []mouseKeyBinding{
+		view = []mouseKeyBinding{
 			{label: dependencyToggle("[d] Dependencies", state.dependencies), key: "d"},
 			{label: dependencyToggle("[u] Dependents", state.dependents), key: "u"},
-			{label: "[Tab] Plan", key: "tab"},
+			{label: dependencyToggle("[f] Selected only", state.selectedOnly), key: "f"},
+			{label: "[Tab] Steps", key: "tab"},
 		}
 	}
-	return append(controls,
-		mouseKeyBinding{label: "[↑/k] Up", key: "up"},
-		mouseKeyBinding{label: "[↓/j] Down", key: "down"},
-		mouseKeyBinding{label: "[Esc] Close", key: "esc"},
-	)
+	return [][]mouseKeyBinding{run, operations, view, navigation}
 }
 
 func dependencyToggle(label string, enabled bool) string {
@@ -127,33 +202,140 @@ func (m *Model) dependencyWidth() int {
 	return flushModalContentWidth(m.width, 84)
 }
 
-func (m *Model) dependencyFooter() []string {
-	controls := m.dependencyControls()
-	groups := make([]string, 0, len(controls))
-	for _, control := range controls {
-		groups = append(groups, control.label)
-	}
-	return renderModalShortcutRows(groups, m.dependencyWidth(), lipgloss.NewStyle().Foreground(ColorDim))
+type dependencyControlsLayout struct {
+	action     []string
+	operations []string
+	footer     []string
+	groups     [][]mouseKeyBinding
 }
 
-func (m *Model) dependencyBodyHeight(footerRows int) int {
-	return min(24, max(1, m.height-modalVerticalChrome-3-footerRows))
+func (layout dependencyControlsLayout) height() int {
+	return len(layout.action) + len(layout.operations) + len(layout.footer)
+}
+
+func (m *Model) dependencyControlsLayout() dependencyControlsLayout {
+	state := m.dependencyModal
+	width := m.dependencyWidth()
+	preview, err := m.previewDependencyOperation(state.operation, state.selectedOnly)
+	groups := m.dependencyControlGroups(preview.runnable(err))
+	dim := lipgloss.NewStyle().Foreground(ColorDim)
+	accent := PrimaryButtonStyle.Padding(0)
+	render := func(controls []mouseKeyBinding, style lipgloss.Style) []string {
+		var labels []string
+		for _, control := range controls {
+			labels = append(labels, control.label)
+		}
+		return renderModalShortcutRows(labels, width, style)
+	}
+	// Both views reserve one action row, regardless of availability,
+	// confirmation, or operation progress.
+	layout := dependencyControlsLayout{groups: groups, action: []string{""}}
+	switch {
+	case state.runID != 0:
+		layout.action = []string{"  " + StartingBadgeStyle.Render("Running "+dependencyOperationLabels[state.operation]+"…")}
+	case state.runMessage != "":
+		style := accent
+		if state.runFailed {
+			style = FailedBadgeStyle
+		}
+		summary := strings.Join(strings.Fields(state.runMessage), " ")
+		layout.action = []string{"  " + style.Render(ansi.Truncate(summary, max(1, width-2), "…"))}
+	case len(groups[0]) > 0:
+		layout.action = render(groups[0], accent)
+	case err != nil:
+		message := strings.Join(strings.Fields(err.Error()), " ")
+		layout.action[0] = "  " + FailedBadgeStyle.Render(ansi.Truncate(message, max(1, width-2), "…"))
+	case len(preview.Requested) > 0:
+		message := "No service changes"
+		if state.operation == "restart" && len(preview.restartTargets) == 0 {
+			message = "No running targets"
+		}
+		layout.action[0] = "  " + dim.Render(ansi.Truncate(message, max(1, width-2), "…"))
+	}
+	active := "[s] Start"
+	switch state.operation {
+	case "stop":
+		active = "[x] Stop"
+	case "restart":
+		active = "[r] Restart"
+	}
+	layout.operations = render(groups[1], dim)
+	for i, row := range layout.operations {
+		plain := ansi.Strip(row)
+		if at := strings.Index(plain, active); at >= 0 {
+			start := lipgloss.Width(plain[:at])
+			end := start + lipgloss.Width(active)
+			layout.operations[i] = ansi.Cut(row, 0, start) + SelectionStyle.Render(active) +
+				ansi.Cut(row, end, lipgloss.Width(row))
+			break
+		}
+	}
+	layout.footer = append(render(groups[2], dim), render(groups[3], dim)...)
+
+	// Reserve one body row and prioritize the action, view switch, and Back
+	// when there is too little height for the complete set of shortcuts.
+	budget := max(0, m.height-modalVerticalChrome-2)
+	if layout.height() > budget {
+		layout.action = layout.action[:min(len(layout.action), budget)]
+		budget -= len(layout.action)
+		viewSwitch := groups[2][len(groups[2])-1]
+		back := groups[3][len(groups[3])-1]
+		layout.footer = render([]mouseKeyBinding{viewSwitch, back}, dim)
+		layout.footer = layout.footer[:min(len(layout.footer), budget)]
+		budget -= len(layout.footer)
+		layout.operations = layout.operations[:min(len(layout.operations), budget)]
+	}
+	return layout
+}
+
+func (m *Model) handleDependencyMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	layout := m.dependencyControlsLayout()
+	content := m.renderDependencyModal(layout)
+	height, width := lipgloss.Height(content), min(m.width, lipgloss.Width(content))
+	top, left := max(0, (m.height-height)/2), max(0, (m.width-width)/2)
+	msg.X -= left + 2 // flush modal padding
+	msg.Y -= top
+	operationsRow := ModalStyle.GetPaddingTop() + 1
+	actionRow := operationsRow + len(layout.operations)
+	footerRow := height - ModalStyle.GetPaddingBottom() - len(layout.footer)
+
+	switch {
+	case msg.Y >= footerRow:
+		msg.Y -= footerRow
+		return m.handleMouseKeyBindings(strings.Join(layout.footer, "\n"), msg, slices.Concat(layout.groups[2:]...), m.handleDependencyKeys)
+	case msg.Y >= actionRow:
+		msg.Y -= actionRow
+		return m.handleMouseKeyBindings(strings.Join(layout.action, "\n"), msg, layout.groups[0], m.handleDependencyKeys)
+	case msg.Y >= operationsRow:
+		msg.Y -= operationsRow
+		return m.handleMouseKeyBindings(strings.Join(layout.operations, "\n"), msg, layout.groups[1], m.handleDependencyKeys)
+	default:
+		return m, nil
+	}
+}
+
+func (m *Model) dependencyBodyHeight(controlRows int) int {
+	available := m.height - modalVerticalChrome - 1 - controlRows
+	if available >= 3 {
+		available -= 2
+	}
+	return min(24, max(1, available))
 }
 
 func (m *Model) maxDependencyOffset() int {
 	body, _ := m.dependencyBody()
-	return max(0, len(body)-m.dependencyBodyHeight(len(m.dependencyFooter())))
+	return max(0, len(body)-m.dependencyBodyHeight(m.dependencyControlsLayout().height()))
 }
 
 func (m *Model) scrollDependencies(delta int) {
 	body, rootRow := m.dependencyBody()
-	offset, maxOffset := m.dependencyViewport(len(body), rootRow, m.dependencyBodyHeight(len(m.dependencyFooter())))
-	m.dependencyModal.offset = min(maxOffset, max(0, offset+delta))
+	offset, maxOffset := m.dependencyViewport(len(body), rootRow, m.dependencyBodyHeight(m.dependencyControlsLayout().height()))
+	*m.dependencyModal.scrollOffset() = min(maxOffset, max(0, offset+delta))
 }
 
 func (m *Model) dependencyViewport(rows, rootRow, height int) (offset, maxOffset int) {
 	maxOffset = max(0, rows-height)
-	offset = m.dependencyModal.offset
+	offset = *m.dependencyModal.scrollOffset()
 	if offset < 0 {
 		beforeRoots := min((height-1)/2, max(0, height-len(m.dependencyModal.roots)))
 		offset = max(0, rootRow-beforeRoots)
@@ -162,16 +344,23 @@ func (m *Model) dependencyViewport(rows, rootRow, height int) (offset, maxOffset
 }
 
 func (m *Model) dependencyModalContent() string {
+	return m.renderDependencyModal(m.dependencyControlsLayout())
+}
+
+func (m *Model) renderDependencyModal(layout dependencyControlsLayout) string {
 	state := m.dependencyModal
-	footer := m.dependencyFooter()
 	body, rootRow := m.dependencyBody()
-	height := m.dependencyBodyHeight(len(footer))
+	height := m.dependencyBodyHeight(layout.height())
 	offset, maxOffset := m.dependencyViewport(len(body), rootRow, height)
 	width := m.dependencyWidth()
 
 	title := " Dependency Graph "
 	if state.plan {
-		title = " Operation Plan · " + map[string]string{"start": "Start", "stop": "Stop", "restart": "Restart"}[state.operation] + " "
+		label := dependencyOperationLabels[state.operation]
+		title = " Operation Plan — " + label + " "
+		if lipgloss.Width(title)+ModalTitleStyle.GetHorizontalPadding() > width {
+			title = " Plan — " + label + " "
+		}
 	}
 	header := ModalTitleStyle.Render(title)
 	if maxOffset > 0 {
@@ -181,7 +370,9 @@ func (m *Model) dependencyModalContent() string {
 		}
 	}
 	lines := []string{ansi.Truncate(header, width, "…")}
-	withGaps := m.height >= modalVerticalChrome+4+len(footer)
+	lines = append(lines, layout.operations...)
+	lines = append(lines, layout.action...)
+	withGaps := m.height >= modalVerticalChrome+4+layout.height()
 	if withGaps {
 		lines = append(lines, "")
 	}
@@ -195,7 +386,7 @@ func (m *Model) dependencyModalContent() string {
 	if withGaps {
 		lines = append(lines, "")
 	}
-	lines = append(lines, footer...)
+	lines = append(lines, layout.footer...)
 	return m.renderFlushModal(strings.Join(lines, "\n"))
 }
 
@@ -307,11 +498,11 @@ func dependencyBranches(edges map[string][]string, conditions map[[2]string]stri
 		}
 	}
 	slices.Sort(neighbors)
-	depth, heading, empty := 1, "↓ Dependents · rely on roots", "No dependents"
+	depth, heading, empty := 1, "↓ Dependents", "No dependents"
 	elbow, joint, relationship := "└", "┬", "requires"
 	if above {
 		depth = 0
-		heading, empty = "↑ Dependencies · required by roots", "No dependencies"
+		heading, empty = "↑ Dependencies", "No dependencies"
 		elbow, joint, relationship = "┌", "┴", "required by"
 	}
 	branchStyle := dependencyDepthStyle(lipgloss.DefaultRenderer(), depth, 2)
@@ -355,7 +546,7 @@ func dependencyBranches(edges map[string][]string, conditions map[[2]string]stri
 					}
 					links = append(links, link)
 				}
-				value += branchStyle.Render("  · " + relationship + " " + strings.Join(links, ", "))
+				value += branchStyle.Render(", " + relationship + " " + strings.Join(links, ", "))
 			} else {
 				parentName := parent
 				if depth == 0 {
@@ -366,7 +557,7 @@ func dependencyBranches(edges map[string][]string, conditions map[[2]string]stri
 					if !above {
 						wait = "parent condition "
 					}
-					value += branchStyle.Render("  · " + wait + condition)
+					value += branchStyle.Render(", " + wait + condition)
 				}
 			}
 			if seen[child] {
@@ -488,8 +679,12 @@ func (m *Model) dependencyPlanBody(width int) []string {
 		}
 	}
 	var lines []string
+	if m.dependencyModal.runFailed && m.dependencyModal.runMessage != "" {
+		lines = append(lines, modalTextRows(FailedBadgeStyle.Render(m.dependencyModal.runMessage), width)...)
+		lines = append(lines, "")
+	}
 	if len(preview.Requested) > 0 {
-		lines = modalTextRows(HelpSectionStyle.Render("Requested"), width)
+		lines = append(lines, modalTextRows(HelpSectionStyle.Render("Requested"), width)...)
 		requestedLinks := m.dependencyPlanLinks(preview.Requested)
 		for _, name := range preview.Requested {
 			lines = appendDependencyItem(lines, "    ", "    ", statusLabel(name), width)
@@ -506,8 +701,12 @@ func (m *Model) dependencyPlanBody(width int) []string {
 		return append(lines, modalTextRows(FailedBadgeStyle.Render(err.Error()), width)...)
 	}
 	if len(preview.Steps) == 0 {
+		message := "No service changes for this operation."
+		if m.dependencyModal.operation == "restart" {
+			message = "No running services to restart. Use Start to launch stopped services."
+		}
 		lines = append(lines, "")
-		lines = append(lines, modalTextRows("No service changes for this operation.", width)...)
+		lines = append(lines, modalTextRows(message, width)...)
 	}
 	requested := nameSet(preview.Requested)
 	expansion := "dependent"
@@ -519,7 +718,7 @@ func (m *Model) dependencyPlanBody(width int) []string {
 		if requested[name] {
 			return label
 		}
-		return label + ContextBarStyle.Render("  · "+expansion)
+		return label + ContextBarStyle.Render(" ["+expansion+"]")
 	}
 	for index, step := range preview.Steps {
 		links := phaseLinks[index]
